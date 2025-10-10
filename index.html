@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cds bookmarks</title>
+
+    <script>
+      (function () {
+        const savedTheme =
+          localStorage.getItem("theme") ||
+          (window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "g100"
+            : "white");
+        document.documentElement.className = `cds-theme-zone-${savedTheme}`;
+      })();
+    </script>
+
+    <link
+      rel="stylesheet"
+      href="https://1.www.s81c.com/common/carbon/web-components/tag/latest/themes.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://1.www.s81c.com/common/carbon/plex/sans.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/cssgrid.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://1.www.s81c.com/common/carbon/web-components/tag/next/cssgrid.css"
+    />
+
+    <style>
+      body {
+        font-family: IBM Plex Sans, Helvetica Neue, Arial, sans-serif;
+        margin: 0;
+        color: var(--cds-text-primary);
+      }
+      cds-tab {
+        font-size: calc(1.125rem + 0.5vw);
+        font-weight: 400;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      cds-tabs:not(:defined),
+      cds-dropdown:not(:defined),
+      cds-dropdown-item:not(:defined) {
+        display: none;
+      }
+      .cds-ce-demo-devenv--tab-panels {
+        flex: 1;
+        align-self: stretch;
+        padding: 1rem;
+      }
+      @media (max-width: 1024px) {
+        #date-time {
+          display: none;
+        }
+      }
+    </style>
+
+    <script
+      type="module"
+      src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/dropdown.min.js"
+    ></script>
+    <script
+      type="module"
+      src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/button.min.js"
+    ></script>
+    <script
+      type="module"
+      src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/tag.min.js"
+    ></script>
+    <script
+      type="module"
+      src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/tile.min.js"
+    ></script>
+    <script
+      type="module"
+      src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/tabs.min.js"
+    ></script>
+    <script
+      type="module"
+      src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/heading.min.js"
+    ></script>
+    <script
+      type="module"
+      src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/toggle.min.js"
+    ></script>
+    <script
+      type="module"
+      src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/text-input.min.js"
+    ></script>
+
+    <script src="bookmarks-data.js"></script>
+  </head>
+
+  <body style="background-color: var(--cds-background)">
+    <div style="display: flex; justify-content: space-between">
+      <cds-tabs id="main-tabs" type="contained"></cds-tabs>
+      <figure
+        style="flex: none; font-size: 2em; font-weight: 100; margin: auto 1rem"
+      >
+        <figcaption id="date-time"></figcaption>
+      </figure>
+    </div>
+
+    <div class="cds-ce-demo-devenv--tab-panels" id="tab-panels"></div>
+
+    <script>
+      const STORAGE_KEY = "cdsBookmarksData";
+
+      function saveData(data) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      }
+
+      function getBookmarksData() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        try {
+          return raw ? JSON.parse(raw) : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function initializeLocalStorage() {
+        if (
+          !localStorage.getItem(STORAGE_KEY) &&
+          typeof bookmarksData !== "undefined"
+        ) {
+          saveData(bookmarksData);
+        }
+      }
+
+      function updateDateTime() {
+        const date = new Date();
+        const options = {
+          day: "2-digit",
+          month: "long",
+          weekday: "long",
+          hour: "2-digit",
+          minute: "2-digit",
+        };
+        document.getElementById("date-time").innerText = date
+          .toLocaleDateString("en-US", options)
+          .replace(",", " |")
+          .replace(" at", " |");
+      }
+
+function generateTile(tileData, target) {
+  const tileType = "cds-tile";
+  const targetAttr = target ? `target="${target}"` : "";
+
+  const buttonsHTML = tileData.buttons
+    .map((button, index) => {
+      const btnHTML = `
+        <cds-button
+          ${targetAttr}
+          size="md"
+          kind="${button.kind || "secondary"}"
+          data-href="${button.href || ""}"
+        >
+          ${button.label}${button.icon || ""}
+        </cds-button>
+      `;
+
+      // If versionedHref, return button + input + icon beside each other
+      if (button.versionedHref) {
+        return `
+          <div class="versioned-group"
+            data-versioned-href="${button.versionedHref}"
+            style="display: flex; align-items: end; gap: 0.25rem;">
+            ${btnHTML}
+            <div style="max-width: 6rem;">
+              <cds-text-input
+                class="version-input"
+                max-count="100"
+                placeholder="Enter version"
+                size="md"
+                type="text"
+                value="1.0.0-rc.3"
+              ></cds-text-input>
+            </div>
+            <cds-button
+              size="md"
+              tooltip-text="Open"
+              kind="secondary"
+              tooltip-position="top"
+              class="open-version-btn"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" width="16" height="16" slot="icon">
+                <path d="M13,14H3c-0.6,0-1-0.4-1-1V3c0-0.6,0.4-1,1-1h5v1H3v10h10V8h1v5C14,13.6,13.6,14,13,14z"></path>
+                <path d="M10 1L10 2 13.3 2 9 6.3 9.7 7 14 2.7 14 6 15 6 15 1z"></path>
+              </svg>
+            </cds-button>
+          </div>
+        `;
+      }
+
+      // Otherwise just return the normal button
+      return btnHTML;
+    })
+    .join("\n");
+
+  return `
+    <${tileType} style="margin-bottom: 2rem" ${targetAttr}>
+      <h2 style="font-size: 2em; font-weight: 200; margin: 0">
+        ${tileData.title}
+      </h2>
+      ${
+        tileData.buttons.length > 0
+          ? `<div style="padding-top: 1rem;display: flex;flex-wrap: wrap;gap: 4px;">${buttonsHTML}</div>`
+          : ""
+      }
+      ${tileData.icon}
+    </${tileType}>
+  `;
+}
+
+      function generateTabs() {
+        const tabsContainer = document.getElementById("main-tabs");
+        const tabPanelsContainer = document.getElementById("tab-panels");
+        const data = getBookmarksData();
+
+        const selectedTab = data.find((tab) => tab.selected)?.id || data[0]?.id;
+        tabsContainer.value = selectedTab;
+
+        data.forEach((tab) => {
+          const tabElement = document.createElement("cds-tab");
+          tabElement.id = tab.id;
+          tabElement.setAttribute("target", `${tab.id}-panel`);
+          tabElement.setAttribute("type", "contained");
+          tabElement.setAttribute("value", tab.id);
+          tabElement.textContent = tab.name;
+          tabsContainer.appendChild(tabElement);
+
+          const tabPanel = document.createElement("div");
+          tabPanel.id = `${tab.id}-panel`;
+          tabPanel.setAttribute("role", "tabpanel");
+          tabPanel.setAttribute("aria-labelledby", tab.id);
+          tabPanel.setAttribute("hidden", "");
+
+          const isChecked = tab.linksTarget === "_blank";
+
+          tabPanel.innerHTML = `
+            <div class="cds--css-grid cds--css-grid--full-width" style="margin-top: 2rem">
+              <div style="margin-bottom: 2rem; display: flex; flex-direction: column; gap: 1rem;" class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-8 cds--lg:col-span-5 cds--xlg:col-span-4">
+                ${tab.icon}
+                <cds-heading style="margin-bottom: 1rem">${tab.name}</cds-heading>
+                <cds-dropdown label="Theme" class="theme-selector" style="margin-bottom: 1rem">
+                  <cds-dropdown-item value="white">white</cds-dropdown-item>
+                  <cds-dropdown-item value="g10">g10</cds-dropdown-item>
+                  <cds-dropdown-item value="g90">g90</cds-dropdown-item>
+                  <cds-dropdown-item value="g100">g100</cds-dropdown-item>
+                </cds-dropdown>
+                <cds-toggle
+                  ${isChecked ? "checked" : ""}
+                  label-a="On"
+                  label-b="Off"
+                  label-text="Open links in new tab"
+                  class="link-toggle"
+                  data-tab-id="${tab.id}"
+                  style="margin-bottom: 1rem"
+                ></cds-toggle>
+              </div>
+              <div style="margin-bottom: 2rem" class="cds--css-grid-column cds--sm:col-span-4 cds--md:col-span-8 cds--lg:col-span-6 cds--xlg:col-span-8">
+                ${generateTile(tab.github, tab.linksTarget)}
+                ${generateTile(tab.website, tab.linksTarget)}
+                ${generateTile(tab.storybooks, tab.linksTarget)}
+              </div>
+            </div>
+          `;
+
+          tabPanelsContainer.appendChild(tabPanel);
+        });
+      }
+function setupVersionedButtons() {
+  // Handle versioned buttons (Open icon)
+  document.querySelectorAll(".versioned-group").forEach((group) => {
+    const input = group.querySelector(".version-input");
+    const openBtn = group.querySelector(".open-version-btn");
+    const versionedHref = group.dataset.versionedHref;
+    const target = document.querySelector(".link-toggle")?.checked ? "_blank" : "_self";
+
+    if (!input || !openBtn || !versionedHref) return;
+
+    // Stop propagation so typing/clicking input doesn’t trigger cds-button
+    input.addEventListener("click", (e) => e.stopPropagation());
+
+    openBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const version = input.value.trim() || "latest";
+      const finalUrl = versionedHref.replace("<v>", encodeURIComponent(version));
+      window.open(finalUrl, target);
+    });
+  });
+
+  // Handle normal cds-buttons (with data-href)
+  document.querySelectorAll("cds-button[data-href]").forEach((btn) => {
+    const href = btn.dataset.href;
+    if (!href) return;
+
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const target =
+        document.querySelector(".link-toggle")?.checked ? "_blank" : "_self";
+      window.open(href, target);
+    });
+  });
+}
+
+
+      function setupLinkToggles() {
+        const updateLinks = () => {
+          const tabs = document.getElementById("main-tabs");
+          const activeTabId = tabs.value;
+          const panel = document.getElementById(`${activeTabId}-panel`);
+          if (!panel) return;
+
+          const toggle = panel.querySelector(".link-toggle");
+          const links = panel.querySelectorAll("[href]");
+          const target = toggle?.checked ? "_blank" : "";
+
+          links.forEach((link) => {
+            if (target) link.setAttribute("target", "_blank");
+            else link.removeAttribute("target");
+          });
+
+          const data = getBookmarksData();
+          const updated = data.map((tab) =>
+            tab.id === activeTabId ? { ...tab, linksTarget: target } : tab
+          );
+          saveData(updated);
+        };
+
+        document.querySelectorAll(".link-toggle").forEach((toggle) => {
+          toggle.addEventListener("cds-toggle-changed", updateLinks);
+        });
+
+        document.querySelector("cds-tabs").addEventListener("cds-tabs-selected", () => {
+          setTimeout(updateLinks, 10);
+        });
+
+        setTimeout(updateLinks, 10);
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        initializeLocalStorage();
+        generateTabs();
+        setupLinkToggles();
+        setupVersionedButtons();
+
+        const tabs = document.querySelector("cds-tabs");
+
+        tabs.addEventListener("cds-tabs-selected", (event) => {
+          const newSelectedId = event.detail.item.id;
+          const data = getBookmarksData();
+          const updated = data.map((tab) => ({
+            ...tab,
+            selected: tab.id === newSelectedId,
+          }));
+          saveData(updated);
+        });
+
+        const savedTheme = localStorage.getItem("theme") || "white";
+        document.documentElement.className = `cds-theme-zone-${savedTheme}`;
+
+        const themeDropdowns = document.querySelectorAll(".theme-selector");
+        themeDropdowns.forEach((dropdown) => {
+          dropdown.value = savedTheme;
+          dropdown.addEventListener("cds-dropdown-selected", (event) => {
+            const selectedTheme = event.detail.item.value;
+            document.documentElement.className = `cds-theme-zone-${selectedTheme}`;
+            localStorage.setItem("theme", selectedTheme);
+            themeDropdowns.forEach((d) => {
+              if (d !== dropdown) d.value = selectedTheme;
+            });
+          });
+        });
+
+        updateDateTime();
+        setInterval(updateDateTime, 1000);
+      });
+    </script>
+  </body>
+</html>
