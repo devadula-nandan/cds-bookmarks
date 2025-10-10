@@ -12,7 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!raw) this.saveData(data);
         return data;
       } catch {
-        this.saveData(bookmarksData); // Overwrite corrupted data
+        this.saveData(bookmarksData);
         return bookmarksData;
       }
     },
@@ -88,7 +88,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const isChecked = tabData.linksTarget === "_blank";
 
-      // ✅ FIX: Use cds--css-grid--full-width for the main content area
       panel.innerHTML = `
         <div class="cds--css-grid cds--css-grid--full-width" style="margin-top: 2rem">
           
@@ -135,6 +134,7 @@ document.addEventListener("DOMContentLoaded", () => {
         tabElement.textContent = tab.name;
         tabElement.setAttribute("target", `${tab.id}-panel`);
         tabElement.setAttribute("value", tab.id);
+        tab.selected && tabElement.setAttribute("selected", "");
         containers.tabs.appendChild(tabElement);
 
         const panelElement = this.createTabPanel(tab, currentTheme);
