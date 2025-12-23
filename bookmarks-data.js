@@ -204,6 +204,10 @@ const bookmarksData = [
           version: "1.0.0-rc.3",
         },
         {
+          label: "Demo main",
+          href: "https://carbon-ai-chat-demo.netlify.app/",
+        },
+        {
           label: "Docs",
           href: "https://chat.carbondesignsystem.com/tag/next/docs/documents/Overview.html",
           versionedHref:
