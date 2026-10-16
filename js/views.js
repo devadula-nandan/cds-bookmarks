@@ -646,10 +646,8 @@ DD.views = (() => {
         ${extra}
       </li>`;
 
-    const THEME_FLIP = { white: "g100", g10: "g90", g90: "g10", g100: "white" };
-    const altTheme = THEME_FLIP[DD.store.settings.theme] || "white";
     return `
-      <section class="card rail-card cds-theme-zone-${altTheme}">
+      <section class="card rail-card">
         <header class="card__head">
           <h2>${icon("clipboard", 16)} Your day</h2>
           <span class="progress" title="${pct}% of today's responsibilities done"><span class="progress__bar"><span style="width:${pct}%"></span></span>${done}/${rituals.length}</span>

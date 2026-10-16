@@ -2281,12 +2281,6 @@ h4 {
 .rail-card {
   padding: 1rem;
 }
-.stage > .rail-card[class*="cds-theme-zone-"] {
-  color: var(--text);
-  background: var(--surface);
-  border-color: var(--border);
-  box-shadow: var(--shadow-sm);
-}
 .rail-empty {
   display: flex;
   align-items: center;
