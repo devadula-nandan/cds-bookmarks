@@ -311,14 +311,46 @@
     return { render, bind, choose };
   })();
 
+  function closeDemoPopover() {
+    const pop = $("#sync-popover");
+    if (!pop || pop.hidden) return;
+    pop.hidden = true;
+    $("#sync-demo-btn")?.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleDemoPopover() {
+    const pop = $("#sync-popover");
+    const btn = $("#sync-demo-btn");
+    if (!pop || !btn) return;
+    const open = pop.hidden;
+    pop.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+  }
+
   function renderHeader() {
     const s = store.settings;
     const status = $("#sync-status");
+    status.classList.toggle("sync--demo", !!s.demo && !DD.state.syncing && !DD.state.error);
     if (DD.state.syncing) status.innerHTML = `<span class="spinner"></span><span>Syncing…</span>`;
     else if (DD.state.error) status.innerHTML = `<span class="dot dot--error"></span><span title="${esc(DD.state.error)}">Sync failed</span>`;
-    else if (s.demo) status.innerHTML = `<span class="dot dot--warning"></span><span>Sample data</span>`;
-    else if (!s.token) status.innerHTML = `<span class="dot dot--gray"></span><a href="#/settings">Not connected</a>`;
+    else if (s.demo) {
+      if (!status.querySelector("#sync-demo-btn")) {
+        status.innerHTML = `
+          <button class="sync__btn" id="sync-demo-btn" type="button" data-action="demo-info" aria-haspopup="dialog" aria-expanded="false" aria-controls="sync-popover" title="You're viewing sample data">
+            <span class="dot dot--warning"></span>
+            <span>Sample data</span>
+          </button>
+          <div class="sync__popover" id="sync-popover" role="dialog" aria-labelledby="sync-popover-title" hidden>
+            <p id="sync-popover-title">You're viewing <b>sample data</b>. Connect a GitHub token to see your real day.</p>
+            <div class="sync__popover-actions">
+              <a class="btn btn--sm btn--tertiary" href="#/settings">Connect</a>
+              <button class="btn btn--sm btn--ghost" type="button" data-action="demo-off">Exit sample</button>
+            </div>
+          </div>`;
+      }
+    } else if (!s.token) status.innerHTML = `<span class="dot dot--gray"></span><a href="#/settings">Not connected</a>`;
     else if (DD.state.data) status.innerHTML = `<span class="dot dot--success"></span><span title="${esc(new Date(DD.state.data.fetchedAt).toLocaleString())}">Synced ${timeAgo(DD.state.data.fetchedAt)}</span>`;
+    else status.innerHTML = "";
     $("#refresh-btn").classList.toggle("is-spinning", DD.state.syncing);
     $("#theme-btn").innerHTML = icon(["g90", "g100"].includes(s.theme) ? "sun" : "moon", 18);
     const v = DD.state.data?.viewer;
@@ -508,6 +540,7 @@
       samples.forEach((n, i) => DD.notify.push(n, { silent: i < samples.length - 1 }));
       renderAll();
     },
+    "demo-info": () => toggleDemoPopover(),
     "demo-off": () => {
       store.saveSettings({ demo: false });
       DD.notify.removeWhere((n) => n.key?.startsWith("demo:"));
@@ -564,7 +597,7 @@
     reset: () => {
       if (!confirm("Reset all dashboard settings, notifications and daily state? Your token will be removed.")) return;
       Object.keys(localStorage)
-        .filter((k) => k.startsWith("devdash:"))
+        .filter((k) => k.startsWith("devdash:") || k.startsWith("msal."))
         .forEach((k) => localStorage.removeItem(k));
       location.hash = "#/";
       location.reload();
@@ -573,6 +606,8 @@
 
   function bindEvents() {
     document.addEventListener("click", (e) => {
+      const pop = $("#sync-popover");
+      if (pop && !pop.hidden && (!e.target.closest("#sync-status") || e.target.closest("#sync-popover a"))) closeDemoPopover();
       const el = e.target.closest("[data-action]");
       if (!el || el.closest("#notif-panel")) return;
       const fn = actions[el.dataset.action];
@@ -638,15 +673,15 @@
       if (el.dataset.notify) {
         return store.saveSettings({ notifyOn: { ...s.notifyOn, [el.dataset.notify]: el.checked } });
       }
-      if (el.dataset.meeting) {
-        const id = el.closest("[data-id]").dataset.id;
-        const field = el.dataset.meeting;
-        const value = field === "minutes" ? Math.max(5, +el.value || 15) : el.value;
-        return store.saveSettings({ meetings: s.meetings.map((m) => (m.id === id ? { ...m, [field]: value } : m)) });
-      }
       if (el.dataset.ritual) {
         const id = el.closest("[data-id]").dataset.id;
         return store.saveSettings({ rituals: s.rituals.map((r) => (r.id === id ? { ...r, label: el.value } : r)) });
+      }
+      if (el.dataset.meeting) {
+        const id = el.closest("[data-id]").dataset.id;
+        const field = el.dataset.meeting;
+        const value = field === "minutes" ? Number(el.value) : el.value;
+        return store.saveSettings({ meetings: s.meetings.map((m) => (m.id === id ? { ...m, [field]: value } : m)) });
       }
       if (el.dataset.setting) {
         const key = el.dataset.setting;
@@ -704,6 +739,10 @@
       if (e.key === "Escape") {
         if (!$("#palette").hidden) return palette.close();
         if (!$("#notif-panel").hidden) return DD.notify.togglePanel(false);
+        if ($("#sync-popover") && !$("#sync-popover").hidden) {
+          closeDemoPopover();
+          $("#sync-demo-btn")?.focus();
+        }
         return;
       }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -896,7 +935,7 @@
     DD.notify.refresh();
     ["notifications", "inbox"].forEach((event) =>
       DD.bus.on(event, () => {
-        if (route().page === "today") softRender();
+        if (route().page === "today" || route().page === "settings") softRender();
       })
     );
     sync();

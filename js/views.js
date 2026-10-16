@@ -776,9 +776,6 @@ DD.views = (() => {
     const s = DD.store.settings;
     const d = scoped();
     const st = ins.stats(d, scopedInbox());
-    const demo = s.demo
-      ? `<div class="banner">${icon("zap", 16)}<span>You're viewing <b>sample data</b>. Connect a GitHub token to see your real day.</span><a class="btn btn--sm btn--tertiary" href="#/settings">Connect</a><button class="btn btn--sm btn--ghost" data-action="demo-off">Exit sample</button></div>`
-      : "";
     if (!connected()) return `${brief(st)}<div class="connect-wrap">${connectCard()}${yourDay()}</div>`;
 
     const all = ins.focusQueue(d, s);
@@ -786,7 +783,6 @@ DD.views = (() => {
     const visible = all.filter((t) => !day.dismissed[t.key]);
     const lanePending = `<section class="lane">${pending(3)}</section>`;
     return `
-      ${demo}
       <div class="board">
         <div class="board__pane">
           ${brief(st)}

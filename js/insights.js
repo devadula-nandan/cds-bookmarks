@@ -138,6 +138,8 @@ DD.insights = (() => {
         return !data.mine.items.some(isBlocked);
       case "mentions":
         return data.mentions.total === 0;
+      case "assigned":
+        return data.assigned.items.filter((i) => i.kind === "issue").length === 0;
       default:
         return null;
     }

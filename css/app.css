@@ -241,6 +241,7 @@ h4 {
   gap: 0.125rem;
 }
 .sync {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -252,6 +253,49 @@ h4 {
 .sync a {
   color: inherit;
   text-decoration: underline;
+}
+.sync__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.25rem 0.35rem;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.sync__btn:hover,
+.sync__btn[aria-expanded="true"] {
+  color: var(--text);
+  background: var(--layer-hover);
+}
+.sync__popover {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 45;
+  width: 18.5rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface, var(--layer));
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  white-space: normal;
+  animation: menu-in 0.12s ease-out;
+}
+.sync__popover p {
+  margin: 0 0 0.75rem;
+}
+.sync__popover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 .header-avatar {
   display: grid;
@@ -593,8 +637,9 @@ h4 {
   color: var(--cds-button-tertiary, var(--interactive));
 }
 .btn--tertiary:hover {
-  background: var(--cds-button-tertiary, var(--interactive));
-  color: #fff;
+  background: var(--cds-button-tertiary-hover, var(--cds-button-tertiary, var(--interactive)));
+  border-color: var(--cds-button-tertiary-hover, var(--cds-button-tertiary, var(--interactive)));
+  color: var(--cds-text-inverse, #161616);
 }
 .btn--ghost {
   color: var(--link);
@@ -878,22 +923,6 @@ h4 {
   color: var(--text);
   font-weight: 600;
   border-bottom-color: var(--interactive);
-}
-
-.banner {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1.5rem;
-  padding: 0.75rem 1rem;
-  border-left: 3px solid var(--warning);
-  background: var(--cds-notification-background-warning, #fcf4d6);
-}
-.banner {
-  flex-wrap: wrap;
-}
-.banner > span {
-  flex: 1 1 16rem;
 }
 
 .alert {
@@ -1538,6 +1567,9 @@ h4 {
   scroll-snap-align: start;
   scroll-snap-stop: always;
 }
+.board__pane > :not(.stage) {
+  flex-shrink: 0;
+}
 .board__pane .stage {
   flex: 1 1 auto;
   min-height: 0;
@@ -1545,6 +1577,16 @@ h4 {
 .board__pane .stage > .rail-card {
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding-top: 0;
+}
+.board__pane .stage > .rail-card > .card__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 1rem 1rem 0.75rem;
+  margin: 0 -1rem 0.5rem;
+  background: var(--surface, var(--layer));
+  box-shadow: 0 1px 0 var(--border);
 }
 .stage {
   display: grid;
@@ -1731,7 +1773,6 @@ h4 {
 }
 
 /* Today enter — first paint only (.content.is-entering). */
-.content.is-entering .board > .banner,
 .content.is-entering .brief__hello,
 .content.is-entering .daybar,
 .content.is-entering .brief__health li,
@@ -1743,7 +1784,6 @@ h4 {
 .content.is-entering .connect-wrap > * {
   animation: row-in 0.48s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
-.content.is-entering .board > .banner,
 .content.is-entering .brief__hello {
   animation-delay: 0ms;
 }
@@ -2324,6 +2364,14 @@ h4 {
   align-items: center;
   gap: 0.625rem;
   min-height: 1.75rem;
+  margin: 0 -0.375rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius);
+  color: inherit;
+}
+a.agenda__item:hover {
+  text-decoration: none;
+  background: var(--layer-hover);
 }
 .agenda__time {
   color: var(--text-2);
@@ -3016,6 +3064,10 @@ input:focus-visible + .check {
 .settings .card > p {
   margin: 0 0 0.75rem;
 }
+.settings .muted.small .btn {
+  margin-left: 0.25rem;
+  vertical-align: middle;
+}
 .field-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
@@ -3478,7 +3530,6 @@ input:focus-visible + .check {
   .content:has(.board__pane) {
     scroll-snap-type: none;
   }
-  .content.is-entering .board > .banner,
   .content.is-entering .brief__hello,
   .content.is-entering .daybar,
   .content.is-entering .brief__health li,
@@ -3545,6 +3596,9 @@ input:focus-visible + .check {
   }
   .sync {
     display: none;
+  }
+  .sync--demo {
+    display: flex;
   }
 }
 @media (max-width: 860px) {

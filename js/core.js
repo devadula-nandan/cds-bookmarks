@@ -119,6 +119,15 @@ DD.bus = {
   },
 };
 
+function mergeRituals(defaults, saved) {
+  if (!saved?.length) return defaults.map((r) => ({ ...r }));
+  const extras = defaults.filter((r) => r.auto && !saved.some((s) => s.id === r.id || s.auto === r.auto));
+  if (!extras.length) return saved;
+  const lastAuto = saved.reduce((i, r, idx) => (r.auto ? idx : i), -1);
+  const at = lastAuto + 1;
+  return [...saved.slice(0, at), ...extras, ...saved.slice(at)];
+}
+
 DD.store = {
   KEYS: {
     settings: "devdash:settings",
@@ -150,6 +159,7 @@ DD.store = {
         { id: "reviews", label: "Clear the review queue", auto: "reviews" },
         { id: "own", label: "Unblock my PRs (CI, conflicts, feedback)", auto: "ownBlocked" },
         { id: "mentions", label: "Reply to mentions", auto: "mentions" },
+        { id: "assigned", label: "Work on assigned issues", auto: "assigned" },
         { id: "triage", label: "Triage new issues" },
         { id: "board", label: "Update the sprint board" },
         { id: "standup", label: "Post standup update" },
@@ -201,6 +211,8 @@ DD.store = {
         ...defaults,
         ...saved,
         notifyOn: { ...defaults.notifyOn, ...(saved.notifyOn || {}) },
+        meetings: Array.isArray(saved.meetings) ? saved.meetings : defaults.meetings,
+        rituals: mergeRituals(defaults.rituals, saved.rituals),
       };
     }
     return this._settings;

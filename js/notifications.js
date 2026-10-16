@@ -360,7 +360,6 @@ DD.notify = (() => {
   // ---------- schedule reminders ----------
 
   function checkSchedule() {
-    const settings = DD.store.settings;
     const now = new Date();
     const day = DD.store.day();
     const remind = (key, payload) => {
@@ -369,6 +368,7 @@ DD.notify = (() => {
       push({ type: "meeting", key: `${todayKey()}:${key}`, ...payload });
     };
 
+    const settings = DD.store.settings;
     settings.meetings
       .filter((m) => !m.days?.length || m.days.includes(now.getDay()))
       .forEach((m) => {
