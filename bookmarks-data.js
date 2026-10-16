@@ -49,6 +49,10 @@ const bookmarksData = [
           label: "icons",
           href: "https://carbondesignsystem.com/elements/icons/library/",
         },
+        {
+          label: "v12 compare",
+          href: "https://push.propel.wdc.app.cirrus.ibm.com/s/D1bdEX/carbon-v12-compare/#overview",
+        },
       ],
       icon: `<svg focusable="false" preserveAspectRatio="xMidYMid meet" fill="currentColor" width="32" height="32" viewBox="0 0 32 32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" slot="icon">
         <path d="M16,2A14,14,0,1,0,30,16,14.0158,14.0158,0,0,0,16,2ZM4.02,16.394l1.3384.4458L7,19.3027v1.2831a1,1,0,0,0,.2929.7071L10,24v2.3765A11.9941,11.9941,0,0,1,4.02,16.394ZM16,28a11.9682,11.9682,0,0,1-2.5718-.2847L14,26l1.8046-4.5116a1,1,0,0,0-.0964-.9261l-1.4113-2.117A1,1,0,0,0,13.4648,18h-4.93L7.2866,16.1274,9.4141,14H11v2h2V13.2656l3.8682-6.7695-1.7364-.9922L14.2769,7H11.5352l-1.086-1.6289A11.861,11.861,0,0,1,20,4.7V8a1,1,0,0,0,1,1h1.4648a1,1,0,0,0,.8321-.4453l.8769-1.3154A12.0331,12.0331,0,0,1,26.8945,11H22.82a1,1,0,0,0-.9806.8039l-.7221,4.4708a1,1,0,0,0,.54,1.0539L25,19l.6851,4.0557A11.9793,11.9793,0,0,1,16,28Z"></path>
@@ -269,6 +273,83 @@ const bookmarksData = [
         },
       ],
       icon: "",
+    },
+  },
+  {
+    id: "labs",
+    name: "Carbon Labs",
+    icon: `<svg focusable="false" preserveAspectRatio="xMidYMid meet" fill="currentColor" width="48" height="48" viewBox="0 0 32 32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <path d="M11 2v2h1v7.43L4.62 24.7A3.5 3.5 0 0 0 7.68 30h16.64a3.5 3.5 0 0 0 3.06-5.3L20 11.43V4h1V2Zm3 2h4v8l3.33 6H10.67L14 12ZM9.56 20h12.88l3.2 5.76A1.5 1.5 0 0 1 24.32 28H7.68a1.5 1.5 0 0 1-1.32-2.24Z"></path>
+      <title>Carbon Labs</title>
+    </svg>`,
+    github: {
+      title: "Github",
+      buttons: [
+        {
+          label: "Issues",
+          href: "https://github.com/carbon-design-system/carbon-labs/issues",
+        },
+        {
+          label: "Issues - commented",
+          href: "https://github.com/carbon-design-system/carbon-labs/issues?q=is%3Aissue%20state%3Aopen%20commenter%3A%40me",
+        },
+        {
+          label: "Pull Requests - assigned to me",
+          href: "https://github.com/carbon-design-system/carbon-labs/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me",
+        },
+        {
+          label: "Pull Requests - opened by me",
+          href: "https://github.com/carbon-design-system/carbon-labs/pulls/@me",
+        },
+      ],
+    },
+    storybooks: {
+      title: "Storybooks",
+      buttons: [
+        {
+          label: "Storybook",
+          href: "https://labs.carbondesignsystem.com/",
+        },
+      ],
+    },
+  },
+  {
+    id: "charts",
+    name: "Carbon Charts",
+    icon: `<svg focusable="false" preserveAspectRatio="xMidYMid meet" fill="currentColor" width="48" height="48" viewBox="0 0 32 32" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 2H2v26a2 2 0 0 0 2 2h26v-2H4Z"></path>
+      <path d="M8 18h4v8H8zM15 12h4v14h-4zM22 6h4v20h-4z"></path>
+      <title>Carbon Charts</title>
+    </svg>`,
+    github: {
+      title: "Github",
+      buttons: [
+        {
+          label: "Issues",
+          href: "https://github.com/carbon-design-system/carbon-charts/issues",
+        },
+        {
+          label: "Issues - commented",
+          href: "https://github.com/carbon-design-system/carbon-charts/issues?q=is%3Aissue%20state%3Aopen%20commenter%3A%40me",
+        },
+        {
+          label: "Pull Requests - assigned to me",
+          href: "https://github.com/carbon-design-system/carbon-charts/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me",
+        },
+        {
+          label: "Pull Requests - opened by me",
+          href: "https://github.com/carbon-design-system/carbon-charts/pulls/@me",
+        },
+      ],
+    },
+    website: {
+      title: "Website",
+      buttons: [
+        {
+          label: "Docs",
+          href: "https://charts.carbondesignsystem.com/",
+        },
+      ],
     },
   },
 ];

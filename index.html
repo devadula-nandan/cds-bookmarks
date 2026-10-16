@@ -3,71 +3,104 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>CDS Bookmarks</title>
+    <meta name="theme-color" content="#0f62fe" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Dev Dashboard" />
+    <title>Dev Dashboard</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
 
     <script>
       (function () {
-        const savedTheme =
-          localStorage.getItem('theme') ||
-          (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'g100' : 'white');
-        document.documentElement.className = `cds-theme-zone-${savedTheme}`;
+        let theme = "white";
+        try {
+          const settings = JSON.parse(localStorage.getItem("devdash:settings") || "{}");
+          theme =
+            settings.theme ||
+            localStorage.getItem("theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "g100" : "white");
+        } catch {}
+        document.documentElement.className = `cds-theme-zone-${theme}`;
       })();
     </script>
 
     <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/web-components/tag/latest/themes.css" />
     <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/plex/sans.css" />
-    
-    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/grid.css" />
-    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/web-components/tag/next/cssgrid.css" />
-
-    <style>
-      body {
-        font-family: 'IBM Plex Sans', Helvetica Neue, Arial, sans-serif;
-        margin: 0;
-        color: var(--cds-text-primary);
-        background-color: var(--cds-background);
-      }
-      cds-tab {
-        font-size: calc(1.125rem + 0.5vw);
-        font-weight: 400;
-      }
-      * { box-sizing: border-box; }
-      cds-tabs:not(:defined),
-      cds-dropdown:not(:defined),
-      cds-dropdown-item:not(:defined) {
-        display: none;
-      }
-      .tab-panels-container {
-        flex: 1;
-        align-self: stretch;
-        padding: 1rem;
-      }
-      @media (max-width: 1024px) {
-        #date-time-container { display: none; }
-      }
-    </style>
-
-    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/dropdown.min.js"></script>
-    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/button.min.js"></script>
-    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/tag.min.js"></script>
-    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/tile.min.js"></script>
-    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/tabs.min.js"></script>
-    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/heading.min.js"></script>
-    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/toggle.min.js"></script>
-    <script type="module" src="https://1.www.s81c.com/common/carbon/web-components/version/v2.40.1/text-input.min.js"></script>
+    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/plex/mono.css" />
+    <link rel="stylesheet" href="css/app.css?v=48" />
   </head>
 
   <body>
-    <header style="display: flex; background-color: var(--cds-layer-01); justify-content: space-between; align-items: center; box-shadow: inset 0px -2px 0px var(--cds-border-subtle);">
-      <cds-tabs id="main-tabs" value="cds"></cds-tabs>
-      <figure id="date-time-container" style="flex: none; font-size: 1.4em; font-weight: 100; margin: 0 1rem;">
-        <figcaption id="date-time"></figcaption>
-      </figure>
+    <a class="skip-link" href="#content">Skip to content</a>
+
+    <header class="topbar">
+      <div class="topbar__row">
+        <a class="brand" href="#/">
+          <span class="brand__mark" aria-hidden="true"></span>
+          <span class="brand__name">Dev Dashboard</span>
+        </a>
+        <div class="scope" id="scope"></div>
+        <button class="search-trigger" data-action="palette" aria-label="Search and commands">
+          <span class="search-trigger__icon"></span>
+          <span class="search-trigger__text">Search PRs, issues, links, commands…</span>
+          <kbd>⌘K</kbd>
+        </button>
+        <div class="topbar__actions">
+          <span class="sync" id="sync-status" aria-live="polite"></span>
+          <button class="icon-btn" id="refresh-btn" data-action="sync" title="Sync now (R)" aria-label="Sync now"></button>
+          <button class="icon-btn" id="theme-btn" data-action="theme-toggle" title="Toggle light/dark" aria-label="Toggle theme"></button>
+          <button class="icon-btn bell" id="bell-btn" data-action="open-center" title="Notifications (N)" aria-label="Notifications" aria-controls="notif-panel" aria-expanded="false">
+            <span class="bell__icon"></span>
+            <span class="bell__badge" id="bell-badge" hidden>0</span>
+          </button>
+          <a class="header-avatar" id="header-avatar" href="#/settings" aria-label="Settings"></a>
+        </div>
+      </div>
+      <nav class="mainnav" id="mainnav" aria-label="Main"></nav>
     </header>
 
-    <main class="tab-panels-container" id="tab-panels"></main>
+    <main class="content" id="content" tabindex="-1"></main>
 
-    <script src="bookmarks-data.js"></script>
-    <script src="app.js"></script>
+    <div class="scrim" id="scrim" hidden></div>
+
+    <aside class="panel" id="notif-panel" hidden aria-label="Notification center">
+      <header class="panel__head">
+        <h2>Notifications</h2>
+        <div class="panel__head-actions">
+          <button class="icon-btn icon-btn--sm" data-action="dnd" aria-label="Do not disturb"></button>
+          <button class="btn btn--ghost btn--sm" data-action="read-all">Mark all read</button>
+          <button class="btn btn--ghost btn--sm" data-action="clear">Clear</button>
+          <button class="icon-btn icon-btn--sm panel__close" data-action="close" aria-label="Close"></button>
+        </div>
+      </header>
+      <div class="panel__tabs segmented segmented--sm"></div>
+      <div class="panel__body"></div>
+    </aside>
+
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <div class="palette" id="palette" hidden role="dialog" aria-modal="true" aria-label="Command palette">
+      <div class="palette__box">
+        <label class="palette__input">
+          <span class="palette__icon"></span>
+          <input type="text" id="palette-input" placeholder="Jump to a PR, issue, repo, link or command…" autocomplete="off" aria-label="Search" />
+          <kbd>esc</kbd>
+        </label>
+        <ul class="palette__list" id="palette-list" role="listbox"></ul>
+      </div>
+    </div>
+
+    <script src="bookmarks-data.js?v=48"></script>
+    <script src="js/core.js?v=48"></script>
+    <script src="js/icons.js?v=48"></script>
+    <script src="js/repos.js?v=48"></script>
+    <script src="js/github.js?v=48"></script>
+    <script src="js/insights.js?v=48"></script>
+    <script src="js/demo.js?v=48"></script>
+    <script src="js/notifications.js?v=48"></script>
+    <script src="js/views.js?v=48"></script>
+    <script src="js/app.js?v=48"></script>
   </body>
 </html>
