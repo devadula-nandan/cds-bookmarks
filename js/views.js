@@ -303,7 +303,10 @@ DD.views = (() => {
       <section class="brief">
         <div class="brief__hello">
           <p class="eyebrow">${esc(date)}${DD.scope.current() ? `<span class="scope-note">${esc(shortName(DD.scope.current()))} only · <button data-action="scope" data-slug="">Show all repos</button></span>` : ""}</p>
-          <h1>${ins.greeting()}${name ? `, ${esc(name)}` : ""}</h1>
+          <div class="brief__title">
+            <h1>${ins.greeting()}${name ? `, ${esc(name)}` : ""}</h1>
+            <time class="clock" id="live-clock"></time>
+          </div>
           <p class="brief__summary">${heroSummary(st)}</p>
         </div>
         ${dayTimeline()}
@@ -652,6 +655,8 @@ DD.views = (() => {
           <h2>${icon("clipboard", 16)} Your day</h2>
           <span class="progress" title="${pct}% of today's responsibilities done"><span class="progress__bar"><span style="width:${pct}%"></span></span>${done}/${rituals.length}</span>
         </header>
+        <div class="rail-card__viewport">
+        <div class="rail-card__body">
 
         <h3 class="subhead">Schedule <a href="#/settings/schedule">Edit</a></h3>
         ${
@@ -706,6 +711,8 @@ DD.views = (() => {
                 .join("")}</ul>`
             : ""
         }
+        </div>
+        </div>
       </section>`;
   }
 

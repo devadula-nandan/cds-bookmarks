@@ -109,6 +109,157 @@
     return { bind, move, update };
   })();
 
+  /** Edge fades for the Your day rail, matching the Up next carousel. */
+  const railFade = (() => {
+    let ro = null;
+
+    function body() {
+      return $(".board__pane .stage > .rail-card .rail-card__body");
+    }
+
+    function update() {
+      const root = body();
+      const card = root?.closest(".rail-card");
+      if (!root || !card) return;
+      const max = Math.max(0, root.scrollHeight - root.clientHeight - 2);
+      card.classList.toggle("is-overflow-start", root.scrollTop > 16);
+      card.classList.toggle("is-overflow-end", max > 16 && root.scrollTop < max - 16);
+    }
+
+    function bind() {
+      ro?.disconnect();
+      ro = null;
+      const root = body();
+      if (!root) return;
+      root.addEventListener("scroll", update, { passive: true });
+      ro = new ResizeObserver(update);
+      ro.observe(root);
+      update();
+    }
+
+    return { bind, update };
+  })();
+
+  /** Live 12-hour clock; each glyph slides out as the next slides in. */
+  const clock = (() => {
+    let timer = 0;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const SLOTS = ["h0", "h1", "m0", "m1", "ap"];
+
+    function pad(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function parts(d = new Date()) {
+      let h = d.getHours();
+      const ap = h < 12 ? "AM" : "PM";
+      h = h % 12 || 12;
+      const mm = pad(d.getMinutes());
+      return { h0: h >= 10 ? "1" : "\u00a0", h1: String(h % 10), m0: mm[0], m1: mm[1], ap };
+    }
+
+    function label(d = new Date()) {
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
+    }
+
+    function glyph(text) {
+      const el = document.createElement("span");
+      el.className = "clock__num";
+      el.textContent = text;
+      el.setAttribute("aria-hidden", "true");
+      return el;
+    }
+
+    function shown(slot) {
+      return slot.querySelector(".clock__num:not(.is-out)")?.textContent ?? "";
+    }
+
+    function isBlank(text) {
+      return text === "\u00a0" || text === " " || text === "";
+    }
+
+    function settle(slot, text) {
+      slot.querySelectorAll(".clock__num").forEach((n) => n.remove());
+      slot.toggleAttribute("data-empty", isBlank(text));
+      slot.append(glyph(text));
+    }
+
+    function step(slot, text) {
+      if (shown(slot) === text) return;
+      if (reduce.matches) return settle(slot, text);
+      slot.toggleAttribute("data-empty", isBlank(text));
+      slot.querySelectorAll(".clock__num.is-out").forEach((n) => n.remove());
+      const outgoing = slot.querySelector(".clock__num:not(.is-out)");
+      const incoming = glyph(text);
+      incoming.classList.add("is-in");
+      slot.append(incoming);
+      outgoing?.classList.add("is-out");
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => incoming.classList.add("is-on"));
+      });
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        outgoing?.remove();
+        incoming.classList.remove("is-in", "is-on");
+      };
+      incoming.addEventListener("transitionend", (e) => {
+        if (e.propertyName === "transform") finish();
+      });
+      setTimeout(finish, 700);
+    }
+
+    function mount(el, d) {
+      const p = parts(d);
+      el.innerHTML = `
+        <span class="clock__digit" data-slot="h0"></span>
+        <span class="clock__digit" data-slot="h1"></span>
+        <span class="clock__sep" aria-hidden="true">:</span>
+        <span class="clock__digit" data-slot="m0"></span>
+        <span class="clock__digit" data-slot="m1"></span>
+        <span class="clock__period" data-slot="ap"></span>`;
+      SLOTS.forEach((id) => settle(el.querySelector(`[data-slot="${id}"]`), p[id]));
+    }
+
+    function paint(animate) {
+      const el = $("#live-clock");
+      if (!el) return;
+      const now = new Date();
+      if (!el.querySelector("[data-slot]")) mount(el, now);
+      el.dateTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      el.setAttribute("aria-label", label(now));
+      const p = parts(now);
+      SLOTS.forEach((id) => {
+        const slot = el.querySelector(`[data-slot="${id}"]`);
+        if (!slot) return;
+        if (animate) step(slot, p[id]);
+        else settle(slot, p[id]);
+      });
+    }
+
+    function loop() {
+      clearTimeout(timer);
+      paint(true);
+      const now = new Date();
+      timer = setTimeout(loop, Math.max(250, (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 30));
+    }
+
+    function bind() {
+      paint(false);
+    }
+
+    function start() {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") clearTimeout(timer);
+        else loop();
+      });
+      loop();
+    }
+
+    return { bind, start };
+  })();
+
   let enterIO = null;
   let enterTimer = 0;
   function bindEnter(root) {
@@ -156,6 +307,7 @@
         settings: () => views.settings(),
       }[page]?.() ?? views.home();
     const carouselX = keepScroll ? $(".upnext__scroller")?.scrollLeft || 0 : 0;
+    const railY = keepScroll ? $(".board__pane .stage > .rail-card .rail-card__body")?.scrollTop || 0 : 0;
     const boardY = keepScroll ? $("#content")?.scrollTop || 0 : 0;
     const content = $("#content");
     if (!keepScroll) {
@@ -174,11 +326,16 @@
     }
     masonry.layout();
     carousel.bind();
+    railFade.bind();
+    clock.bind();
     bindEnter(content);
     if (keepScroll) {
       const root = $(".upnext__scroller");
       if (root) root.scrollLeft = carouselX;
       carousel.update();
+      const rail = $(".board__pane .stage > .rail-card .rail-card__body");
+      if (rail) rail.scrollTop = railY;
+      railFade.update();
     }
   }
 
@@ -939,6 +1096,7 @@
       })
     );
     sync();
+    clock.start();
     setInterval(tick, 60000);
   }
 
