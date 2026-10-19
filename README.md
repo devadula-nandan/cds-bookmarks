@@ -57,7 +57,16 @@ Open them from the gear icon on the new tab:
 - **Meetings**: recurring weekday meetings, reminded 5 minutes before.
 - **Appearance**: system, light or dark.
 
-If notifications don't appear on macOS, allow them for Chrome in **System Settings → Notifications**.
+### If notifications don't show up
+
+Click **Send a test notification** under Notifications in Settings. Chrome passes notifications on to the operating system, so if the test doesn't appear, the cause is usually an OS setting:
+
+- **macOS**: go to **System Settings → Notifications → Google Chrome**. Turn on **Allow notifications** and set the alert style to **Banners** or **Alerts**, not **None**. If more than one Chrome entry is listed, change the main "Google Chrome" one.
+- **Windows**: go to **Settings → System → Notifications** and turn on **Google Chrome**.
+- **Focus / Do Not Disturb** hides banners. Turn it off, or add Chrome to the apps your Focus allows.
+- **Check Notification Center** (click the clock in the macOS menu bar). If the test is listed there, notifications are arriving and only the banner is hidden.
+
+The web version also needs the site's permission. Chrome asks for it the first time you send a test. If you blocked it, allow it again from the site settings icon in the address bar. On the web, notifications only appear while the tab is open in the background. While the tab is in front, updates show as messages on the page instead.
 
 ## Editing links and repos
 
