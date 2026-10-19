@@ -1,774 +1,1280 @@
+/** The new tab page. Reads state from storage, renders, and asks the background worker to sync. */
 (() => {
-  const { esc, timeAgo, repoShort } = DD.util;
+  const { esc, timeAgo, plural, ageDays } = DD.util;
   const { icon } = DD.icons;
-  const store = DD.store;
-  const views = DD.views;
-  const $ = (sel) => document.querySelector(sel);
+  const ins = DD.insights;
+  const ext = DD.storage.isExtension && !!globalThis.chrome?.runtime?.id;
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
-  let lastSync = 0;
+  const CLASSIC_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo,notifications,read:org&description=Dev%20Dashboard";
+  const UI_KEY = "devdash-ui";
 
-  /**
-   * Masonry for `[data-masonry]` grids: each card spans as many small grid rows
-   * as its height needs, so short cards tuck under tall ones while DOM order
-   * (and keyboard order) stays intact.
-   */
-  const masonry = (() => {
-    const native = CSS.supports("grid-template-rows", "masonry");
-    let observer = null;
-
-    function fit(el, row, gap) {
-      el.style.gridRowEnd = `span ${Math.max(1, Math.ceil((el.offsetHeight + gap) / row))}`;
-    }
-
-    function layout() {
-      observer?.disconnect();
-      const grid = $("[data-masonry]");
-      if (!grid || native) return;
-      const style = getComputedStyle(grid);
-      const row = parseFloat(style.gridAutoRows) || 4;
-      const gap = parseFloat(style.columnGap) || 16;
-      const cards = [...grid.children];
-      cards.forEach((el) => fit(el, row, gap));
-      observer = new ResizeObserver((entries) => entries.forEach((e) => fit(e.target, row, gap)));
-      cards.forEach((el) => observer.observe(el));
-    }
-
-    return { layout };
-  })();
-
-  /** Horizontal snap carousel for the Up next queue. */
-  const carousel = (() => {
-    function scroller() {
-      return $(".upnext__scroller");
-    }
-
-    function listEl() {
-      return scroller()?.querySelector(".upnext__list");
-    }
-
-    function rows() {
-      const list = listEl();
-      if (!list) return 1;
-      return getComputedStyle(list).gridTemplateRows.split(" ").filter(Boolean).length || 1;
-    }
-
-    function cardStep() {
-      const root = scroller();
-      const card = root?.querySelector(".next");
-      if (!card) return 0;
-      const list = listEl();
-      const gap = list ? parseFloat(getComputedStyle(list).columnGap || getComputedStyle(list).gap) || 12 : 12;
-      return card.getBoundingClientRect().width + gap;
-    }
-
-    function update() {
-      const root = scroller();
-      const prev = $("#upnext-prev");
-      const next = $("#upnext-next");
-      const pos = $("#upnext-pos");
-      if (!root || !prev) return;
-      const cards = root.querySelectorAll(".next").length;
-      const max = Math.max(0, root.scrollWidth - root.clientWidth - 2);
-      prev.disabled = root.scrollLeft <= 2;
-      next.disabled = root.scrollLeft >= max;
-      const section = root.closest(".upnext");
-      if (section) {
-        section.classList.toggle("is-overflow-start", root.scrollLeft > 16);
-        section.classList.toggle("is-overflow-end", max > 16 && root.scrollLeft < max - 16);
-      }
-      const step = cardStep();
-      const per = rows();
-      const col = step ? Math.round(root.scrollLeft / step) : 0;
-      const start = col * per + 1;
-      const end = Math.min(start + per - 1, cards);
-      if (pos) pos.textContent = start >= end ? `${end} / ${cards}` : `${start}–${end} / ${cards}`;
-    }
-
-    function move(dir) {
-      const root = scroller();
-      if (!root) return;
-      root.scrollBy({ left: dir * cardStep(), behavior: "smooth" });
-    }
-
-    function bind() {
-      const root = scroller();
-      if (!root) return;
-      root.addEventListener("scroll", update, { passive: true });
-      root.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowRight") {
-          e.preventDefault();
-          move(1);
-        } else if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          move(-1);
-        }
-      });
-      update();
-    }
-
-    return { bind, move, update };
-  })();
-
-  /** Edge fades for the Your day rail, matching the Up next carousel. */
-  const railFade = (() => {
-    let ro = null;
-
-    function body() {
-      return $(".board__pane .stage > .rail-card .rail-card__body");
-    }
-
-    function update() {
-      const root = body();
-      const card = root?.closest(".rail-card");
-      if (!root || !card) return;
-      const max = Math.max(0, root.scrollHeight - root.clientHeight - 2);
-      card.classList.toggle("is-overflow-start", root.scrollTop > 16);
-      card.classList.toggle("is-overflow-end", max > 16 && root.scrollTop < max - 16);
-    }
-
-    function bind() {
-      ro?.disconnect();
-      ro = null;
-      const root = body();
-      if (!root) return;
-      root.addEventListener("scroll", update, { passive: true });
-      ro = new ResizeObserver(update);
-      ro.observe(root);
-      update();
-    }
-
-    return { bind, update };
-  })();
-
-  /** Live 12-hour clock; each glyph slides out as the next slides in. */
-  const clock = (() => {
-    let timer = 0;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const SLOTS = ["h0", "h1", "m0", "m1", "ap"];
-
-    function pad(n) {
-      return String(n).padStart(2, "0");
-    }
-
-    function parts(d = new Date()) {
-      let h = d.getHours();
-      const ap = h < 12 ? "AM" : "PM";
-      h = h % 12 || 12;
-      const mm = pad(d.getMinutes());
-      return { h0: h >= 10 ? "1" : "\u00a0", h1: String(h % 10), m0: mm[0], m1: mm[1], ap };
-    }
-
-    function label(d = new Date()) {
-      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
-    }
-
-    function glyph(text) {
-      const el = document.createElement("span");
-      el.className = "clock__num";
-      el.textContent = text;
-      el.setAttribute("aria-hidden", "true");
-      return el;
-    }
-
-    function shown(slot) {
-      return slot.querySelector(".clock__num:not(.is-out)")?.textContent ?? "";
-    }
-
-    function isBlank(text) {
-      return text === "\u00a0" || text === " " || text === "";
-    }
-
-    function settle(slot, text) {
-      slot.querySelectorAll(".clock__num").forEach((n) => n.remove());
-      slot.toggleAttribute("data-empty", isBlank(text));
-      slot.append(glyph(text));
-    }
-
-    function step(slot, text) {
-      if (shown(slot) === text) return;
-      if (reduce.matches) return settle(slot, text);
-      slot.toggleAttribute("data-empty", isBlank(text));
-      slot.querySelectorAll(".clock__num.is-out").forEach((n) => n.remove());
-      const outgoing = slot.querySelector(".clock__num:not(.is-out)");
-      const incoming = glyph(text);
-      incoming.classList.add("is-in");
-      slot.append(incoming);
-      outgoing?.classList.add("is-out");
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => incoming.classList.add("is-on"));
-      });
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        outgoing?.remove();
-        incoming.classList.remove("is-in", "is-on");
-      };
-      incoming.addEventListener("transitionend", (e) => {
-        if (e.propertyName === "transform") finish();
-      });
-      setTimeout(finish, 700);
-    }
-
-    function mount(el, d) {
-      const p = parts(d);
-      el.innerHTML = `
-        <span class="clock__digit" data-slot="h0"></span>
-        <span class="clock__digit" data-slot="h1"></span>
-        <span class="clock__sep" aria-hidden="true">:</span>
-        <span class="clock__digit" data-slot="m0"></span>
-        <span class="clock__digit" data-slot="m1"></span>
-        <span class="clock__period" data-slot="ap"></span>`;
-      SLOTS.forEach((id) => settle(el.querySelector(`[data-slot="${id}"]`), p[id]));
-    }
-
-    function paint(animate) {
-      const el = $("#live-clock");
-      if (!el) return;
-      const now = new Date();
-      if (!el.querySelector("[data-slot]")) mount(el, now);
-      el.dateTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      el.setAttribute("aria-label", label(now));
-      const p = parts(now);
-      SLOTS.forEach((id) => {
-        const slot = el.querySelector(`[data-slot="${id}"]`);
-        if (!slot) return;
-        if (animate) step(slot, p[id]);
-        else settle(slot, p[id]);
-      });
-    }
-
-    function loop() {
-      clearTimeout(timer);
-      paint(true);
-      const now = new Date();
-      timer = setTimeout(loop, Math.max(250, (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 30));
-    }
-
-    function bind() {
-      paint(false);
-    }
-
-    function start() {
-      document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "hidden") clearTimeout(timer);
-        else loop();
-      });
-      loop();
-    }
-
-    return { bind, start };
-  })();
-
-  let enterIO = null;
-  let enterTimer = 0;
-  function bindEnter(root) {
-    enterIO?.disconnect();
-    enterIO = null;
-    const items = [...(root?.querySelectorAll(".masonry > *") || [])];
-    if (!items.length) return;
-    if (!root.classList.contains("is-entering") || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      items.forEach((el) => el.classList.add("is-in"));
-      return;
-    }
-    const overflow = getComputedStyle(root).overflowY;
-    const scrollRoot = overflow === "auto" || overflow === "scroll" ? root : null;
-    enterIO = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((e) => {
-          if (!e.isIntersecting) return;
-          e.target.classList.add("is-in");
-          enterIO?.unobserve(e.target);
-        });
-      },
-      { root: scrollRoot, threshold: 0.12, rootMargin: "0px 0px -8% 0px" }
-    );
-    items.forEach((el) => enterIO.observe(el));
-  }
-
-  // ---------- routing ----------
-
-  function route() {
-    const [page = "", sub = ""] = location.hash.replace(/^#\/?/, "").split("/");
-    return { page: page || "today", sub };
-  }
-
-  function renderContent({ keepScroll = false } = {}) {
-    const { page, sub } = route();
-    const scroll = window.scrollY;
-    const html =
-      {
-        today: () => views.home(),
-        reviews: () => views.reviews(),
-        prs: () => views.prs(sub),
-        issues: () => views.issues(sub),
-        repo: () => views.repoPage(sub),
-        links: () => views.links(),
-        settings: () => views.settings(),
-      }[page]?.() ?? views.home();
-    const carouselX = keepScroll ? $(".upnext__scroller")?.scrollLeft || 0 : 0;
-    const railY = keepScroll ? $(".board__pane .stage > .rail-card .rail-card__body")?.scrollTop || 0 : 0;
-    const boardY = keepScroll ? $("#content")?.scrollTop || 0 : 0;
-    const content = $("#content");
-    if (!keepScroll) {
-      content.classList.add("is-entering");
-      clearTimeout(enterTimer);
-      enterTimer = setTimeout(() => content.classList.remove("is-entering"), 1400);
-    }
-    content.innerHTML = views.syncAlert() + html;
-    if (keepScroll) {
-      window.scrollTo(0, scroll);
-      content.scrollTop = boardY;
-    } else {
-      window.scrollTo(0, 0);
-      content.scrollTop = 0;
-      if (page === "settings" && sub) document.getElementById(`settings-${sub}`)?.scrollIntoView({ block: "start" });
-    }
-    masonry.layout();
-    carousel.bind();
-    railFade.bind();
-    clock.bind();
-    bindEnter(content);
-    if (keepScroll) {
-      const root = $(".upnext__scroller");
-      if (root) root.scrollLeft = carouselX;
-      carousel.update();
-      const rail = $(".board__pane .stage > .rail-card .rail-card__body");
-      if (rail) rail.scrollTop = railY;
-      railFade.update();
-    }
-  }
-
-  function renderNav() {
-    const { page } = route();
-    const st = DD.insights.stats(DD.scope.data(DD.state.data), DD.scope.inbox(DD.state.inbox));
-    const item = (href, ic, text, active, count, tone = "") => `
-      <a class="nav-tab ${active ? "nav-tab--active" : ""}" href="${href}" ${active ? 'aria-current="page"' : ""}>
-        ${ic}<span>${text}</span>
-        ${count ? `<span class="nav-count ${tone ? `nav-count--${tone}` : ""}">${count}</span>` : ""}
-      </a>`;
-    $("#mainnav").innerHTML = `
-      ${item("#/", icon("home", 16), "Today", page === "today")}
-      ${item("#/reviews", icon("eye", 16), "Reviews", page === "reviews", st?.reviews, "info")}
-      ${item("#/prs", icon("pr", 16), "My PRs", page === "prs", st?.mine, st?.blocked ? "warning" : "")}
-      ${item("#/issues", icon("issue", 16), "Issues", page === "issues", st ? st.assigned + st.mentions : 0)}
-      <span class="mainnav__sep" aria-hidden="true"></span>
-      ${item("#/links", icon("link", 16), "Links", page === "links")}`;
-    $("#mainnav .nav-tab--active")?.scrollIntoView({ block: "nearest", inline: "nearest" });
-    const avatar = $("#header-avatar");
-    if (avatar) {
-      if (page === "settings") avatar.setAttribute("aria-current", "page");
-      else avatar.removeAttribute("aria-current");
-    }
-    scopePicker.render();
-  }
-
-  // ---------- repo scope picker ----------
-
-  const scopePicker = (() => {
-    let open = false;
-    const STATE_TEXT = { error: "main failing", success: "main passing", warning: "main running", gray: "status unknown" };
-
-    function tone(repo) {
-      const state = DD.state.data?.repos?.[repo.slug]?.main?.state;
-      if (!state) return "gray";
-      if (["FAILURE", "ERROR"].includes(state)) return "error";
-      return state === "SUCCESS" ? "success" : "warning";
-    }
-
-    function overallTone(repos) {
-      const tones = repos.map(tone);
-      if (tones.includes("error")) return "error";
-      if (tones.includes("warning")) return "warning";
-      return tones.length && tones.every((t) => t === "success") ? "success" : "gray";
-    }
-
-    function option(slug, logo, name, sub, t, selected) {
-      return `
-        <li class="scope__option ${selected ? "is-selected" : ""}" role="option" aria-selected="${selected}" tabindex="-1" data-slug="${esc(slug)}">
-          <span class="scope__logo">${logo}</span>
-          <span class="scope__name">${esc(name)}<small>${sub}</small></span>
-          <span class="scope__check">${selected ? icon("check", 16) : ""}</span>
-        </li>`;
-    }
-
-    function render() {
-      const repos = DD.repos.enabled();
-      const current = DD.scope.current();
-      const failing = repos.filter((r) => tone(r) === "error");
-      const allSub = failing.length
-        ? `<span class="t-error">main failing on ${esc(failing.map((r) => views.shortName(r)).join(", "))}</span>`
-        : `${repos.length} repositories`;
-      $("#scope").innerHTML = `
-        <button class="scope__btn" id="scope-btn" aria-haspopup="listbox" aria-expanded="${open}" aria-controls="scope-list" aria-label="Repository scope: ${esc(current ? current.name : "All repositories")}">
-          <span class="dot dot--${current ? tone(current) : overallTone(repos)}"></span>
-          <span class="scope__label">${current ? esc(views.shortName(current)) : "All repos"}</span>
-          ${icon("chevronDown", 14)}
-        </button>
-        <ul class="scope__list" id="scope-list" role="listbox" aria-label="Show work from" ${open ? "" : "hidden"}>
-          <li class="scope__heading" role="presentation">Show work from</li>
-          ${option("", icon("book", 18), "All repositories", allSub, overallTone(repos), !current)}
-          ${repos
-            .map((r) => {
-              const t = tone(r);
-              const sub = `<span class="dot dot--${t}"></span>${STATE_TEXT[t]} · <span class="mono">${esc(r.slug.split("/")[1])}</span>`;
-              return option(r.slug, r.logo, r.name, sub, t, current?.slug === r.slug);
-            })
-            .join("")}
-        </ul>`;
-    }
-
-    function toggle(force) {
-      open = force ?? !open;
-      $("#scope-list").hidden = !open;
-      $("#scope-btn").setAttribute("aria-expanded", String(open));
-      if (open) ($("#scope-list .is-selected") || $("#scope-list [role=option]"))?.focus();
-    }
-
-    function choose(slug) {
-      open = false;
-      DD.scope.set(slug);
-      views.ui.repo = slug || "all";
-      renderAll({ keepScroll: true });
-      $("#scope-btn")?.focus();
-    }
-
-    function bind() {
-      const root = $("#scope");
-      root.addEventListener("click", (e) => {
-        if (e.target.closest("#scope-btn")) return toggle();
-        const opt = e.target.closest("[role=option]");
-        if (opt) choose(opt.dataset.slug);
-      });
-      document.addEventListener("click", (e) => open && !root.contains(e.target) && toggle(false));
-      root.addEventListener("keydown", (e) => {
-        if (!open) {
-          if (e.key === "ArrowDown" && e.target.id === "scope-btn") {
-            e.preventDefault();
-            toggle(true);
-          }
-          return;
-        }
-        const opts = [...root.querySelectorAll("[role=option]")];
-        const i = opts.indexOf(document.activeElement);
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          toggle(false);
-          $("#scope-btn").focus();
-        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          e.preventDefault();
-          opts[(i + (e.key === "ArrowDown" ? 1 : -1) + opts.length) % opts.length].focus();
-        } else if ((e.key === "Enter" || e.key === " ") && i >= 0) {
-          e.preventDefault();
-          choose(opts[i].dataset.slug);
-        }
-      });
-    }
-
-    return { render, bind, choose };
-  })();
-
-  function closeDemoPopover() {
-    const pop = $("#sync-popover");
-    if (!pop || pop.hidden) return;
-    pop.hidden = true;
-    $("#sync-demo-btn")?.setAttribute("aria-expanded", "false");
-  }
-
-  function toggleDemoPopover() {
-    const pop = $("#sync-popover");
-    const btn = $("#sync-demo-btn");
-    if (!pop || !btn) return;
-    const open = pop.hidden;
-    pop.hidden = !open;
-    btn.setAttribute("aria-expanded", String(open));
-  }
-
-  function renderHeader() {
-    const s = store.settings;
-    const status = $("#sync-status");
-    status.classList.toggle("sync--demo", !!s.demo && !DD.state.syncing && !DD.state.error);
-    if (DD.state.syncing) status.innerHTML = `<span class="spinner"></span><span>Syncing…</span>`;
-    else if (DD.state.error) status.innerHTML = `<span class="dot dot--error"></span><span title="${esc(DD.state.error)}">Sync failed</span>`;
-    else if (s.demo) {
-      if (!status.querySelector("#sync-demo-btn")) {
-        status.innerHTML = `
-          <button class="sync__btn" id="sync-demo-btn" type="button" data-action="demo-info" aria-haspopup="dialog" aria-expanded="false" aria-controls="sync-popover" title="You're viewing sample data">
-            <span class="dot dot--warning"></span>
-            <span>Sample data</span>
-          </button>
-          <div class="sync__popover" id="sync-popover" role="dialog" aria-labelledby="sync-popover-title" hidden>
-            <p id="sync-popover-title">You're viewing <b>sample data</b>. Connect a GitHub token to see your real day.</p>
-            <div class="sync__popover-actions">
-              <a class="btn btn--sm btn--tertiary" href="#/settings">Connect</a>
-              <button class="btn btn--sm btn--ghost" type="button" data-action="demo-off">Exit sample</button>
-            </div>
-          </div>`;
-      }
-    } else if (!s.token) status.innerHTML = `<span class="dot dot--gray"></span><a href="#/settings">Not connected</a>`;
-    else if (DD.state.data) status.innerHTML = `<span class="dot dot--success"></span><span title="${esc(new Date(DD.state.data.fetchedAt).toLocaleString())}">Synced ${timeAgo(DD.state.data.fetchedAt)}</span>`;
-    else status.innerHTML = "";
-    $("#refresh-btn").classList.toggle("is-spinning", DD.state.syncing);
-    $("#theme-btn").innerHTML = icon(["g90", "g100"].includes(s.theme) ? "sun" : "moon", 18);
-    const v = DD.state.data?.viewer;
-    $("#header-avatar").innerHTML = v?.avatarUrl ? `<img src="${esc(v.avatarUrl)}" alt="${esc(v.login)}" width="28" height="28">` : icon("user", 18);
-  }
-
-  function renderAll(opts) {
-    renderHeader();
-    renderNav();
-    renderContent(opts);
-  }
-
-  /** Re-render without clobbering whatever the user is typing in. */
-  function softRender() {
-    renderHeader();
-    renderNav();
-    const active = document.activeElement;
-    if (active && $("#content").contains(active) && /INPUT|SELECT|TEXTAREA/.test(active.tagName)) return;
-    renderContent({ keepScroll: true });
-  }
-
-  // ---------- sync ----------
-
-  function hydrateFromCache() {
-    const s = store.settings;
-    if (s.demo) {
-      DD.state.data = DD.demo.data(s.login || "you");
-      return;
-    }
-    if (!s.token) return;
-    const cached = store.read(store.KEYS.cache, null);
-    if (cached?.data) {
-      DD.state.data = cached.data;
-      DD.state.inbox = cached.inbox || null;
-      lastSync = new Date(cached.data.fetchedAt).getTime();
-    }
-  }
-
-  async function sync({ manual = false } = {}) {
-    const s = store.settings;
-    if (DD.state.syncing) return;
-    if (s.demo) {
-      DD.state.data = DD.demo.data(s.login || "you");
-      DD.state.inbox = null;
-      lastSync = Date.now();
-      softRender();
-      if (manual) DD.notify.flash("Sample data refreshed");
-      return;
-    }
-    if (!s.token) return;
-
-    DD.state.syncing = true;
-    renderHeader();
+  /** Per-browser view preferences; losing them is harmless. */
+  const ui = (() => {
+    const fallback = { tab: "focus", showLater: false };
     try {
-      if (!s.login) {
-        const viewer = await DD.github.fetchViewer(s.token);
-        store.saveSettings({ login: viewer.login, tokenScopes: viewer.scopes });
-      }
-      const repos = DD.repos.enabled();
-      const [data, inbox] = await Promise.all([
-        DD.github.fetchDashboard({ token: s.token, login: store.settings.login, repos, includeTeamReviews: s.includeTeamReviews }),
-        DD.github.fetchInbox(s.token, repos).then(
-          (threads) => ({ threads }),
-          (err) => ({ err })
-        ),
-      ]);
-      DD.state.data = data;
-      DD.state.error = null;
-      DD.state.errorSso = null;
-      if (data.scopes !== store.settings.tokenScopes) store.saveSettings({ tokenScopes: data.scopes });
-      if (inbox.threads) {
-        DD.state.inbox = inbox.threads;
-        DD.state.inboxError = null;
-      } else {
-        DD.state.inbox = null;
-        DD.state.inboxError = [401, 403, 404].includes(inbox.err.status)
-          ? "This token can't read GitHub notifications."
-          : inbox.err.message;
-      }
-      store.write(store.KEYS.cache, { data, inbox: DD.state.inbox });
-      lastSync = Date.now();
-      DD.notify.process(data, DD.state.inbox);
-      if (manual) DD.notify.flash("Synced with GitHub");
-    } catch (err) {
-      console.error("Sync failed", err);
-      DD.state.error = err.message;
-      DD.state.errorSso = err.sso || null;
-      lastSync = Date.now();
-      DD.notify.toast({ type: "ciFailed", title: "Sync failed", body: err.message }, 10000);
-    } finally {
-      DD.state.syncing = false;
-      softRender();
+      return { ...fallback, ...JSON.parse(localStorage.getItem(UI_KEY) || "{}") };
+    } catch {
+      return fallback;
+    }
+  })();
+
+  function saveUi() {
+    try {
+      localStorage.setItem(UI_KEY, JSON.stringify(ui));
+    } catch {}
+  }
+
+  const state = {
+    settings: DD.settings.defaults(),
+    cache: null,
+    status: {},
+    day: { todos: [], snoozed: {} },
+    activity: [],
+    seenAt: null,
+    clearedAt: null,
+    demo: null,
+  };
+
+  // ---------- derived data ----------
+
+  function data() {
+    if (state.settings.demo) return (state.demo ||= DD.demo.data(state.settings.login || "you"));
+    return state.cache?.data || null;
+  }
+
+  function connected() {
+    return !!(state.settings.token || state.settings.demo);
+  }
+
+  function allTasks() {
+    const d = data();
+    return d ? ins.focusQueue(d, state.settings) : [];
+  }
+
+  function visibleTasks() {
+    return allTasks().filter((t) => !state.day.snoozed[t.key]);
+  }
+
+  function activity() {
+    if (state.settings.demo) {
+      const base = Date.now();
+      return DD.demo.notifications().map((n, i) => ({ ...n, id: n.key, createdAt: new Date(base - (i + 1) * 47 * 60000).toISOString() }));
+    }
+    const cleared = state.clearedAt ? Date.parse(state.clearedAt) : 0;
+    return state.activity.filter((a) => Date.parse(a.createdAt) > cleared);
+  }
+
+  function unread() {
+    const seen = state.seenAt ? Date.parse(state.seenAt) : 0;
+    return activity().filter((a) => Date.parse(a.createdAt) > seen).length;
+  }
+
+  /** Assigned issues and mentions that aren't already in reviews or my PRs. */
+  function issueItems(d) {
+    const taken = new Set([...d.reviews.items, ...d.mine.items].map((i) => i.id));
+    const out = [];
+    const add = (why) => (item) => {
+      if (taken.has(item.id)) return;
+      taken.add(item.id);
+      out.push({ item, why });
+    };
+    d.assigned.items.forEach(add("assigned"));
+    d.mentions.items.forEach(add("mention"));
+    return out;
+  }
+
+  function mainTone(main) {
+    if (!main?.state) return null;
+    if (["FAILURE", "ERROR"].includes(main.state)) return "error";
+    if (["PENDING", "EXPECTED"].includes(main.state)) return "warning";
+    return main.state === "SUCCESS" ? "success" : null;
+  }
+
+  function agoText(at) {
+    const t = timeAgo(at);
+    return t === "now" ? "just now" : `${t} ago`;
+  }
+
+  function searchUrl(q) {
+    return `https://github.com/search?type=issues&q=${encodeURIComponent(q)}`;
+  }
+
+  /** Repos switched on in Settings, for the bar and search. */
+  function shownRepos() {
+    return DD.repos.all.filter((r) => !state.settings.disabledRepos.includes(r.id));
+  }
+
+  function repoScope() {
+    return DD.repos.enabled(state.settings).map((r) => `repo:${r.slug}`).join(" ");
+  }
+
+  // ---------- small pieces ----------
+
+  function iconChip(name, tone) {
+    return `<span class="chip-icon tone-${tone || "neutral"}">${icon(name, 16)}</span>`;
+  }
+
+  function timeEl(at) {
+    return at ? `<time class="item__time" data-at="${esc(at)}" datetime="${esc(at)}" title="${esc(new Date(at).toLocaleString())}">${timeAgo(at)}</time>` : "";
+  }
+
+  function ref(item) {
+    return `${esc(DD.repos.label(item.repo))} <span class="mono">#${item.number}</span>`;
+  }
+
+  function row({ key, url, title, iconName, tone, meta, at, snooze }) {
+    return `
+      <li class="item">
+        ${iconChip(iconName, tone)}
+        <div class="item__body">
+          <a class="item__title" href="${esc(url)}" data-focus="${esc(key)}">${esc(title)}</a>
+          <p class="item__meta">${meta}</p>
+        </div>
+        <div class="item__end">
+          ${timeEl(at)}
+          ${snooze ? `<button class="icon-btn icon-btn--sm item__snooze" data-action="snooze" data-key="${esc(snooze)}" title="Snooze until tomorrow" aria-label="Snooze until tomorrow">${icon("snooze", 16)}</button>` : ""}
+        </div>
+      </li>`;
+  }
+
+  function skeleton(lines = 5) {
+    return `<ul class="items" aria-hidden="true">${Array.from({ length: lines }, () => `<li class="item item--skeleton"><span class="sk sk--icon"></span><div class="item__body"><span class="sk sk--line"></span><span class="sk sk--short"></span></div></li>`).join("")}</ul>`;
+  }
+
+  function emptyState(iconName, title, text = "") {
+    return `<div class="empty">${iconChip(iconName, "success")}<p class="empty__title">${title}</p>${text ? `<p class="empty__text">${text}</p>` : ""}</div>`;
+  }
+
+  function toggle({ attrs, checked, label, hint = "", disabled = false }) {
+    return `
+      <label class="switch">
+        <input type="checkbox" role="switch" ${attrs} ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+        <span class="switch__track" aria-hidden="true"></span>
+        <span class="switch__text">${label}${hint ? `<small>${hint}</small>` : ""}</span>
+      </label>`;
+  }
+
+  /** Re-render a region without losing keyboard focus inside it. */
+  function keepFocus(root, render) {
+    const active = document.activeElement;
+    const inside = active && root.contains(active);
+    const key = inside ? active.dataset.focus : null;
+    const typed = key && active.matches("input:not([type=checkbox])") ? active.value : null;
+    const caret = typed != null ? [active.selectionStart, active.selectionEnd] : null;
+    render();
+    if (!key) return;
+    const next = root.querySelector(`[data-focus="${CSS.escape(key)}"]`);
+    if (!next) return;
+    if (typed != null) next.value = typed;
+    next.focus({ preventScroll: true });
+    if (caret && "setSelectionRange" in next) {
+      try {
+        next.setSelectionRange(...caret);
+      } catch {}
     }
   }
 
-  function tick() {
-    const s = store.settings;
-    const due = Date.now() - lastSync >= (s.pollMinutes || 3) * 60000;
-    if (due && (s.token || s.demo)) sync();
-    DD.notify.checkSchedule();
-    renderHeader();
-    if (route().page === "today") softRender();
+  // ---------- masthead + tools ----------
+
+  function renderMasthead() {
+    const now = new Date();
+    const d = data();
+    const name = (d?.viewer?.name || state.settings.login || "").split(" ")[0];
+    $("#date").textContent = `${now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} · ${DD.util.fmtTime(now)}`;
+    $("#greeting").textContent = `${ins.greeting(now)}${name ? `, ${name}` : ""}`;
+    let summary;
+    if (!connected()) summary = "Connect GitHub to see what needs you today.";
+    else if (!d) summary = state.status.error ? "Couldn't reach GitHub. Details below." : "Loading your work…";
+    else summary = ins.summary(d, visibleTasks());
+    $("#summary").textContent = summary;
+  }
+
+  function renderTools() {
+    const s = state.settings;
+    const st = state.status;
+    const count = unread();
+    let status = "";
+    if (s.demo) status = `<button class="pill-btn" data-action="demo-off" title="You're looking at sample data">Sample data <span class="pill-btn__sep">·</span> Exit</button>`;
+    else if (s.token && st.syncing) status = `<span class="sync">Syncing…</span>`;
+    else if (s.token && st.error) status = `<span class="sync sync--error">Sync failed</span>`;
+    else if (s.token && st.at) status = `<span class="sync" title="Last synced ${esc(new Date(st.at).toLocaleString())}">Updated <span data-ago="${esc(st.at)}">${agoText(st.at)}</span></span>`;
+
+    $("#tools").innerHTML = `
+      ${status}
+      ${connected() ? `<button class="icon-btn ${st.syncing ? "is-spinning" : ""}" data-action="sync" title="Sync now (R)" aria-label="Sync now">${icon("refresh", 18)}</button>` : ""}
+      <button class="icon-btn" popovertarget="activity" title="Activity (A)" aria-label="Activity${count ? `, ${count} new` : ""}">
+        ${icon("bell", 18)}${count ? `<span class="badge-dot" aria-hidden="true"></span>` : ""}
+      </button>
+      <button class="icon-btn" data-action="settings" title="Settings" aria-label="Settings">${icon("gear", 18)}</button>`;
+  }
+
+  // ---------- repos bar + link menus ----------
+
+  function prettyLabel(label) {
+    const text = String(label).replace(/\s+-\s+/, " · ");
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function repoMenu(repo) {
+    const d = data();
+    const health = d?.repos?.[repo.slug];
+    const main = health?.main;
+    const tone = mainTone(main);
+    const stateText = { error: "failing", warning: "running", success: "passing" }[tone] || "status unknown";
+    const groups = repo.groups
+      .map(
+        (g) => `
+        <div class="menu__group">
+          <p class="menu__label">${esc(g.title)}</p>
+          ${g.links
+            .map((l) =>
+              l.versionedHref
+                ? `<div class="menu__versioned" data-versioned="${esc(l.versionedHref)}">
+                     <a class="menu__link" href="${esc(l.href)}">${esc(prettyLabel(l.label))}</a>
+                     <input class="menu__version" value="${esc(l.version || "")}" placeholder="version" aria-label="${esc(l.label)} version" data-action-enter="open-version">
+                     <button class="icon-btn icon-btn--sm" data-action="open-version" title="Open this version" aria-label="Open this version">${icon("arrowRight", 14)}</button>
+                   </div>`
+                : `<a class="menu__link" href="${esc(l.href)}">${esc(prettyLabel(l.label))}</a>`
+            )
+            .join("")}
+        </div>`
+      )
+      .join("");
+
+    return `
+      <header class="menu__head">
+        <span class="menu__logo">${repo.logo}</span>
+        <div>
+          <p class="menu__title">${esc(repo.name)}</p>
+          ${repo.slug ? `<a class="menu__slug mono" href="https://github.com/${esc(repo.slug)}" title="${esc(repo.slug)}">${esc(DD.util.repoShort(repo.slug))}</a>` : ""}
+        </div>
+      </header>
+      ${
+        main
+          ? `<a class="menu__status" href="${esc(main.url)}" title="${esc(main.message || "")}">
+               <span class="dot dot--${tone || "neutral"}"></span>
+               <span><b>${esc(main.branch)}</b> ${stateText}</span>
+               <span class="menu__status-meta mono">${esc(main.sha)} · ${timeAgo(main.committedAt)}</span>
+             </a>`
+          : ""
+      }
+      ${health?.release ? `<a class="menu__status" href="${esc(health.release.url)}">${icon("tag", 14)}<span><b>${esc(health.release.tagName)}</b>${health.release.isPrerelease ? " pre-release" : ""}</span><span class="menu__status-meta">${timeAgo(health.release.publishedAt)}</span></a>` : ""}
+      ${groups}`;
+  }
+
+  function renderRepos() {
+    const menus = $("#repo-menus");
+    if ($(":popover-open", menus)) return;
+    const d = data();
+    const repos = shownRepos();
+    $("#repos").innerHTML = repos
+      .map((r) => {
+        const tone = mainTone(d?.repos?.[r.slug]?.main);
+        const dot =
+          tone === "error"
+            ? `<span class="dot dot--error" title="main is failing"></span><span class="sr-only">, main is failing</span>`
+            : tone === "warning"
+              ? `<span class="dot dot--warning" title="main checks running"></span><span class="sr-only">, main checks running</span>`
+              : "";
+        return `
+          <button class="repo" popovertarget="menu-${esc(r.id)}" data-repo="${esc(r.id)}" style="anchor-name: --repo-${esc(r.id)}">
+            <span class="repo__logo">${r.logo}</span>
+            <span>${esc(r.short)}</span>${dot}
+            ${icon("chevronDown", 14)}
+          </button>`;
+      })
+      .join("");
+    menus.innerHTML = repos.map((r) => `<div class="menu" id="menu-${esc(r.id)}" popover aria-label="${esc(r.name)} links" style="position-anchor: --repo-${esc(r.id)}">${repoMenu(r)}</div>`).join("");
+  }
+
+  /** Popovers open in the top layer; place each under the button that opened it, flipped if it would overflow. */
+  function placeMenu(menu) {
+    const btn = $(`[popovertarget="${menu.id}"]`);
+    if (!btn) return;
+    const r = btn.getBoundingClientRect();
+    const w = menu.offsetWidth;
+    const h = menu.offsetHeight;
+    const left = Math.max(12, Math.min(r.left, innerWidth - w - 12));
+    const below = r.bottom + 6;
+    const top = below + h > innerHeight - 12 && r.top - h - 6 > 12 ? r.top - h - 6 : below;
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+  }
+
+  // ---------- work panel ----------
+
+  const TASK_LOOK = {
+    main: ["alert", "error"],
+    ciFailed: ["x", "error"],
+    conflict: ["alert", "warning"],
+    changes: ["message", "warning"],
+    ready: ["merge", "success"],
+    review: ["eye", "info"],
+    mention: ["at", "info"],
+    assigned: ["user", "neutral"],
+    nudge: ["clock", "neutral"],
+  };
+
+  function taskRow(t) {
+    if (t.kind === "main") {
+      const repo = DD.repos.bySlug(t.repo);
+      return row({
+        key: t.key,
+        url: t.url,
+        title: `main is failing on ${repo?.short || t.repo}`,
+        iconName: "alert",
+        tone: "error",
+        meta: `<span class="mono">${esc(t.ref.split("@")[1] || "")}</span> · ${esc((t.title || "").split("\n")[0])}`,
+        at: t.at,
+        snooze: t.key,
+      });
+    }
+    const [iconName, base] = TASK_LOOK[t.kind] || ["git", "neutral"];
+    const tone = t.kind === "review" && ins.isBot(t.item.author) ? "neutral" : t.kind === "ciFailed" && t.item.draft ? "warning" : base;
+    const detail = t.detail ? ` · <span class="t-warning">${esc(t.detail)}</span>` : "";
+    return row({
+      key: t.key,
+      url: t.url,
+      title: t.title,
+      iconName,
+      tone,
+      meta: `${ref(t.item)} · ${esc(t.reason)}${detail}`,
+      at: t.item.updatedAt,
+      snooze: t.key,
+    });
+  }
+
+  const PR_LOOK = {
+    conflict: ["alert", "warning", "Merge conflict"],
+    ciFailed: ["x", "error", "CI failing"],
+    changes: ["message", "warning", "Changes requested"],
+    ready: ["merge", "success", "Ready to merge"],
+    ciRunning: ["clock", "neutral", "CI running"],
+    draft: ["draft", "neutral", "Draft"],
+    waiting: ["pr", "neutral", "Waiting for review"],
+  };
+  const PR_ORDER = ["ciFailed", "conflict", "changes", "ready", "waiting", "ciRunning", "draft"];
+
+  function prRow(pr) {
+    const st = ins.prState(pr);
+    const [iconName, tone, text] = PR_LOOK[st] || PR_LOOK.waiting;
+    const by = st === "changes" && pr.changeRequests.length ? ` by ${esc(pr.changeRequests.join(", "))}` : "";
+    const draft = pr.draft && st !== "draft" ? " · draft" : "";
+    return row({ key: pr.id, url: pr.url, title: pr.title, iconName, tone, meta: `${ref(pr)} · ${text}${by}${draft}`, at: pr.updatedAt });
+  }
+
+  function reviewRow(pr) {
+    const days = ageDays(pr.createdAt);
+    const stale = !ins.isBot(pr.author) && days >= state.settings.staleReviewDays;
+    const size = pr.additions != null ? ` · <span class="mono"><span class="t-add">+${pr.additions}</span> <span class="t-del">−${pr.deletions}</span></span>` : "";
+    return row({
+      key: pr.id,
+      url: pr.url,
+      title: pr.title,
+      iconName: "eye",
+      tone: ins.isBot(pr.author) ? "neutral" : stale ? "warning" : "info",
+      meta: `${ref(pr)} · ${esc(pr.author)}${stale ? ` · <span class="t-warning">waiting ${Math.floor(days)}d</span>` : ""}${size}`,
+      at: pr.createdAt,
+    });
+  }
+
+  function issueRow({ item, why }) {
+    const isPR = item.kind === "pr";
+    return row({
+      key: item.id,
+      url: item.url,
+      title: item.title,
+      iconName: why === "mention" ? "at" : isPR ? "pr" : "issue",
+      tone: why === "mention" ? "info" : "neutral",
+      meta: `${ref(item)} · ${why === "mention" ? `Mentioned${isPR ? " on a PR" : ""}` : `Assigned${isPR ? " PR" : ""}`} · ${esc(item.author)}`,
+      at: item.updatedAt,
+    });
+  }
+
+  function focusView(d) {
+    const all = allTasks();
+    const tasks = all.filter((t) => !state.day.snoozed[t.key]);
+    const snoozed = all.length - tasks.length;
+    const groups = { now: [], next: [], later: [] };
+    tasks.forEach((t) => groups[ins.bucket(t)].push(t));
+
+    const section = (id, title, list) =>
+      list.length ? `<h3 class="group" id="group-${id}">${title} <span>${list.length}</span></h3><ul class="items" aria-labelledby="group-${id}">${list.map(taskRow).join("")}</ul>` : "";
+
+    let body;
+    if (!tasks.length) body = emptyState("check", "You're all caught up", "Nothing needs you right now.");
+    else {
+      body = section("now", "Now", groups.now) + section("next", "Next", groups.next);
+      if (groups.later.length && !groups.now.length && !groups.next.length) body += section("later", "When you have time", groups.later);
+      else if (groups.later.length) {
+        body += `<button class="more" data-action="toggle-later" aria-expanded="${ui.showLater}">${icon(ui.showLater ? "chevronDown" : "chevron", 14)}${ui.showLater ? "Hide" : "Show"} ${plural(groups.later.length, "item")} that can wait</button>`;
+        if (ui.showLater) body += `<ul class="items items--later">${groups.later.map(taskRow).join("")}</ul>`;
+      }
+    }
+    const foot = snoozed ? `<span>${plural(snoozed, "item")} snoozed until tomorrow</span><button class="link" data-action="unsnooze">Restore</button>` : "";
+    return { body, foot };
+  }
+
+  function listView(items, render, emptyTitle) {
+    return items.length ? `<ul class="items items--flat">${items.map(render).join("")}</ul>` : emptyState("check", emptyTitle);
+  }
+
+  function workTabs(d) {
+    return [
+      { id: "focus", label: "For you", count: null },
+      { id: "reviews", label: "Reviews", count: d?.reviews.total },
+      { id: "prs", label: "My PRs", count: d?.mine.total },
+      { id: "issues", label: "Issues", count: d ? issueItems(d).length : null },
+    ];
+  }
+
+  function syncNotice() {
+    const s = state.settings;
+    if (s.demo || !s.token) return "";
+    const { error, errorSso } = state.status;
+    const d = state.cache?.data;
+    const warnings = error ? [] : d?.warnings || [];
+    if (!error && !warnings.length) return "";
+    const messages = error ? [error] : warnings;
+    const text = messages.join(" ");
+    const sso = errorSso || d?.sso;
+    const hints = [];
+    if (sso || /SAML|SSO/i.test(text)) hints.push(`The organization requires SSO. On <a href="https://github.com/settings/tokens">your tokens page</a>, choose <b>Configure SSO</b> next to this token and authorize <b>carbon-design-system</b>.`);
+    if (/personal access token|fine-grained|not accessible/i.test(text) || s.tokenScopes === null) hints.push(`Fine-grained tokens can be blocked by org policy. A <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code> is most reliable.`);
+    if (/401|rejected/i.test(text)) hints.push(`Create a new <a href="${CLASSIC_TOKEN_URL}">classic token</a> on github.com and paste it in Settings.`);
+    if (/reach api\.github\.com/i.test(text)) hints.push("On a corporate network or VPN, a proxy may be blocking api.github.com.");
+    return `
+      <div class="notice notice--${error ? "error" : "warning"}" role="alert">
+        ${icon("alert", 16)}
+        <div class="notice__body">
+          <p class="notice__title">${error ? "Couldn't sync with GitHub" : `Some data couldn't load${d?.failed?.length ? ` (${esc(d.failed.join(", "))})` : ""}`}</p>
+          <p class="notice__text">${esc(messages.slice(0, 2).join(" · "))}</p>
+          ${hints.length ? `<ul class="notice__hints">${hints.map((h) => `<li>${h}</li>`).join("")}</ul>` : ""}
+          <div class="notice__actions">
+            ${sso ? `<a class="btn btn--primary btn--sm" href="${esc(sso)}">Authorize SSO</a>` : ""}
+            <button class="btn btn--sm" data-action="sync">Retry</button>
+            <button class="btn btn--ghost btn--sm" data-action="settings" data-section="github">Token settings</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function connectView() {
+    const repos = DD.repos.enabled(state.settings);
+    return `
+      <div class="connect">
+        <span class="connect__mark">${icon("github", 28)}</span>
+        <h2>Connect GitHub</h2>
+        <p class="connect__lead">See review requests, your PRs, CI status, mentions and main-branch health for ${repos.length} Carbon repos — on every new tab.</p>
+        <ol class="connect__steps">
+          <li>Create a <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.</li>
+          <li>Paste it below. Your username is detected automatically.</li>
+        </ol>
+        <form class="connect__form" data-form="connect">
+          <input class="input" type="password" name="token" placeholder="ghp_…" autocomplete="off" aria-label="GitHub token" data-focus="connect-token" required>
+          <button class="btn btn--primary" type="submit">Connect</button>
+        </form>
+        <p class="connect__note">The token stays in this browser and is only sent to api.github.com.</p>
+        <button class="link" data-action="demo-on">Explore with sample data first</button>
+      </div>`;
+  }
+
+  function renderWork() {
+    const el = $("#work");
+    keepFocus(el, () => {
+      if (!connected()) {
+        if (!$(".connect", el)) el.innerHTML = connectView();
+        return;
+      }
+      const d = data();
+      const tabs = workTabs(d);
+      if (!tabs.some((t) => t.id === ui.tab)) ui.tab = "focus";
+
+      let body = "";
+      let foot = "";
+      const login = state.settings.login || "@me";
+      if (!d) body = state.status.error ? "" : skeleton();
+      else if (ui.tab === "focus") ({ body, foot } = focusView(d));
+      else if (ui.tab === "reviews") {
+        const items = [...d.reviews.items].sort((a, b) => Number(ins.isBot(a.author)) - Number(ins.isBot(b.author)) || new Date(a.createdAt) - new Date(b.createdAt));
+        body = listView(items, reviewRow, "No reviews waiting on you");
+        foot = `<span>${plural(d.reviewed.total, "PR")} reviewed since yesterday</span><a class="link" href="${esc(searchUrl(`is:pr is:open user-review-requested:${login} ${repoScope()}`))}">Open on GitHub</a>`;
+      } else if (ui.tab === "prs") {
+        const items = [...d.mine.items].sort((a, b) => PR_ORDER.indexOf(ins.prState(a)) - PR_ORDER.indexOf(ins.prState(b)));
+        body = listView(items, prRow, "No open pull requests");
+        foot = `<span>${d.merged.total} merged this week</span><a class="link" href="${esc(searchUrl(`is:pr is:open author:${login} ${repoScope()}`))}">Open on GitHub</a>`;
+      } else {
+        body = listView(issueItems(d), issueRow, "Nothing assigned and no new mentions");
+        const triage = `is:issue is:open label:"status: needs triage 🕵️‍♀️" ${repoScope()}`;
+        foot = `<a class="link" href="${esc(searchUrl(triage))}">${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a><a class="link" href="${esc(searchUrl(`is:open assignee:${login} ${repoScope()}`))}">Open on GitHub</a>`;
+      }
+
+      el.innerHTML = `
+        <div class="tabs" role="tablist" aria-label="Work">
+          ${tabs
+            .map(
+              (t) => `
+            <button class="tab" role="tab" id="tab-${t.id}" data-tab="${t.id}" data-focus="tab-${t.id}" aria-selected="${ui.tab === t.id}" aria-controls="work-panel" tabindex="${ui.tab === t.id ? 0 : -1}">
+              ${t.label}${t.count != null ? `<span class="tab__count">${t.count}</span>` : ""}
+            </button>`
+            )
+            .join("")}
+        </div>
+        <div class="work__panel" id="work-panel" role="tabpanel" aria-labelledby="tab-${ui.tab}">
+          ${syncNotice()}
+          ${body}
+        </div>
+        ${foot ? `<footer class="work__foot">${foot}</footer>` : ""}`;
+    });
+  }
+
+  // ---------- today ----------
+
+  function renderToday() {
+    const el = $("#today");
+    const now = new Date();
+    const meetings = DD.sync.todaysMeetings(state.settings, now);
+    const todos = state.day.todos;
+    const open = todos.filter((t) => !t.done).length;
+    const d = data();
+
+    const agenda = meetings.length
+      ? `<ul class="agenda">${meetings
+          .map((m) => {
+            const live = now >= m.start && now < m.end;
+            const past = now >= m.end;
+            const mins = Math.round((m.start - now) / 60000);
+            const when = live ? `<span class="agenda__live">Now</span>` : past ? `${m.minutes || 15}m` : mins < 60 ? `in ${mins}m` : `${m.minutes || 15}m`;
+            return `<li class="agenda__item ${past ? "is-past" : ""} ${live ? "is-live" : ""}"><time>${esc(DD.util.fmtTime(m.start))}</time><span class="agenda__title">${esc(m.title)}</span><span class="agenda__when">${when}</span></li>`;
+          })
+          .join("")}</ul>`
+      : `<p class="quiet">No meetings today.</p>`;
+
+    keepFocus(el, () => {
+      el.innerHTML = `
+        <header class="panel__head">
+          <h2>Today</h2>
+          <button class="link" data-action="settings" data-section="schedule">Edit</button>
+        </header>
+        ${agenda}
+        <div class="today__todos">
+          <h3 class="subhead">To-dos ${open ? `<span>${open}</span>` : ""}</h3>
+          <ul class="todos">
+            ${todos
+              .map(
+                (t) => `
+              <li class="todo ${t.done ? "is-done" : ""}">
+                <label>
+                  <input type="checkbox" data-action="todo-toggle" data-id="${esc(t.id)}" data-focus="todo-${esc(t.id)}" ${t.done ? "checked" : ""}>
+                  <span>${esc(t.text)}</span>
+                </label>
+                <button class="icon-btn icon-btn--sm todo__remove" data-action="todo-remove" data-id="${esc(t.id)}" aria-label="Remove ${esc(t.text)}">${icon("x", 14)}</button>
+              </li>`
+              )
+              .join("")}
+          </ul>
+          <form class="todo-form" data-form="todo">
+            ${icon("plus", 16)}
+            <input name="text" placeholder="Add a to-do" autocomplete="off" aria-label="New to-do" data-focus="todo-input">
+          </form>
+        </div>
+        ${
+          connected()
+            ? `<footer class="today__foot">
+                 <button class="btn btn--ghost btn--block" data-action="copy-standup" ${d ? "" : "disabled"} title="Yesterday, today and blockers from your GitHub activity">${icon("copy", 16)}Copy standup update</button>
+               </footer>`
+            : ""
+        }`;
+    });
+  }
+
+  // ---------- activity drawer ----------
+
+  function dayLabel(at) {
+    const key = DD.util.todayKey(new Date(at));
+    if (key === DD.util.todayKey()) return "Today";
+    if (key === DD.util.todayKey(new Date(Date.now() - 86400000))) return "Yesterday";
+    return "Earlier";
+  }
+
+  function renderActivity() {
+    const list = activity();
+    const seen = state.seenAt ? Date.parse(state.seenAt) : 0;
+    let current = "";
+    const items = list
+      .map((a) => {
+        const meta = DD.sync.TYPES[a.type] || { icon: "activity", tone: "neutral" };
+        const label = dayLabel(a.createdAt);
+        const head = label !== current ? `<li class="drawer__day">${(current = label)}</li>` : "";
+        return `${head}
+          <li class="item ${Date.parse(a.createdAt) > seen ? "is-new" : ""}">
+            ${iconChip(meta.icon, meta.tone)}
+            <div class="item__body">
+              ${a.url ? `<a class="item__title" href="${esc(a.url)}">${esc(a.title)}</a>` : `<span class="item__title">${esc(a.title)}</span>`}
+              ${a.body ? `<p class="item__meta">${esc(a.body)}</p>` : ""}
+            </div>
+            <div class="item__end">${timeEl(a.createdAt)}</div>
+          </li>`;
+      })
+      .join("");
+
+    const s = state.settings;
+    const off = !s.notifications ? "Desktop notifications are off." : "";
+    $("#activity").innerHTML = `
+      <header class="drawer__head">
+        <h2>Activity</h2>
+        <div class="drawer__actions">
+          ${list.length && !s.demo ? `<button class="btn btn--ghost btn--sm" data-action="clear-activity">Clear</button>` : ""}
+          <button class="icon-btn icon-btn--sm" data-action="close-activity" aria-label="Close">${icon("x", 16)}</button>
+        </div>
+      </header>
+      ${
+        list.length
+          ? `<ul class="items drawer__list">${items}</ul>`
+          : `<div class="empty">${iconChip("bell", "neutral")}<p class="empty__title">No activity yet</p><p class="empty__text">Approvals, CI results, merges and releases show up here as they happen.</p></div>`
+      }
+      <footer class="drawer__foot">${off} <button class="link" data-action="settings" data-section="notifications">Notification settings</button></footer>`;
+  }
+
+  function openActivity() {
+    const drawer = $("#activity");
+    if (!drawer.matches(":popover-open")) drawer.showPopover();
+  }
+
+  /** Content is built right before the drawer opens; it counts as seen once it's on screen. */
+  function bindActivity() {
+    const drawer = $("#activity");
+    drawer.addEventListener("beforetoggle", (e) => e.newState === "open" && renderActivity());
+    drawer.addEventListener("toggle", async (e) => {
+      if (e.newState !== "open") return renderTools();
+      $(".drawer__head .icon-btn", drawer)?.focus();
+      state.seenAt = new Date().toISOString();
+      await DD.storage.set({ activitySeenAt: state.seenAt });
+    });
+  }
+
+  // ---------- settings ----------
+
+  const NOTIFY_LABELS = {
+    reviewRequested: "Review requests",
+    ciFailed: "CI fails on my PR",
+    ciPassed: "CI passes on my PR",
+    changesRequested: "Changes requested",
+    approved: "My PR is approved",
+    merged: "My PR is merged",
+    conflict: "Merge conflicts",
+    mentioned: "Mentions",
+    assigned: "Assignments",
+    mainBroken: "main breaks or recovers",
+    release: "New releases",
+    githubInbox: "Other GitHub inbox activity",
+    meetings: "Meeting reminders",
+  };
+
+  function select(setting, value, options) {
+    return `<select class="input input--select" data-setting="${setting}">${options.map(([v, t]) => `<option value="${v}" ${+value === v ? "selected" : ""}>${t}</option>`).join("")}</select>`;
+  }
+
+  function renderSettings() {
+    const s = state.settings;
+    const rl = state.cache?.data?.rateLimit;
+    const tokenInfo = !s.token
+      ? ""
+      : s.tokenScopes === null
+        ? "Fine-grained token — the GitHub inbox won't work and org policy may block it. A classic token is recommended."
+        : s.tokenScopes !== undefined
+          ? `Classic token · scopes: <code>${esc(s.tokenScopes || "none")}</code>${/notifications|repo/.test(s.tokenScopes || "") ? "" : " — add <code>notifications</code> for inbox activity"}`
+          : "";
+
+    const body = $(".sheet__body", $("#settings"));
+    const scroll = body?.scrollTop || 0;
+    $("#settings").innerHTML = `
+      <header class="sheet__head">
+        <h2>Settings</h2>
+        <button class="icon-btn" data-action="close-settings" aria-label="Close settings">${icon("x", 18)}</button>
+      </header>
+      <div class="sheet__body">
+        <section class="setting-section" id="set-github">
+          <h3>GitHub</h3>
+          <p class="status-line">
+            <span class="dot dot--${s.token ? "success" : "neutral"}"></span>
+            ${s.token ? `Connected${s.login ? ` as <b>${esc(s.login)}</b>` : ""}` : "Not connected"}
+          </p>
+          <form class="field-row" data-form="connect">
+            <input class="input" type="password" name="token" placeholder="${s.token ? "Paste a new token to replace it" : "ghp_…"}" autocomplete="off" aria-label="GitHub token" data-focus="settings-token">
+            <button class="btn btn--primary" type="submit">${s.token ? "Replace" : "Connect"}</button>
+            ${s.token ? `<button class="btn btn--danger" type="button" data-action="disconnect">Disconnect</button>` : ""}
+          </form>
+          <p class="hint">${tokenInfo || `Use a <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.`}${rl ? ` API budget: ${rl.remaining}/${rl.limit} this hour.` : ""}</p>
+          <div class="fields">
+            <label class="field"><span>Check GitHub every</span>${select("pollMinutes", s.pollMinutes, [1, 2, 3, 5, 10, 15].map((m) => [m, `${m} min`]))}</label>
+            <label class="field"><span>Reviews are overdue after</span>${select("staleReviewDays", s.staleReviewDays, [1, 2, 3, 5].map((d) => [d, plural(d, "day")]))}</label>
+          </div>
+          ${toggle({ attrs: 'data-setting="includeTeamReviews"', checked: s.includeTeamReviews, label: "Include team review requests", hint: "Otherwise only reviews requested from you directly" })}
+          ${toggle({ attrs: 'data-setting="demo"', checked: s.demo, label: "Sample data", hint: "Explore with realistic fake data" })}
+        </section>
+
+        <section class="setting-section" id="set-repos">
+          <h3>Repositories</h3>
+          <p class="hint">Turned-off repos are hidden from the bar, search and your work list. Edit the list in <code>bookmarks-data.js</code>.</p>
+          ${DD.repos.all
+            .map((r) =>
+              toggle({
+                attrs: `data-repo-toggle="${esc(r.id)}"`,
+                checked: !s.disabledRepos.includes(r.id),
+                disabled: !r.slug,
+                label: esc(r.name),
+                hint: `<span class="mono">${esc(r.slug || "no GitHub repo found")}</span>`,
+              })
+            )
+            .join("")}
+        </section>
+
+        <section class="setting-section" id="set-notifications">
+          <h3>Notifications</h3>
+          ${toggle({ attrs: 'data-setting="notifications"', checked: s.notifications, label: "Desktop notifications", hint: ext ? "Shown by Chrome, even when no new tab is open" : "Shown while this page is open in the background" })}
+          <fieldset class="checks" ${s.notifications ? "" : "disabled"}>
+            <legend>Notify me about</legend>
+            ${Object.entries(NOTIFY_LABELS)
+              .map(([k, text]) => `<label class="check"><input type="checkbox" data-notify="${k}" ${s.notifyOn[k] ? "checked" : ""}><span>${text}</span></label>`)
+              .join("")}
+          </fieldset>
+          <button class="btn btn--sm" data-action="test-notification" ${s.notifications ? "" : "disabled"}>Send a test notification</button>
+        </section>
+
+        <section class="setting-section" id="set-schedule">
+          <h3>Meetings</h3>
+          <p class="hint">Recurring weekday meetings appear under Today and are reminded 5 minutes before.</p>
+          <ul class="meetings">
+            ${s.meetings
+              .map(
+                (m) => `
+              <li data-id="${esc(m.id)}">
+                <input class="input input--sm" type="time" value="${esc(m.time)}" data-meeting="time" aria-label="Start time">
+                <input class="input input--sm" value="${esc(m.title)}" data-meeting="title" aria-label="Title">
+                <label class="minutes"><input class="input input--sm" type="number" min="5" step="5" value="${m.minutes || 15}" data-meeting="minutes" aria-label="Length in minutes"><span>min</span></label>
+                <button class="icon-btn icon-btn--sm" data-action="meeting-remove" aria-label="Remove ${esc(m.title)}">${icon("trash", 16)}</button>
+              </li>`
+              )
+              .join("")}
+          </ul>
+          <button class="btn btn--sm" data-action="meeting-add">${icon("plus", 14)}Add meeting</button>
+        </section>
+
+        <section class="setting-section" id="set-appearance">
+          <h3>Appearance</h3>
+          <div class="segmented" role="radiogroup" aria-label="Theme">
+            ${[
+              ["system", "System"],
+              ["light", "Light"],
+              ["dark", "Dark"],
+            ]
+              .map(([v, t]) => `<button class="segmented__opt" role="radio" aria-checked="${s.theme === v}" data-action="theme" data-theme="${v}">${t}</button>`)
+              .join("")}
+          </div>
+        </section>
+
+        <section class="setting-section" id="set-keys">
+          <h3>Keyboard</h3>
+          <dl class="keys">
+            <div><dt><kbd>/</kbd> or <kbd>${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}</kbd><kbd>K</kbd></dt><dd>Search</dd></div>
+            <div><dt><kbd>1</kbd>–<kbd>4</kbd></dt><dd>Switch work tabs</dd></div>
+            <div><dt><kbd>R</kbd></dt><dd>Sync now</dd></div>
+            <div><dt><kbd>A</kbd></dt><dd>Activity</dd></div>
+          </dl>
+        </section>
+
+        <section class="setting-section">
+          <h3>Reset</h3>
+          <p class="hint">Removes the token, settings, to-dos and activity from this browser.</p>
+          <button class="btn btn--danger btn--sm" data-action="reset">Reset everything</button>
+        </section>
+      </div>`;
+    const next = $(".sheet__body", $("#settings"));
+    if (next) next.scrollTop = scroll;
+  }
+
+  function openSettings(section) {
+    const dialog = $("#settings");
+    renderSettings();
+    if (!dialog.open) dialog.showModal();
+    if (section) $(`#set-${section}`)?.scrollIntoView({ block: "start" });
+  }
+
+  /** Two-step confirm for destructive buttons, instead of a blocking browser dialog. */
+  function confirmed(el, label) {
+    if (el.dataset.armed) return true;
+    el.dataset.armed = "1";
+    const original = el.innerHTML;
+    el.textContent = label;
+    setTimeout(() => {
+      if (!el.isConnected) return;
+      delete el.dataset.armed;
+      el.innerHTML = original;
+    }, 4000);
+    return false;
+  }
+
+  // ---------- search ----------
+
+  const search = (() => {
+    const input = () => $("#search-input");
+    const list = () => $("#search-results");
+    let results = [];
+    let index = 0;
+
+    function linkIndex() {
+      const out = [];
+      shownRepos().forEach((r) => {
+        if (r.slug) out.push({ group: "Repos", label: r.name, hint: r.slug, iconName: "book", url: `https://github.com/${r.slug}`, terms: `${r.short} ${r.id}` });
+        r.groups.forEach((g) =>
+          g.links.forEach((l) => out.push({ group: "Links", label: `${r.short} · ${prettyLabel(l.label)}`, hint: g.title, iconName: "link", url: l.href, terms: `${r.name} ${r.id}` }))
+        );
+      });
+      return out;
+    }
+
+    function workIndex() {
+      const d = data();
+      if (!d) return [];
+      const seen = new Set();
+      const out = [];
+      [
+        ["reviews", "Review"],
+        ["mine", "My PR"],
+        ["assigned", "Assigned"],
+        ["mentions", "Mention"],
+        ["triage", "Triage"],
+        ["merged", "Merged"],
+      ].forEach(([key, tag]) =>
+        d[key].items.forEach((i) => {
+          if (seen.has(i.id)) return;
+          seen.add(i.id);
+          out.push({
+            group: "Work",
+            label: i.title,
+            hint: `${DD.repos.label(i.repo)} #${i.number} · ${tag}`,
+            iconName: i.kind === "pr" ? "pr" : "issue",
+            url: i.url,
+            terms: `${i.number} #${i.number} ${i.author} ${DD.util.repoShort(i.repo)} ${i.labels.map((l) => l.name).join(" ")}`,
+          });
+        })
+      );
+      return out;
+    }
+
+    function actionIndex() {
+      const s = state.settings;
+      const act = (label, iconName, run, terms = "") => ({ group: "Actions", label, iconName, run, terms });
+      return [
+        connected() && act("Sync now", "refresh", () => requestSync(true), "refresh reload"),
+        act("Copy standup update", "copy", copyStandup, "standup slack"),
+        act("Open activity", "bell", openActivity, "notifications"),
+        act("Open settings", "gear", () => openSettings(), "preferences token"),
+        act(`Switch to ${document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) ? "light" : "dark"} theme`, "moon", toggleTheme, "theme dark light"),
+        Object.keys(state.day.snoozed).length && act("Restore snoozed items", "snooze", unsnooze, "unsnooze"),
+        s.demo ? act("Exit sample data", "x", () => setDemo(false)) : null,
+      ].filter(Boolean);
+    }
+
+    /** "carbon#123", "products 456" or "#789" jumps straight to an issue or PR. */
+    function jump(q) {
+      const m = q.trim().match(/^(?:([a-z][\w.-]*)\s*)?#?(\d{1,6})$/i);
+      if (!m) return null;
+      const alias = (m[1] || "").toLowerCase();
+      const repos = DD.repos.enabled(state.settings);
+      const repo = alias
+        ? repos.find((r) => [r.id, r.short, r.name, DD.util.repoShort(r.slug)].some((n) => n.toLowerCase().replace(/\s+/g, "-").startsWith(alias)))
+        : repos[0];
+      if (!repo) return null;
+      return { group: "Go to", label: `${DD.util.repoShort(repo.slug)}#${m[2]}`, hint: `Open on GitHub`, iconName: "arrowRight", url: `https://github.com/${repo.slug}/issues/${m[2]}` };
+    }
+
+    function score(item, terms) {
+      const label = item.label.toLowerCase();
+      const hay = `${label} ${(item.hint || "").toLowerCase()} ${(item.terms || "").toLowerCase()}`;
+      if (!terms.every((t) => hay.includes(t))) return -1;
+      let s = 0;
+      terms.forEach((t) => {
+        if (label.startsWith(t)) s += 4;
+        else if (new RegExp(`(^|[\\s·(:/#-])${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(label)) s += 2;
+        else if (label.includes(t)) s += 1;
+      });
+      return s;
+    }
+
+    function update() {
+      const q = input().value.trim();
+      if (!q) return close();
+      const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
+      const ORDER = { "Go to": 0, Work: 1, Repos: 2, Links: 3, Actions: 4 };
+      const matched = [...workIndex(), ...linkIndex(), ...actionIndex()]
+        .map((item) => ({ item, s: score(item, terms) }))
+        .filter((x) => x.s >= 0)
+        .sort((a, b) => b.s - a.s || ORDER[a.item.group] - ORDER[b.item.group])
+        .slice(0, 8)
+        .map((x) => x.item)
+        .sort((a, b) => ORDER[a.group] - ORDER[b.group]);
+      const target = jump(q);
+      const go = target && !matched.some((r) => r.url && target.url.replace("/issues/", "/") === r.url.replace(/\/(issues|pull)\//, "/")) ? target : null;
+      results = [
+        ...(go ? [go] : []),
+        ...matched,
+        { group: "Search", label: `Search GitHub for “${q}”`, iconName: "github", url: searchUrl(`org:carbon-design-system ${q}`) },
+        { group: "Search", label: `Search the web for “${q}”`, iconName: "globe", web: q },
+      ];
+      index = 0;
+      draw();
+    }
+
+    function draw() {
+      let group = "";
+      list().innerHTML = results
+        .map((r, i) => {
+          const head = r.group !== group && r.group !== "Search" ? `<li class="search__group" role="presentation">${esc((group = r.group))}</li>` : "";
+          if (r.group === "Search" && group !== "Search") {
+            group = "Search";
+            return `<li class="search__sep" role="presentation"></li>${option(r, i)}`;
+          }
+          return head + option(r, i);
+        })
+        .join("");
+      list().hidden = false;
+      input().setAttribute("aria-expanded", "true");
+      input().setAttribute("aria-activedescendant", `sr-${index}`);
+      $(`#sr-${index}`)?.scrollIntoView({ block: "nearest" });
+    }
+
+    function option(r, i) {
+      return `<li class="search__item ${i === index ? "is-active" : ""}" id="sr-${i}" role="option" aria-selected="${i === index}" data-index="${i}">${icon(r.iconName, 16)}<span class="search__label">${esc(r.label)}</span>${r.hint ? `<span class="search__hint">${esc(r.hint)}</span>` : ""}</li>`;
+    }
+
+    function close() {
+      results = [];
+      list().hidden = true;
+      list().innerHTML = "";
+      input().setAttribute("aria-expanded", "false");
+      input().removeAttribute("aria-activedescendant");
+    }
+
+    function run(i, newTab) {
+      const r = results[i];
+      if (!r) return;
+      input().value = "";
+      close();
+      if (r.run) return r.run();
+      if (r.web) return webSearch(r.web, newTab);
+      go(r.url, newTab);
+    }
+
+    function bind() {
+      input().addEventListener("input", update);
+      input().addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          if (!results.length) return;
+          e.preventDefault();
+          index = (index + (e.key === "ArrowDown" ? 1 : -1) + results.length) % results.length;
+          draw();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          run(index, e.metaKey || e.ctrlKey);
+        } else if (e.key === "Escape") {
+          e.stopPropagation();
+          if (input().value) {
+            input().value = "";
+            close();
+          } else input().blur();
+        }
+      });
+      input().addEventListener("blur", () => setTimeout(close, 120));
+      input().addEventListener("focus", () => input().value.trim() && update());
+      list().addEventListener("mousedown", (e) => e.preventDefault());
+      list().addEventListener("click", (e) => {
+        const li = e.target.closest("[data-index]");
+        if (li) run(+li.dataset.index, e.metaKey || e.ctrlKey);
+      });
+    }
+
+    return { bind, focus: () => input().focus() };
+  })();
+
+  function go(url, newTab) {
+    if (!url) return;
+    if (newTab) window.open(url, "_blank", "noopener");
+    else location.assign(url);
+  }
+
+  function webSearch(text, newTab) {
+    if (ext && chrome.search?.query) return chrome.search.query({ text, disposition: newTab ? "NEW_TAB" : "CURRENT_TAB" });
+    go(`https://www.google.com/search?q=${encodeURIComponent(text)}`, newTab);
   }
 
   // ---------- actions ----------
 
-  async function connect(token) {
+  function toast(text, tone = "neutral") {
+    const host = $("#toasts");
+    const el = document.createElement("div");
+    el.className = `toast toast--${tone}`;
+    el.setAttribute("role", tone === "error" ? "alert" : "status");
+    el.textContent = text;
+    host.append(el);
+    while (host.children.length > 3) host.firstElementChild.remove();
+    setTimeout(() => {
+      el.classList.add("is-leaving");
+      setTimeout(() => el.remove(), 200);
+    }, 3200);
+  }
+
+  async function requestSync(manual = false) {
+    if (state.settings.demo) {
+      state.demo = null;
+      renderAll();
+      if (manual) toast("Sample data refreshed");
+      return;
+    }
+    if (!state.settings.token) return;
+    state.status = { ...state.status, syncing: true };
+    renderTools();
+    let result;
+    try {
+      result = ext ? await chrome.runtime.sendMessage({ type: "sync" }) : await DD.sync.run();
+    } catch (err) {
+      result = { ok: false, error: err.message };
+    }
+    const { status } = await DD.storage.get("status");
+    state.status = status || {};
+    renderTools();
+    if (!manual) return;
+    if (result?.ok) toast("Synced with GitHub");
+    else if (result?.skipped) toast("A sync is already running");
+    else toast("Sync failed", "error");
+  }
+
+  function maybeSync() {
+    if (!state.settings.token || state.settings.demo) return;
+    const last = state.status.at ? Date.parse(state.status.at) : 0;
+    if (Date.now() - last > 60000) requestSync();
+  }
+
+  async function connect(token, form) {
     token = token.trim();
     if (!token) return;
+    const btn = form?.querySelector("[type=submit]");
+    if (btn) btn.disabled = true;
     try {
       const viewer = await DD.github.fetchViewer(token);
-      store.saveSettings({ token, login: viewer.login, tokenScopes: viewer.scopes, demo: false });
-      localStorage.removeItem(store.KEYS.snapshot);
-      localStorage.removeItem(store.KEYS.cache);
-      DD.state.data = null;
-      DD.notify.flash(`Connected as ${viewer.login}`);
-      if (route().page === "settings") location.hash = "#/";
+      await DD.storage.remove(["cache", "snapshot", "status", "activity", "activitySeenAt", "activityClearedAt"]);
+      Object.assign(state, { cache: null, status: {}, activity: [], seenAt: null, clearedAt: null, demo: null });
+      state.settings = await DD.settings.save({ token, login: viewer.login, tokenScopes: viewer.scopes, demo: false });
+      toast(`Connected as ${viewer.login}`, "success");
+      if ($("#settings").open) $("#settings").close();
       renderAll();
-      await sync();
+      requestSync();
     } catch (err) {
-      DD.notify.toast({ type: "ciFailed", title: "Couldn't connect", body: err.message });
+      toast(`Couldn't connect: ${err.message}`, "error");
+      if (btn) btn.disabled = false;
     }
   }
 
-  function setTheme(theme) {
-    document.documentElement.className = `cds-theme-zone-${theme}`;
-    store.saveSettings({ theme });
-    renderHeader();
-    renderContent({ keepScroll: true });
+  async function setDemo(on) {
+    state.demo = null;
+    state.settings = await DD.settings.save({ demo: on });
+    renderAll();
+    if ($("#settings").open) renderSettings();
+    if (!on) maybeSync();
   }
 
-  function resetSnapshot() {
-    localStorage.removeItem(store.KEYS.snapshot);
+  async function copyStandup() {
+    const d = data();
+    if (!d) return;
+    try {
+      await navigator.clipboard.writeText(ins.standup(d));
+      toast("Standup update copied", "success");
+    } catch {
+      toast("Couldn't copy to the clipboard", "error");
+    }
+  }
+
+  async function snooze(key) {
+    state.day.snoozed[key] = true;
+    renderAll();
+    await DD.day.update((d) => (d.snoozed[key] = true));
+  }
+
+  async function unsnooze() {
+    state.day.snoozed = {};
+    renderAll();
+    await DD.day.update((d) => (d.snoozed = {}));
+  }
+
+  function applyTheme() {
+    const t = state.settings.theme;
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    else delete document.documentElement.dataset.theme;
+    try {
+      localStorage.setItem("devdash-theme", t);
+    } catch {}
+  }
+
+  async function setTheme(theme) {
+    state.settings = await DD.settings.save({ theme });
+    applyTheme();
+    if ($("#settings").open) renderSettings();
+  }
+
+  function toggleTheme() {
+    const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+    setTheme(dark ? "light" : "dark");
+  }
+
+  /** Changing what's tracked invalidates the diff baseline, so the next sync doesn't announce everything as new. */
+  async function resetBaseline() {
+    await DD.storage.remove("snapshot");
+    requestSync();
+  }
+
+  async function sendTestNotification() {
+    if (ext) {
+      const res = await chrome.runtime.sendMessage({ type: "test-notification" }).catch((err) => ({ ok: false, error: err.message }));
+      toast(res?.ok ? "Test notification sent" : "Chrome blocked the notification — check your OS notification settings for Chrome", res?.ok ? "success" : "error");
+      return;
+    }
+    if (!("Notification" in window)) return toast("This browser doesn't support notifications", "error");
+    const perm = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+    if (perm !== "granted") return toast("The browser blocked notifications", "error");
+    new Notification("Notifications are working", { body: "Reviews, CI failures and mentions will show up like this.", icon: "icons/icon-128.png" });
   }
 
   const actions = {
-    sync: () => sync({ manual: true }),
-    "theme-toggle": () => setTheme(["g90", "g100"].includes(store.settings.theme) ? "white" : "g100"),
-    theme: (el) => setTheme(el.dataset.theme),
-    "open-center": () => DD.notify.togglePanel(),
-    "open-notif": (el) => DD.notify.open(el.dataset.id),
-    palette: () => palette.open(),
-
-    "dismiss-task": (el) => {
-      store.updateDay((d) => (d.dismissed[el.dataset.key] = true));
-      renderContent({ keepScroll: true });
+    sync: () => requestSync(true),
+    activity: () => $("#activity").togglePopover(),
+    "close-activity": () => $("#activity").hidePopover(),
+    "clear-activity": async () => {
+      state.clearedAt = new Date().toISOString();
+      renderActivity();
+      renderTools();
+      await DD.storage.set({ activityClearedAt: state.clearedAt });
     },
-    "restore-tasks": () => {
-      store.updateDay((d) => (d.dismissed = {}));
-      renderContent({ keepScroll: true });
+    settings: (el) => {
+      $("#activity").matches(":popover-open") && $("#activity").hidePopover();
+      openSettings(el.dataset.section);
     },
-    scope: (el) => scopePicker.choose(el.dataset.slug),
-    "upnext-prev": () => carousel.move(-1),
-    "upnext-next": () => carousel.move(1),
-    fold: (el) => {
-      views.ui.open[el.dataset.fold] = !views.ui.open[el.dataset.fold];
-      renderContent({ keepScroll: true });
+    "close-settings": () => $("#settings").close(),
+    snooze: (el) => snooze(el.dataset.key),
+    unsnooze,
+    "toggle-later": () => {
+      ui.showLater = !ui.showLater;
+      saveUi();
+      renderWork();
+      $('[data-action="toggle-later"]')?.focus();
     },
-    "lane-more": (el) => {
-      views.ui.laneAll[el.dataset.lane] = !views.ui.laneAll[el.dataset.lane];
-      renderContent({ keepScroll: true });
-    },
-    "thread-read": (el) => DD.notify.threadAction(el.dataset.thread, "read"),
-    "thread-done": (el) => DD.notify.threadAction(el.dataset.thread, "done"),
-    "todo-remove": (el) => {
-      store.updateDay((d) => (d.todos = d.todos.filter((t) => t.id !== el.dataset.id)));
-      renderContent({ keepScroll: true });
-    },
-    "copy-standup": async () => {
-      const ok = await DD.util.copy(DD.insights.standup(DD.state.data));
-      DD.notify.flash(ok ? "Standup copied to clipboard" : "Couldn't copy", ok ? "success" : "error");
-    },
-    "filter-repo": (el) => {
-      views.ui.repo = el.dataset.repo;
-      renderContent({ keepScroll: true });
+    "demo-on": () => setDemo(true),
+    "demo-off": () => setDemo(false),
+    "copy-standup": copyStandup,
+    "todo-remove": async (el) => {
+      state.day.todos = state.day.todos.filter((t) => t.id !== el.dataset.id);
+      renderToday();
+      $('[data-focus="todo-input"]')?.focus();
+      await DD.day.update((d) => (d.todos = d.todos.filter((t) => t.id !== el.dataset.id)));
     },
     "open-version": (el) => {
       const group = el.closest("[data-versioned]");
-      const version = group.querySelector(".version-input").value.trim() || "latest";
-      window.open(group.dataset.versioned.replace("<v>", encodeURIComponent(version)), store.settings.openInNewTab ? "_blank" : "_self", "noopener");
+      const version = group.querySelector("input").value.trim().replace(/^v/i, "");
+      if (!version) return go(group.querySelector("a").href);
+      go(group.dataset.versioned.replace("<v>", encodeURIComponent(version)));
     },
-    "demo-on": () => {
-      store.saveSettings({ demo: true });
-      resetSnapshot();
-      DD.state.data = DD.demo.data(store.settings.login || "you");
-      const samples = DD.demo.notifications();
-      samples.forEach((n, i) => DD.notify.push(n, { silent: i < samples.length - 1 }));
+    theme: (el) => setTheme(el.dataset.theme),
+    "test-notification": sendTestNotification,
+    disconnect: async (el) => {
+      if (!confirmed(el, "Click again to disconnect")) return;
+      await DD.storage.remove(["cache", "snapshot", "status", "activity"]);
+      Object.assign(state, { cache: null, status: {}, activity: [] });
+      state.settings = await DD.settings.save({ token: "", login: "", tokenScopes: undefined });
       renderAll();
+      renderSettings();
     },
-    "demo-info": () => toggleDemoPopover(),
-    "demo-off": () => {
-      store.saveSettings({ demo: false });
-      DD.notify.removeWhere((n) => n.key?.startsWith("demo:"));
-      DD.state.data = null;
-      hydrateFromCache();
-      renderAll();
-      sync();
-    },
-    disconnect: () => {
-      if (!confirm("Remove the GitHub token from this browser?")) return;
-      store.saveSettings({ token: "", login: "" });
-      [store.KEYS.cache, store.KEYS.snapshot].forEach((k) => localStorage.removeItem(k));
-      Object.assign(DD.state, { data: null, inbox: null, inboxError: null, error: null, errorSso: null });
-      renderAll({ keepScroll: true });
-    },
-    "test-notif": async () => {
-      const samples = [
-        { type: "review", title: "Review requested: carbon#12345", body: "This is what a review request looks like" },
-        { type: "ciFailed", title: "CI failed on carbon#12345", body: "This is what a CI failure looks like" },
-        { type: "approved", title: "carbon#12345 approved", body: "This is what an approval looks like" },
-      ];
-      const sample = samples[Math.floor(Math.random() * samples.length)];
-      const n = DD.notify.push({ ...sample, key: `test:${Date.now()}`, url: "https://github.com/notifications" });
-      const perm = await DD.notify.requestDesktopPermission();
-      if (perm === "granted") {
-        store.saveSettings({ desktopNotifications: true });
-        if (n) await DD.notify.osNotify(n);
-        DD.notify.flash("Test push sent — check your notification center");
-        if (route().page === "settings") renderContent({ keepScroll: true });
-      } else if (perm === "denied" || perm === "insecure" || perm === "unsupported") {
-        DD.notify.flash("The browser blocked push notifications", "error");
-      }
-    },
-    "meeting-add": () => {
-      store.saveSettings({ meetings: [...store.settings.meetings, { id: DD.util.uid(), title: "New meeting", time: "15:00", minutes: 30, days: [1, 2, 3, 4, 5] }] });
-      renderContent({ keepScroll: true });
-    },
-    "meeting-remove": (el) => {
-      const id = el.closest("[data-id]").dataset.id;
-      store.saveSettings({ meetings: store.settings.meetings.filter((m) => m.id !== id) });
-      renderContent({ keepScroll: true });
-    },
-    "ritual-add": () => {
-      store.saveSettings({ rituals: [...store.settings.rituals, { id: DD.util.uid(), label: "New responsibility" }] });
-      renderContent({ keepScroll: true });
-      const inputs = document.querySelectorAll("[data-ritual='label']");
-      inputs[inputs.length - 1]?.select();
-    },
-    "ritual-remove": (el) => {
-      const id = el.closest("[data-id]").dataset.id;
-      store.saveSettings({ rituals: store.settings.rituals.filter((r) => r.id !== id) });
-      renderContent({ keepScroll: true });
-    },
-    reset: () => {
-      if (!confirm("Reset all dashboard settings, notifications and daily state? Your token will be removed.")) return;
-      Object.keys(localStorage)
-        .filter((k) => k.startsWith("devdash:") || k.startsWith("msal."))
-        .forEach((k) => localStorage.removeItem(k));
-      location.hash = "#/";
+    reset: async (el) => {
+      if (!confirmed(el, "Click again to erase everything")) return;
+      await DD.storage.clear();
+      ["devdash-theme", UI_KEY].forEach((k) => {
+        try {
+          localStorage.removeItem(k);
+        } catch {}
+      });
       location.reload();
+    },
+    "meeting-add": async () => {
+      const meetings = [...state.settings.meetings, { id: DD.util.uid(), title: "New meeting", time: "15:00", minutes: 30, days: [1, 2, 3, 4, 5] }];
+      state.settings = await DD.settings.save({ meetings });
+      renderSettings();
+      renderToday();
+      const titles = $$('[data-meeting="title"]', $("#settings"));
+      titles.at(-1)?.select();
+    },
+    "meeting-remove": async (el) => {
+      const id = el.closest("[data-id]").dataset.id;
+      state.settings = await DD.settings.save({ meetings: state.settings.meetings.filter((m) => m.id !== id) });
+      renderSettings();
+      renderToday();
     },
   };
 
-  function bindEvents() {
+  async function onSettingsChange(el) {
+    const s = state.settings;
+    if (el.dataset.repoToggle) {
+      const disabled = new Set(s.disabledRepos);
+      el.checked ? disabled.delete(el.dataset.repoToggle) : disabled.add(el.dataset.repoToggle);
+      state.settings = await DD.settings.save({ disabledRepos: [...disabled] });
+      renderAll();
+      return resetBaseline();
+    }
+    if (el.dataset.notify) {
+      state.settings = await DD.settings.save({ notifyOn: { ...s.notifyOn, [el.dataset.notify]: el.checked } });
+      return;
+    }
+    if (el.dataset.meeting) {
+      const id = el.closest("[data-id]").dataset.id;
+      const field = el.dataset.meeting;
+      const value = field === "minutes" ? Math.max(5, Number(el.value) || 15) : el.value;
+      state.settings = await DD.settings.save({ meetings: s.meetings.map((m) => (m.id === id ? { ...m, [field]: value } : m)) });
+      return renderToday();
+    }
+    const key = el.dataset.setting;
+    if (!key) return;
+    const value = el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? Number(el.value) : el.value;
+    if (key === "demo") return setDemo(value);
+    if (key === "notifications" && value && !ext && "Notification" in window && Notification.permission !== "granted") {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        el.checked = false;
+        return toast("The browser blocked notifications", "error");
+      }
+    }
+    state.settings = await DD.settings.save({ [key]: value });
+    if (key === "notifications") renderSettings();
+    if (key === "includeTeamReviews") resetBaseline();
+    if (key === "staleReviewDays") renderAll();
+  }
+
+  // ---------- events ----------
+
+  function selectTab(id, focus = false) {
+    ui.tab = id;
+    saveUi();
+    renderWork();
+    if (focus) $(`#tab-${id}`)?.focus();
+  }
+
+  function bind() {
     document.addEventListener("click", (e) => {
-      const pop = $("#sync-popover");
-      if (pop && !pop.hidden && (!e.target.closest("#sync-status") || e.target.closest("#sync-popover a"))) closeDemoPopover();
+      const tab = e.target.closest("[data-tab]");
+      if (tab) return selectTab(tab.dataset.tab);
       const el = e.target.closest("[data-action]");
-      if (!el || el.closest("#notif-panel")) return;
+      if (!el || el.tagName === "INPUT") return;
       const fn = actions[el.dataset.action];
-      if (!fn || el.tagName === "INPUT" || el.tagName === "SELECT") return;
+      if (!fn) return;
       e.preventDefault();
       fn(el);
     });
@@ -777,327 +1283,179 @@
       const form = e.target.closest("[data-form]");
       if (!form) return;
       e.preventDefault();
-      const value = new FormData(form).get(form.dataset.form === "connect" ? "token" : "text") || "";
-      if (form.dataset.form === "connect") connect(value);
-      if (form.dataset.form === "todo" && value.trim()) {
-        store.updateDay((d) => d.todos.push({ id: DD.util.uid(), text: value.trim(), done: false }));
-        renderContent({ keepScroll: true });
-        document.querySelector("[data-form='todo'] input")?.focus();
+      if (form.dataset.form === "connect") connect(new FormData(form).get("token") || "", form);
+      if (form.dataset.form === "todo") {
+        const input = form.querySelector("input");
+        const text = input.value.trim();
+        if (!text) return;
+        const todo = { id: DD.util.uid(), text, done: false };
+        state.day.todos.push(todo);
+        input.value = "";
+        renderToday();
+        $('[data-focus="todo-input"]')?.focus();
+        DD.day.update((d) => d.todos.push(todo));
       }
     });
 
     document.addEventListener("change", (e) => {
       const el = e.target;
-      const s = store.settings;
-
-      if (el.dataset.action === "ritual") {
-        store.updateDay((d) => (d.rituals[el.dataset.id] = el.checked));
-        return renderContent({ keepScroll: true });
-      }
       if (el.dataset.action === "todo-toggle") {
-        store.updateDay((d) => {
-          const t = d.todos.find((x) => x.id === el.dataset.id);
-          if (t) t.done = el.checked;
-        });
-        return renderContent({ keepScroll: true });
-      }
-      if (el.dataset.action === "sort") {
-        views.ui.sort = el.value;
-        return renderContent({ keepScroll: true });
-      }
-      if (el.dataset.action === "repo-toggle") {
-        const disabled = new Set(s.disabledRepos);
-        el.checked ? disabled.delete(el.dataset.id) : disabled.add(el.dataset.id);
-        store.saveSettings({ disabledRepos: [...disabled] });
-        resetSnapshot();
-        renderNav();
-        return sync();
-      }
-      if (el.dataset.action === "desktop-toggle") {
-        if (!el.checked) return store.saveSettings({ desktopNotifications: false });
-        DD.notify.requestDesktopPermission().then(async (perm) => {
-          store.saveSettings({ desktopNotifications: perm === "granted" });
-          if (perm === "granted") {
-            await DD.notify.testPush();
-            DD.notify.flash("Push notifications on — a test alert was sent");
-          } else {
-            DD.notify.flash("The browser blocked push notifications", "error");
-          }
-          renderContent({ keepScroll: true });
+        const id = el.dataset.id;
+        const t = state.day.todos.find((x) => x.id === id);
+        if (t) t.done = el.checked;
+        renderToday();
+        DD.day.update((d) => {
+          const x = d.todos.find((y) => y.id === id);
+          if (x) x.done = el.checked;
         });
         return;
       }
-      if (el.dataset.notify) {
-        return store.saveSettings({ notifyOn: { ...s.notifyOn, [el.dataset.notify]: el.checked } });
-      }
-      if (el.dataset.ritual) {
-        const id = el.closest("[data-id]").dataset.id;
-        return store.saveSettings({ rituals: s.rituals.map((r) => (r.id === id ? { ...r, label: el.value } : r)) });
-      }
-      if (el.dataset.meeting) {
-        const id = el.closest("[data-id]").dataset.id;
-        const field = el.dataset.meeting;
-        const value = field === "minutes" ? Number(el.value) : el.value;
-        return store.saveSettings({ meetings: s.meetings.map((m) => (m.id === id ? { ...m, [field]: value } : m)) });
-      }
-      if (el.dataset.setting) {
-        const key = el.dataset.setting;
-        const value = el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? Number(el.value) : el.value;
-        store.saveSettings({ [key]: value });
-        if (key === "demo") return value ? actions["demo-on"]() : actions["demo-off"]();
-        if (key === "includeTeamReviews") {
-          resetSnapshot();
-          sync();
-        }
-        if (key === "dnd") DD.notify.refresh();
-        if (key === "openInNewTab") renderContent({ keepScroll: true });
+      if (el.closest("#settings")) onSettingsChange(el);
+    });
+
+    $("#repo-menus").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.dataset.actionEnter) {
+        e.preventDefault();
+        actions[e.target.dataset.actionEnter](e.target);
       }
     });
 
-    document.addEventListener(
-      "input",
-      DD.util.debounce((e) => {
-        if (e.target.dataset.action !== "filter-q") return;
-        views.ui.q = e.target.value;
-        renderContent({ keepScroll: true });
-        const input = document.querySelector("[data-action='filter-q']");
-        input?.focus();
-        input?.setSelectionRange(input.value.length, input.value.length);
-      }, 150)
+    $("#repo-menus").addEventListener(
+      "toggle",
+      (e) => {
+        if (e.newState !== "open") return;
+        if (!CSS.supports("anchor-name: --a")) placeMenu(e.target);
+        e.target.querySelector("a")?.focus({ preventScroll: true });
+      },
+      true
     );
 
-    window.addEventListener("hashchange", () => {
-      views.ui.q = "";
-      views.ui.repo = DD.scope.current()?.slug || "all";
-      renderNav();
-      renderContent();
+    $("#work").addEventListener("keydown", (e) => {
+      if (!e.target.matches("[role=tab]")) return;
+      const tabs = $$("[role=tab]", $("#work"));
+      const i = tabs.indexOf(e.target);
+      let next = null;
+      if (e.key === "ArrowRight") next = tabs[(i + 1) % tabs.length];
+      if (e.key === "ArrowLeft") next = tabs[(i - 1 + tabs.length) % tabs.length];
+      if (e.key === "Home") next = tabs[0];
+      if (e.key === "End") next = tabs.at(-1);
+      if (!next) return;
+      e.preventDefault();
+      selectTab(next.dataset.tab, true);
     });
 
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && Date.now() - lastSync > 60000) sync();
-    });
-
-    DD.notify.bindCenter();
-    DD.notify.initPush();
-    scopePicker.bind();
-    bindKeys();
-  }
-
-  // ---------- keyboard ----------
-
-  function bindKeys() {
-    let pendingG = 0;
     document.addEventListener("keydown", (e) => {
       const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        return palette.toggle();
+        return search.focus();
       }
-      if (e.key === "Escape") {
-        if (!$("#palette").hidden) return palette.close();
-        if (!$("#notif-panel").hidden) return DD.notify.togglePanel(false);
-        if ($("#sync-popover") && !$("#sync-popover").hidden) {
-          closeDemoPopover();
-          $("#sync-demo-btn")?.focus();
-        }
-        return;
-      }
-      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
-      const key = e.key.toLowerCase();
-      if (Date.now() - pendingG < 1000) {
-        const dest = { h: "#/", t: "#/", r: "#/reviews", p: "#/prs", i: "#/issues", l: "#/links", s: "#/settings" }[key];
-        pendingG = 0;
-        if (dest) {
-          e.preventDefault();
-          location.hash = dest;
-        }
-        return;
-      }
-      if (key === "g") pendingG = Date.now();
-      else if (key === "/") {
+      if (typing || e.metaKey || e.ctrlKey || e.altKey || $("#settings").open) return;
+      if (e.key === "/") {
         e.preventDefault();
-        palette.open();
-      } else if (key === "n") DD.notify.togglePanel();
-      else if (key === "r") sync({ manual: true });
+        search.focus();
+      } else if (e.key === "r" || e.key === "R") requestSync(true);
+      else if (e.key === "a" || e.key === "A") actions.activity();
+      else if (/^[1-4]$/.test(e.key) && connected()) selectTab(["focus", "reviews", "prs", "issues"][+e.key - 1], true);
     });
+
+    $("#settings").addEventListener("click", (e) => {
+      if (e.target === $("#settings")) $("#settings").close();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      tick();
+      maybeSync();
+    });
+
+    bindActivity();
+    DD.storage.onChange(onStorage);
   }
 
-  // ---------- command palette ----------
-
-  const palette = (() => {
-    let items = [];
-    let results = [];
-    let index = 0;
-
-    function collect() {
-      const out = [];
-      const nav = (label, hash, ic) => out.push({ group: "Go to", label, ic, run: () => (location.hash = hash) });
-      nav("Today", "#/", "home");
-      nav("Review queue", "#/reviews", "eye");
-      nav("My pull requests", "#/prs", "pr");
-      nav("Merged this week", "#/prs/merged", "rocket");
-      nav("Assigned issues", "#/issues/assigned", "issue");
-      nav("Mentions", "#/issues/mentions", "at");
-      nav("Triage queue", "#/issues/triage", "shield");
-      nav("Links", "#/links", "link");
-      nav("Settings", "#/settings", "settings");
-      DD.repos.enabled().forEach((r) => nav(`${r.name} overview`, `#/repo/${r.id}`, "book"));
-
-      const cmd = (label, ic, run) => out.push({ group: "Commands", label, ic, run });
-      cmd("Sync now", "refresh", () => sync({ manual: true }));
-      cmd("Open notification center", "bell", () => DD.notify.togglePanel(true));
-      cmd(store.settings.dnd ? "Turn off do not disturb" : "Turn on do not disturb", "bellOff", () => {
-        store.saveSettings({ dnd: !store.settings.dnd });
-        DD.notify.refresh();
-      });
-      cmd("Copy standup draft", "copy", () => actions["copy-standup"]());
-      cmd("Toggle light / dark theme", "moon", () => actions["theme-toggle"]());
-
-      const d = DD.state.data;
-      const seen = new Set();
-      if (d) {
-        [
-          ["reviews", "Review requested"],
-          ["mine", "My PR"],
-          ["assigned", "Assigned"],
-          ["mentions", "Mentioned"],
-          ["triage", "Needs triage"],
-          ["merged", "Merged"],
-        ].forEach(([key, tag]) =>
-          d[key].items.forEach((i) => {
-            if (seen.has(i.id)) return;
-            seen.add(i.id);
-            out.push({
-              group: "Work",
-              label: i.title,
-              hint: `${repoShort(i.repo)}#${i.number} · ${tag}`,
-              ic: i.kind === "pr" ? "pr" : "issue",
-              search: `${repoShort(i.repo)} ${i.number} #${i.number} ${i.author} ${tag}`,
-              run: () => window.open(i.url, store.settings.openInNewTab ? "_blank" : "_self", "noopener"),
-            });
-          })
-        );
-      }
-
-      DD.repos.all.forEach((r) =>
-        r.groups.forEach((g) =>
-          g.links.forEach((l) =>
-            out.push({
-              group: "Links",
-              label: `${views.shortName(r)} · ${l.label}`,
-              hint: g.title,
-              ic: "link",
-              run: () => window.open(l.href, store.settings.openInNewTab ? "_blank" : "_self", "noopener"),
-            })
-          )
-        )
-      );
-      return out;
+  /** Another tab or the background worker changed something. */
+  async function onStorage(changes) {
+    if ("settings" in changes) {
+      const before = state.settings;
+      state.settings = DD.settings.normalize(changes.settings);
+      if (before.theme !== state.settings.theme) applyTheme();
+      if (before.demo !== state.settings.demo) state.demo = null;
     }
-
-    function filter(q) {
-      const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-      results = !terms.length
-        ? items.filter((i) => i.group !== "Links" && i.group !== "Work").concat(items.filter((i) => i.group === "Work").slice(0, 8))
-        : items.filter((i) => {
-            const hay = `${i.label} ${i.hint || ""} ${i.search || ""} ${i.group}`.toLowerCase();
-            return terms.every((t) => hay.includes(t));
-          });
-      results = results.slice(0, 60);
-      index = 0;
-      draw();
-    }
-
-    function draw() {
-      let group = "";
-      $("#palette-list").innerHTML = results.length
-        ? results
-            .map((r, i) => {
-              const head = r.group !== group ? `<li class="palette__group" role="presentation">${esc((group = r.group))}</li>` : "";
-              return `${head}<li class="palette__item ${i === index ? "is-active" : ""}" role="option" aria-selected="${i === index}" data-index="${i}">${icon(r.ic, 16)}<span class="palette__label">${esc(r.label)}</span>${r.hint ? `<span class="palette__hint">${esc(r.hint)}</span>` : ""}</li>`;
-            })
-            .join("")
-        : `<li class="palette__empty">No matches</li>`;
-      $("#palette-list .is-active")?.scrollIntoView({ block: "nearest" });
-    }
-
-    function run(i) {
-      const r = results[i];
-      if (!r) return;
-      close();
-      r.run();
-    }
-
-    function open() {
-      items = collect();
-      $("#palette").hidden = false;
-      const input = $("#palette-input");
-      input.value = "";
-      filter("");
-      input.focus();
-    }
-
-    function close() {
-      $("#palette").hidden = true;
-    }
-
-    function toggle() {
-      $("#palette").hidden ? open() : close();
-    }
-
-    function bind() {
-      $(".palette__icon").innerHTML = icon("search", 18);
-      $("#palette-input").addEventListener("input", (e) => filter(e.target.value));
-      $("#palette-input").addEventListener("keydown", (e) => {
-        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          e.preventDefault();
-          index = (index + (e.key === "ArrowDown" ? 1 : -1) + results.length) % Math.max(results.length, 1);
-          draw();
-        } else if (e.key === "Enter") {
-          e.preventDefault();
-          run(index);
-        }
-      });
-      $("#palette-list").addEventListener("click", (e) => {
-        const li = e.target.closest("[data-index]");
-        if (li) run(+li.dataset.index);
-      });
-      $("#palette").addEventListener("click", (e) => {
-        if (e.target.id === "palette") close();
-      });
-    }
-
-    return { open, close, toggle, bind };
-  })();
-
-  // ---------- init ----------
-
-  function initStaticIcons() {
-    $(".brand__mark").innerHTML = icon("zap", 18);
-    $(".search-trigger__icon").innerHTML = icon("search", 16);
-    $("#refresh-btn").innerHTML = icon("refresh", 18);
-    $(".bell__icon").innerHTML = icon("bell", 18);
-    $(".panel__close").innerHTML = icon("x", 16);
-    if (!/Mac|iPhone|iPad/.test(navigator.platform)) document.querySelectorAll("kbd").forEach((k) => (k.textContent = k.textContent.replace("⌘", "Ctrl ")));
+    if ("cache" in changes) state.cache = changes.cache || null;
+    if ("status" in changes) state.status = changes.status || {};
+    if ("activity" in changes) state.activity = changes.activity || [];
+    if ("activitySeenAt" in changes) state.seenAt = changes.activitySeenAt || null;
+    if ("activityClearedAt" in changes) state.clearedAt = changes.activityClearedAt || null;
+    if (dayKey in changes) state.day = { todos: [], snoozed: {}, ...changes[DD.day.key()] };
+    scheduleRender();
+    if ($("#activity").matches(":popover-open") && "activity" in changes) renderActivity();
+    if ($("#settings").open && "settings" in changes && !$("#settings").contains(document.activeElement)) renderSettings();
   }
 
-  function init() {
-    initStaticIcons();
-    if (!store.settings.demo) DD.notify.removeWhere((n) => n.key?.startsWith("demo:"));
-    hydrateFromCache();
-    views.ui.repo = DD.scope.current()?.slug || "all";
-    palette.bind();
-    bindEvents();
+  let frame = 0;
+  function scheduleRender() {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(renderAll);
+  }
+
+  function renderAll() {
+    renderMasthead();
+    renderTools();
+    renderRepos();
+    renderWork();
+    renderToday();
+  }
+
+  /** Once a minute: clock, relative times and meeting states, without rebuilding the work list. */
+  let lastMinute = -1;
+  let dayKey = DD.day.key();
+  function tick() {
+    const now = new Date();
+    if (now.getMinutes() === lastMinute) return;
+    lastMinute = now.getMinutes();
+    if (DD.day.key(now) !== dayKey) {
+      dayKey = DD.day.key(now);
+      DD.day.load(now).then((day) => {
+        state.day = day;
+        renderAll();
+      });
+    }
+    renderMasthead();
+    $$("[data-at]").forEach((el) => (el.textContent = timeAgo(el.dataset.at)));
+    $$("[data-ago]").forEach((el) => (el.textContent = agoText(el.dataset.ago)));
+    if (!$("#today").contains(document.activeElement)) renderToday();
+  }
+
+  async function load() {
+    const stored = await DD.storage.get(["settings", "cache", "status", "activity", "activitySeenAt", "activityClearedAt"]);
+    state.settings = DD.settings.normalize(stored.settings);
+    state.cache = stored.cache || null;
+    state.status = stored.status || {};
+    state.activity = stored.activity || [];
+    state.seenAt = stored.activitySeenAt || null;
+    state.clearedAt = stored.activityClearedAt || null;
+    state.day = await DD.day.load();
+  }
+
+  async function init() {
+    $$("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon, 18)));
+    await load();
+    applyTheme();
+    bind();
+    search.bind();
     renderAll();
-    DD.notify.refresh();
-    ["notifications", "inbox"].forEach((event) =>
-      DD.bus.on(event, () => {
-        if (route().page === "today" || route().page === "settings") softRender();
-      })
-    );
-    sync();
-    clock.start();
-    setInterval(tick, 60000);
+    document.body.classList.add("is-ready");
+    setInterval(tick, 10000);
+    lastMinute = new Date().getMinutes();
+
+    if (!ext) {
+      DD.sync.setNotifier(async (events) => {
+        if (document.visibilityState === "visible") return events.slice(0, 3).forEach((e) => toast(e.title));
+        if ("Notification" in window && Notification.permission === "granted") events.forEach((e) => new Notification(e.title, { body: e.body || "", tag: e.key }));
+      });
+      setInterval(() => DD.sync.tick(), 60000);
+    }
+    maybeSync();
   }
 
   init();

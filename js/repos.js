@@ -5,8 +5,8 @@
  */
 DD.repos = (() => {
   const LINK_GROUP_KEYS = ["github", "website", "storybooks", "others"];
-  const GROUP_TITLES = { others: "Playgrounds" };
-  const ACCENTS = ["blue", "purple", "teal", "magenta", "cyan", "green"];
+  const GROUP_TITLES = { github: "GitHub", others: "Playgrounds" };
+  const SHORT_NAMES = { cds: "Carbon", c4ip: "IBM Products", c4ai: "AI Chat", labs: "Labs", charts: "Charts" };
 
   function findSlug(entry) {
     const hrefs = (entry.github?.buttons || []).map((b) => b.href || "");
@@ -35,65 +35,29 @@ DD.repos = (() => {
   }
 
   const source = typeof bookmarksData !== "undefined" ? bookmarksData : [];
-  const all = source.map((entry, index) => ({
+  const all = source.map((entry) => ({
     id: entry.id,
     name: entry.name,
+    short: SHORT_NAMES[entry.id] || entry.name,
     logo: entry.icon,
     slug: findSlug(entry),
     board: findBoard(entry),
-    accent: ACCENTS[index % ACCENTS.length],
     groups: linkGroups(entry),
   }));
 
   return {
     all,
-    enabled() {
-      const disabled = DD.store.settings.disabledRepos || [];
+    /** Repos with a GitHub slug that the user hasn't switched off. */
+    enabled(settings) {
+      const disabled = settings?.disabledRepos || [];
       return all.filter((r) => r.slug && !disabled.includes(r.id));
     },
     bySlug(slug) {
       return all.find((r) => r.slug?.toLowerCase() === String(slug).toLowerCase());
     },
-    byId(id) {
-      return all.find((r) => r.id === id);
+    /** Display name for a slug, falling back to the bare repo name. */
+    label(slug) {
+      return this.bySlug(slug)?.short || DD.util.repoShort(slug);
     },
   };
-})();
-
-/** The repo the dashboard is focused on (null = all repos), and data narrowed to it. */
-DD.scope = (() => {
-  const LISTS = ["reviews", "mine", "assigned", "mentions", "triage", "merged", "reviewed"];
-  let memo = { data: null, slug: null, result: null };
-
-  function current() {
-    const slug = DD.store.settings.repoScope;
-    return DD.repos.enabled().find((r) => r.slug === slug) || null;
-  }
-
-  function set(slug) {
-    DD.store.saveSettings({ repoScope: slug || null });
-  }
-
-  /** Search totals are per query, so a scoped total comes from the matching items; triage uses the exact per-repo count. */
-  function data(raw) {
-    const repo = current();
-    if (!raw || !repo) return raw;
-    if (memo.data === raw && memo.slug === repo.slug) return memo.result;
-    const out = { ...raw, repos: raw.repos?.[repo.slug] ? { [repo.slug]: raw.repos[repo.slug] } : {} };
-    LISTS.forEach((key) => {
-      const items = (raw[key]?.items || []).filter((i) => i.repo === repo.slug);
-      out[key] = { total: items.length, items };
-    });
-    const triage = raw.repos?.[repo.slug]?.triage;
-    if (triage != null) out.triage.total = triage;
-    memo = { data: raw, slug: repo.slug, result: out };
-    return out;
-  }
-
-  function inbox(raw) {
-    const repo = current();
-    return raw && repo ? raw.filter((t) => t.repo === repo.slug) : raw;
-  }
-
-  return { current, set, data, inbox };
 })();

@@ -1,4 +1,8 @@
-window.DD = window.DD || {};
+/**
+ * Shared by the new tab page and the background service worker, so nothing in
+ * here may touch `window` or the DOM.
+ */
+globalThis.DD = globalThis.DD || {};
 
 DD.util = {
   esc(value) {
@@ -12,18 +16,16 @@ DD.util = {
 
   timeAgo(input) {
     if (!input) return "";
-    const diff = Date.now() - new Date(input).getTime();
-    const s = Math.round(diff / 1000);
-    if (s < 45) return "just now";
+    const s = Math.round((Date.now() - new Date(input).getTime()) / 1000);
+    if (s < 45) return "now";
     const m = Math.round(s / 60);
-    if (m < 60) return `${m}m ago`;
+    if (m < 60) return `${m}m`;
     const h = Math.round(m / 60);
-    if (h < 24) return `${h}h ago`;
+    if (h < 24) return `${h}h`;
     const d = Math.round(h / 24);
-    if (d < 30) return `${d}d ago`;
+    if (d < 30) return `${d}d`;
     const mo = Math.round(d / 30);
-    if (mo < 12) return `${mo}mo ago`;
-    return `${Math.round(mo / 12)}y ago`;
+    return mo < 12 ? `${mo}mo` : `${Math.round(mo / 12)}y`;
   },
 
   ageDays(input) {
@@ -59,54 +61,20 @@ DD.util = {
   },
 
   fmtTime(date) {
-    return new Date(date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return new Date(date).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   },
 
   uid() {
     return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
   },
 
-  debounce(fn, ms) {
-    let t;
-    return (...args) => {
-      clearTimeout(t);
-      t = setTimeout(() => fn(...args), ms);
-    };
-  },
-
   repoShort(slug) {
     return String(slug || "").split("/").pop();
   },
 
-  hexToRgba(hex, alpha) {
-    const n = parseInt(hex, 16);
-    if (Number.isNaN(n)) return `rgba(128,128,128,${alpha})`;
-    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+  plural(n, word, many = `${word}s`) {
+    return `${n} ${n === 1 ? word : many}`;
   },
-
-  async copy(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      const ok = document.execCommand("copy");
-      ta.remove();
-      return ok;
-    }
-  },
-};
-
-/** Live, in-memory app state shared by views and the notification center. */
-DD.state = {
-  data: null,
-  inbox: null,
-  inboxError: null,
-  syncing: false,
-  error: null,
 };
 
 DD.bus = {
@@ -119,55 +87,105 @@ DD.bus = {
   },
 };
 
-function mergeRituals(defaults, saved) {
-  if (!saved?.length) return defaults.map((r) => ({ ...r }));
-  const extras = defaults.filter((r) => r.auto && !saved.some((s) => s.id === r.id || s.auto === r.auto));
-  if (!extras.length) return saved;
-  const lastAuto = saved.reduce((i, r, idx) => (r.auto ? idx : i), -1);
-  const at = lastAuto + 1;
-  return [...saved.slice(0, at), ...extras, ...saved.slice(at)];
-}
+/**
+ * Key/value storage. Inside the extension this is `chrome.storage.local`, which
+ * the background worker shares; served as a plain web page it falls back to
+ * localStorage so the page can still be previewed or hosted.
+ */
+DD.storage = (() => {
+  const ext = !!globalThis.chrome?.storage?.local;
+  const PREFIX = "dd:";
+  const listeners = [];
 
-DD.store = {
-  KEYS: {
-    settings: "devdash:settings",
-    cache: "devdash:cache",
-    snapshot: "devdash:snapshot",
-    notifications: "devdash:notifications",
-    day: "devdash:day:",
-  },
+  function readLocal(key) {
+    try {
+      const raw = localStorage.getItem(PREFIX + key);
+      return raw == null ? undefined : JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  }
 
-  defaults() {
+  function emit(changes) {
+    if (Object.keys(changes).length) listeners.forEach((fn) => fn(changes));
+  }
+
+  if (ext) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      emit(Object.fromEntries(Object.entries(changes).map(([k, v]) => [k, v.newValue])));
+    });
+  } else if (globalThis.addEventListener) {
+    globalThis.addEventListener("storage", (e) => {
+      if (e.key?.startsWith(PREFIX)) emit({ [e.key.slice(PREFIX.length)]: readLocal(e.key.slice(PREFIX.length)) });
+    });
+  }
+
+  return {
+    isExtension: ext,
+
+    /** `keys` may be a string, an array, or null for everything. */
+    async get(keys) {
+      if (ext) return chrome.storage.local.get(keys);
+      const list =
+        keys == null
+          ? Object.keys(localStorage)
+              .filter((k) => k.startsWith(PREFIX))
+              .map((k) => k.slice(PREFIX.length))
+          : [].concat(keys);
+      const out = {};
+      list.forEach((k) => {
+        const v = readLocal(k);
+        if (v !== undefined) out[k] = v;
+      });
+      return out;
+    },
+
+    async set(items) {
+      if (ext) return chrome.storage.local.set(items);
+      Object.entries(items).forEach(([k, v]) => {
+        try {
+          localStorage.setItem(PREFIX + k, JSON.stringify(v));
+        } catch (err) {
+          console.warn("Storage write failed", k, err);
+        }
+      });
+      emit(items);
+    },
+
+    async remove(keys) {
+      if (ext) return chrome.storage.local.remove(keys);
+      [].concat(keys).forEach((k) => localStorage.removeItem(PREFIX + k));
+      emit(Object.fromEntries([].concat(keys).map((k) => [k, undefined])));
+    },
+
+    async clear() {
+      if (ext) return chrome.storage.local.clear();
+      const keys = Object.keys(localStorage).filter((k) => k.startsWith(PREFIX));
+      keys.forEach((k) => localStorage.removeItem(k));
+    },
+
+    onChange(fn) {
+      listeners.push(fn);
+    },
+  };
+})();
+
+DD.settings = (() => {
+  function defaults() {
     return {
       token: "",
       login: "",
       demo: false,
-      theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "g100" : "white",
-      openInNewTab: true,
+      theme: "system",
       pollMinutes: 3,
       includeTeamReviews: false,
-      desktopNotifications: false,
-      sound: false,
-      dnd: false,
-      workStart: "09:30",
-      workEnd: "18:30",
-      meetings: [
-        { id: "standup", title: "Daily standup", time: "10:00", minutes: 15, days: [1, 2, 3, 4, 5] },
-      ],
-      rituals: [
-        { id: "main", label: "Check main is green on every repo", auto: "mainGreen" },
-        { id: "reviews", label: "Clear the review queue", auto: "reviews" },
-        { id: "own", label: "Unblock my PRs (CI, conflicts, feedback)", auto: "ownBlocked" },
-        { id: "mentions", label: "Reply to mentions", auto: "mentions" },
-        { id: "assigned", label: "Work on assigned issues", auto: "assigned" },
-        { id: "triage", label: "Triage new issues" },
-        { id: "board", label: "Update the sprint board" },
-        { id: "standup", label: "Post standup update" },
-      ],
+      staleReviewDays: 2,
+      notifications: true,
       notifyOn: {
         reviewRequested: true,
         ciFailed: true,
-        ciPassed: true,
+        ciPassed: false,
         changesRequested: true,
         approved: true,
         merged: true,
@@ -175,87 +193,78 @@ DD.store = {
         mentioned: true,
         assigned: true,
         mainBroken: true,
-        release: true,
-        githubInbox: true,
+        release: false,
+        githubInbox: false,
         meetings: true,
       },
       disabledRepos: [],
-      repoScope: null,
-      staleReviewDays: 2,
+      meetings: [{ id: "standup", title: "Daily standup", time: "10:00", minutes: 15, days: [1, 2, 3, 4, 5] }],
     };
-  },
+  }
 
-  read(key, fallback) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
-    } catch {
-      return fallback;
-    }
-  },
+  function normalize(saved = {}) {
+    const base = defaults();
+    return {
+      ...base,
+      ...saved,
+      notifyOn: { ...base.notifyOn, ...(saved.notifyOn || {}) },
+      meetings: Array.isArray(saved.meetings) ? saved.meetings : base.meetings,
+      disabledRepos: Array.isArray(saved.disabledRepos) ? saved.disabledRepos : [],
+    };
+  }
 
-  write(key, value) {
-    try {
-      localStorage.setItem(key, JSON.stringify(value));
-    } catch (err) {
-      console.warn("Storage write failed", key, err);
-    }
-  },
+  async function load() {
+    const { settings } = await DD.storage.get("settings");
+    return normalize(settings);
+  }
 
-  get settings() {
-    if (!this._settings) {
-      const saved = this.read(this.KEYS.settings, {});
-      const defaults = this.defaults();
-      if (!saved.theme) saved.theme = localStorage.getItem("theme") || defaults.theme;
-      this._settings = {
-        ...defaults,
-        ...saved,
-        notifyOn: { ...defaults.notifyOn, ...(saved.notifyOn || {}) },
-        meetings: Array.isArray(saved.meetings) ? saved.meetings : defaults.meetings,
-        rituals: mergeRituals(defaults.rituals, saved.rituals),
-      };
-    }
-    return this._settings;
-  },
+  /** Read-modify-write so a patch from one context never drops another's fields. */
+  async function save(patch) {
+    const next = { ...(await load()), ...patch };
+    await DD.storage.set({ settings: next });
+    return next;
+  }
 
-  saveSettings(patch) {
-    Object.assign(this.settings, patch);
-    this.write(this.KEYS.settings, this.settings);
-    if (patch.theme) localStorage.setItem("theme", patch.theme);
-    DD.bus.emit("settings", patch);
-  },
+  return { defaults, normalize, load, save };
+})();
 
-  /** Per-day state: checked rituals, dismissed/snoozed focus items, personal todos. */
-  day(date = new Date()) {
-    const key = this.KEYS.day + DD.util.todayKey(date);
-    const state = this.read(key, null) || { rituals: {}, dismissed: {}, todos: [], notified: {} };
-    if (!this.read(key, null)) {
-      const yesterday = this.read(this.KEYS.day + DD.util.todayKey(DD.util.previousWorkday(date)), null);
-      if (yesterday?.todos) state.todos = yesterday.todos.filter((t) => !t.done);
-      this.pruneDays();
-    }
+/** Per-day state the page owns: to-dos (unfinished ones carry over) and snoozed work. */
+DD.day = (() => {
+  const PREFIX = "day:";
+  const KEEP_DAYS = 14;
+
+  function key(date = new Date()) {
+    return PREFIX + DD.util.todayKey(date);
+  }
+
+  function blank() {
+    return { todos: [], snoozed: {} };
+  }
+
+  async function load(date = new Date()) {
+    const k = key(date);
+    const all = await DD.storage.get(null);
+    if (all[k]) return { ...blank(), ...all[k] };
+
+    const previous = Object.keys(all)
+      .filter((x) => x.startsWith(PREFIX) && x < k)
+      .sort()
+      .pop();
+    const state = blank();
+    if (previous) state.todos = (all[previous].todos || []).filter((t) => !t.done);
+
+    const cutoff = PREFIX + DD.util.todayKey(new Date(Date.now() - KEEP_DAYS * 86400000));
+    const stale = Object.keys(all).filter((x) => x.startsWith(PREFIX) && x < cutoff);
+    if (stale.length) await DD.storage.remove(stale);
     return state;
-  },
+  }
 
-  saveDay(state, date = new Date()) {
-    this.write(this.KEYS.day + DD.util.todayKey(date), state);
-  },
-
-  updateDay(mutator) {
-    const state = this.day();
+  async function update(mutator, date = new Date()) {
+    const state = await load(date);
     mutator(state);
-    this.saveDay(state);
-    DD.bus.emit("day", state);
+    await DD.storage.set({ [key(date)]: state });
     return state;
-  },
+  }
 
-  pruneDays() {
-    const cutoff = Date.now() - 14 * 86400000;
-    Object.keys(localStorage)
-      .filter((k) => k.startsWith(this.KEYS.day))
-      .forEach((k) => {
-        const date = new Date(k.slice(this.KEYS.day.length));
-        if (date.getTime() < cutoff) localStorage.removeItem(k);
-      });
-  },
-};
+  return { key, load, update, PREFIX };
+})();

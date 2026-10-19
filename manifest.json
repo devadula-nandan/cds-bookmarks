@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAve0OY6aVMTBt8EZZ3WCZb/TDPdVQSILQWRM/mbou2eZg22VXNfFt1Hpvs3tkBnKb3peA17MSnBM2hF3lyc+5pEjK/0SaPvwst6o4ZLoXVPQa7uRDLq1y1WIYGSAvgzHM4FdCgYiClkf+ydicADt7vCh3UudKAtOg8UhgI6HvoM4cRhkLsFvYVopkbdtLyUeaesmwDMeyXGwrCFLG7R+tc9oFGWGFLvD168fZHoNLzbTZPcmOyUzqJt5rCO20zu3L4uWngzpnOjLfdJIDiWi+Ogi3K0vAeQzikyDuzY9wras/7lW3IhUPr4A6NSm87XM6z44UvSBS4+i+DI81NjBOAwIDAQAB",
+  "name": "Dev Dashboard",
+  "short_name": "Dev Dashboard",
+  "version": "2.0.0",
+  "description": "Your reviews, PRs, CI status and Carbon links on every new tab.",
+  "minimum_chrome_version": "116",
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Dev Dashboard",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "permissions": ["storage", "alarms", "notifications", "search"],
+  "host_permissions": ["https://api.github.com/*"],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

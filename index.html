@@ -3,104 +3,69 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f62fe" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-title" content="Dev Dashboard" />
-    <title>Dev Dashboard</title>
-    <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <meta name="color-scheme" content="light dark" />
+    <title>New Tab</title>
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
-
-    <script>
-      (function () {
-        let theme = "white";
-        try {
-          const settings = JSON.parse(localStorage.getItem("devdash:settings") || "{}");
-          theme =
-            settings.theme ||
-            localStorage.getItem("theme") ||
-            (window.matchMedia("(prefers-color-scheme: dark)").matches ? "g100" : "white");
-        } catch {}
-        document.documentElement.className = `cds-theme-zone-${theme}`;
-      })();
-    </script>
-
-    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/web-components/tag/latest/themes.css" />
-    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/plex/sans.css" />
-    <link rel="stylesheet" href="https://1.www.s81c.com/common/carbon/plex/mono.css" />
-    <link rel="stylesheet" href="css/app.css?v=67" />
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="css/app.css" />
   </head>
 
   <body>
-    <a class="skip-link" href="#content">Skip to content</a>
+    <a class="skip" href="#work">Skip to your work</a>
 
-    <header class="topbar">
-      <div class="topbar__row">
-        <a class="brand" href="#/">
-          <span class="brand__mark" aria-hidden="true"></span>
-          <span class="brand__name">Dev Dashboard</span>
-        </a>
-        <div class="scope" id="scope"></div>
-        <button class="search-trigger" data-action="palette" aria-label="Search and commands">
-          <span class="search-trigger__icon"></span>
-          <span class="search-trigger__text">Search PRs, issues, links, commands…</span>
-          <kbd>⌘K</kbd>
-        </button>
-        <div class="topbar__actions">
-          <div class="sync" id="sync-status" aria-live="polite"></div>
-          <button class="icon-btn" id="refresh-btn" data-action="sync" title="Sync now (R)" aria-label="Sync now"></button>
-          <button class="icon-btn" id="theme-btn" data-action="theme-toggle" title="Toggle light/dark" aria-label="Toggle theme"></button>
-          <button class="icon-btn bell" id="bell-btn" data-action="open-center" title="Notifications (N)" aria-label="Notifications" aria-controls="notif-panel" aria-expanded="false">
-            <span class="bell__icon"></span>
-            <span class="bell__badge" id="bell-badge" hidden>0</span>
-          </button>
-          <a class="header-avatar" id="header-avatar" href="#/settings" aria-label="Settings"></a>
+    <div class="page">
+      <header class="masthead">
+        <div class="hello">
+          <p class="hello__date" id="date">&nbsp;</p>
+          <h1 class="hello__greeting" id="greeting">&nbsp;</h1>
+          <p class="hello__summary" id="summary">&nbsp;</p>
         </div>
-      </div>
-      <nav class="mainnav" id="mainnav" aria-label="Main"></nav>
-    </header>
-
-    <main class="content" id="content" tabindex="-1"></main>
-
-    <div class="scrim" id="scrim" hidden></div>
-
-    <aside class="panel" id="notif-panel" hidden aria-label="Notification center">
-      <header class="panel__head">
-        <h2>Notifications</h2>
-        <div class="panel__head-actions">
-          <button class="icon-btn icon-btn--sm" data-action="dnd" aria-label="Do not disturb"></button>
-          <button class="btn btn--ghost btn--sm" data-action="read-all">Mark all read</button>
-          <button class="btn btn--ghost btn--sm" data-action="clear">Clear</button>
-          <button class="icon-btn icon-btn--sm panel__close" data-action="close" aria-label="Close"></button>
-        </div>
+        <div class="tools" id="tools"></div>
       </header>
-      <div class="panel__tabs segmented segmented--sm"></div>
-      <div class="panel__body"></div>
-    </aside>
 
-    <div class="toasts" id="toasts" aria-live="polite"></div>
-
-    <div class="palette" id="palette" hidden role="dialog" aria-modal="true" aria-label="Command palette">
-      <div class="palette__box">
-        <label class="palette__input">
-          <span class="palette__icon"></span>
-          <input type="text" id="palette-input" placeholder="Jump to a PR, issue, repo, link or command…" autocomplete="off" aria-label="Search" />
-          <kbd>esc</kbd>
+      <div class="search" id="search">
+        <label class="search__box">
+          <span class="search__icon" data-icon="search"></span>
+          <input
+            id="search-input"
+            type="text"
+            role="combobox"
+            aria-label="Search PRs, issues, links and actions"
+            aria-expanded="false"
+            aria-controls="search-results"
+            aria-autocomplete="list"
+            placeholder="Search your PRs, issues and links"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <kbd class="search__kbd" aria-hidden="true">/</kbd>
         </label>
-        <ul class="palette__list" id="palette-list" role="listbox"></ul>
+        <ul class="search__results" id="search-results" role="listbox" aria-label="Search results" hidden></ul>
       </div>
+
+      <nav class="repos" id="repos" aria-label="Repositories and links"></nav>
+
+      <main class="layout">
+        <section class="panel work" id="work" tabindex="-1" aria-label="Your work"></section>
+        <aside class="side">
+          <section class="panel today" id="today" aria-label="Today"></section>
+        </aside>
+      </main>
     </div>
 
-    <script src="bookmarks-data.js?v=58"></script>
-    <script src="js/core.js?v=58"></script>
-    <script src="js/icons.js?v=58"></script>
-    <script src="js/repos.js?v=58"></script>
-    <script src="js/github.js?v=58"></script>
-    <script src="js/insights.js?v=58"></script>
-    <script src="js/demo.js?v=58"></script>
-    <script src="js/notifications.js?v=58"></script>
-    <script src="js/views.js?v=60"></script>
-    <script src="js/app.js?v=62"></script>
+    <div id="repo-menus"></div>
+    <aside class="drawer" id="activity" popover aria-label="Activity"></aside>
+    <dialog class="sheet" id="settings" aria-label="Settings"></dialog>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <script src="bookmarks-data.js"></script>
+    <script src="js/core.js"></script>
+    <script src="js/icons.js"></script>
+    <script src="js/repos.js"></script>
+    <script src="js/github.js"></script>
+    <script src="js/insights.js"></script>
+    <script src="js/demo.js"></script>
+    <script src="js/sync.js"></script>
+    <script src="js/app.js"></script>
   </body>
 </html>

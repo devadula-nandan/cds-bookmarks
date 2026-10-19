@@ -108,43 +108,6 @@ DD.insights = (() => {
     );
   }
 
-  function stats(data, inbox) {
-    if (!data) return null;
-    const mainRed = Object.values(data.repos).filter((r) => ["FAILURE", "ERROR"].includes(r.main?.state)).length;
-    return {
-      reviews: data.reviews.total,
-      mine: data.mine.total,
-      blocked: data.mine.items.filter(isBlocked).length,
-      ready: data.mine.items.filter((pr) => prState(pr) === "ready").length,
-      assigned: data.assigned.total,
-      mentions: data.mentions.total,
-      triage: data.triage.total,
-      mergedWeek: data.merged.total,
-      reviewedToday: data.reviewed.total,
-      inbox: inbox ? inbox.filter((t) => t.unread).length : null,
-      mainRed,
-    };
-  }
-
-  /** Returns true/false for auto rituals, or null when the ritual is manual. */
-  function ritualAuto(auto, data) {
-    if (!data || !auto) return null;
-    switch (auto) {
-      case "mainGreen":
-        return Object.values(data.repos).every((r) => !["FAILURE", "ERROR"].includes(r.main?.state));
-      case "reviews":
-        return data.reviews.total === 0;
-      case "ownBlocked":
-        return !data.mine.items.some(isBlocked);
-      case "mentions":
-        return data.mentions.total === 0;
-      case "assigned":
-        return data.assigned.items.filter((i) => i.kind === "issue").length === 0;
-      default:
-        return null;
-    }
-  }
-
   function standup(data) {
     if (!data) return "";
     const since = DD.util.previousWorkday();
@@ -182,5 +145,31 @@ DD.insights = (() => {
     return "Good night";
   }
 
-  return { focusQueue, stats, ritualAuto, standup, prState, isBlocked, hasConflict, isBot, greeting, PRIORITY };
+  /** Urgent and high items are "now"; the rest can wait. */
+  function bucket(task) {
+    if (task.priority === "urgent" || task.priority === "high") return "now";
+    return task.priority === "medium" ? "next" : "later";
+  }
+
+  /** One calm sentence for the header. */
+  function summary(data, tasks) {
+    if (!data) return "";
+    const now = tasks.filter((t) => bucket(t) === "now");
+    if (!now.length) return tasks.length ? "Nothing urgent. A good stretch for deep work." : "You're all caught up.";
+    const count = (kinds) => now.filter((t) => kinds.includes(t.kind)).length;
+    const parts = [];
+    const reviews = count(["review"]);
+    const blocked = count(["ciFailed", "conflict", "changes"]);
+    const ready = count(["ready"]);
+    const mains = count(["main"]);
+    if (mains) parts.push(mains === 1 ? "a broken main" : `${mains} broken mains`);
+    if (blocked) parts.push(DD.util.plural(blocked, "blocked PR"));
+    if (reviews) parts.push(DD.util.plural(reviews, "overdue review"));
+    if (ready) parts.push(`${ready} ready to merge`);
+    if (!parts.length) return `${DD.util.plural(now.length, "thing")} ${now.length === 1 ? "needs" : "need"} you.`;
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+    return `${list[0].toUpperCase()}${list.slice(1)} ${now.length === 1 ? "needs" : "need"} you.`;
+  }
+
+  return { focusQueue, standup, prState, isBlocked, hasConflict, isBot, greeting, bucket, summary, PRIORITY };
 })();
