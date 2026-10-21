@@ -10,7 +10,7 @@ version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' manifest.json)
 stage="dist/dev-dashboard"
 rm -rf dist
 mkdir -p "$stage"
-cp -R manifest.json background.js index.html bookmarks-data.js css js icons "$stage/"
+cp -R manifest.json background.js index.html bookmarks-data.js css js icons ai-helper "$stage/"
 (cd dist && zip -qrX dev-dashboard.zip dev-dashboard)
 rm -rf "$stage"
 echo "Built dist/dev-dashboard.zip (v$version)"

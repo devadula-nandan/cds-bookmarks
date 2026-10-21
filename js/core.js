@@ -198,6 +198,9 @@ DD.settings = (() => {
         meetings: true,
       },
       disabledRepos: [],
+      ai: false,
+      bobKey: "",
+      bobTeamId: "",
       meetings: [{ id: "standup", title: "Daily standup", time: "10:00", minutes: 15, days: [1, 2, 3, 4, 5] }],
     };
   }

@@ -460,6 +460,18 @@ body.is-ready .page {
   text-decoration: underline;
 }
 
+/* Bob entry points: a link with the sparkle in front. */
+.link--bob {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hello__ai {
+  margin: 10px 0 0;
+  font-size: 14px;
+}
+
 /* ---------- search ---------- */
 
 .search {
@@ -875,6 +887,16 @@ body.is-ready .page {
   font-weight: 400;
 }
 
+.group small {
+  font-size: inherit;
+  font-weight: 400;
+}
+
+.group small::before {
+  content: "·";
+  margin-right: 8px;
+}
+
 .items {
   margin: 0;
   padding: 0 8px;
@@ -987,40 +1009,36 @@ a.item__title::after {
   font-variant-numeric: tabular-nums;
 }
 
-.item__snooze {
+.item__actions {
+  display: flex;
+  gap: 2px;
   visibility: hidden;
   color: var(--text-2);
 }
 
-.item:hover .item__snooze,
-.item:focus-within .item__snooze {
+.item:hover .item__actions,
+.item:focus-within .item__actions {
   visibility: visible;
 }
 
-.item:hover .item__time:has(+ .item__snooze),
-.item:focus-within .item__time:has(+ .item__snooze) {
+.item:hover .item__time:has(+ .item__actions),
+.item:focus-within .item__time:has(+ .item__actions) {
   visibility: hidden;
 }
 
-.more {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 20px 4px;
-  padding: 4px 0;
-  border: 0;
-  background: none;
-  color: var(--text-2);
-  font-size: 13px;
-  cursor: pointer;
+.item__bob:hover {
+  color: var(--accent);
 }
 
-.more:hover {
-  color: var(--text);
-}
-
+/* Later stays visible but reads as lower priority until you reach for it. */
 .items--later {
-  opacity: 0.88;
+  opacity: 0.8;
+  transition: opacity 120ms ease;
+}
+
+.items--later:hover,
+.items--later:focus-within {
+  opacity: 1;
 }
 
 .work__foot {
@@ -1032,6 +1050,12 @@ a.item__title::after {
   border-top: 1px solid var(--border);
   color: var(--text-3);
   font-size: 13px;
+}
+
+.work__foot-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
 }
 
 .work__foot > :only-child {
@@ -1576,6 +1600,11 @@ a.item__title::after {
   }
 }
 
+/* Focus lands on the dialog itself when the focused control inside is re-rendered away. */
+.sheet:focus {
+  outline: none;
+}
+
 .sheet::backdrop {
   background: var(--backdrop);
 }
@@ -1880,6 +1909,380 @@ a.item__title::after {
 
 /* ---------- responsive ---------- */
 
+/* ---------- Bob sheet ---------- */
+
+.steps {
+  margin: 0 0 14px;
+  padding-left: 20px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.steps a {
+  color: var(--accent);
+}
+
+.bob {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(820px, calc(100vh - 48px));
+}
+
+.bob__head {
+  justify-content: flex-start;
+  gap: 12px;
+  padding-left: 20px;
+}
+
+.bob__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.bob__subtitle {
+  display: block;
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 13px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.bob__subtitle:hover {
+  color: var(--accent);
+}
+
+.bob__body {
+  display: grid;
+  gap: 16px;
+  padding-top: 20px;
+  line-height: 1.55;
+}
+
+.bob__body > .notice {
+  margin: 0;
+}
+
+.bob__answer {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bob__answer > :first-child {
+  margin-top: 0;
+}
+
+.bob__answer > :last-child {
+  margin-bottom: 0;
+}
+
+.bob__answer p,
+.bob__answer ul,
+.bob__answer ol,
+.bob__answer pre,
+.bob__answer blockquote {
+  margin: 0 0 12px;
+}
+
+.bob__answer h4 {
+  margin: 16px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bob__answer ul,
+.bob__answer ol {
+  padding-left: 20px;
+}
+
+.bob__answer li + li {
+  margin-top: 4px;
+}
+
+.bob__answer li.is-task {
+  list-style: none;
+  position: relative;
+}
+
+.bob__answer li.is-task::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: -20px;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 3px;
+}
+
+.bob__answer li.is-done::before {
+  border-color: var(--success);
+  background: var(--success);
+}
+
+.bob__answer a {
+  color: var(--accent);
+}
+
+.bob__answer code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-sunken);
+  font-family: var(--mono);
+  font-size: 0.88em;
+}
+
+.bob__answer pre {
+  overflow: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
+.bob__answer pre code {
+  padding: 0;
+  background: none;
+  font-size: 12.5px;
+  white-space: pre;
+}
+
+.bob__answer blockquote {
+  padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--accent-soft);
+}
+
+.bob__q {
+  justify-self: end;
+  max-width: 85%;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px 12px 4px 12px;
+  background: var(--surface-sunken);
+  overflow-wrap: anywhere;
+}
+
+.bob__edit {
+  width: 100%;
+  height: auto;
+  min-height: 220px;
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.bob__loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.bob__loading .btn {
+  margin-left: auto;
+}
+
+.bob__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 800ms linear infinite;
+}
+
+.bob__elapsed {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.bob__foot {
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.bob__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-left: -10px;
+}
+
+.bob__meta {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.bob__follow {
+  display: flex;
+  gap: 6px;
+}
+
+/* ---------- fit to the viewport ----------
+   On desktop-sized windows the page never scrolls: the header, search and
+   repo bar keep their size and the work list and to-dos scroll inside their
+   panels. Small or short windows fall back to a normal scrolling page. */
+
+@media (min-width: 921px) and (min-height: 600px) {
+  body {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding-top: clamp(20px, 4vh, 48px);
+    padding-bottom: clamp(16px, 3vh, 32px);
+  }
+
+  .masthead {
+    margin-bottom: clamp(14px, 2.5vh, 28px);
+  }
+
+  .masthead,
+  .search,
+  .repos {
+    flex: none;
+  }
+
+  .repos {
+    margin-bottom: clamp(16px, 3vh, 32px);
+  }
+
+  .layout {
+    flex: 1;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .work {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .work > .tabs,
+  .work > .work__foot {
+    flex: none;
+  }
+
+  .work__panel {
+    flex: 1;
+    min-height: 0;
+    padding: 0; /* pinned headings and the bottom fade sit flush with the edges */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .work > .connect {
+    overflow-y: auto;
+  }
+
+  /* Section headings pin to the top of the list; each one pushes the last out. */
+  .section > .group {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+  }
+
+  /* Rows fade out as they slide under the pinned heading. */
+  .work__panel.is-scrolled .section > .group::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: 16px;
+    background: linear-gradient(var(--surface), transparent);
+    pointer-events: none;
+  }
+
+  /* Lists without pinned headings (Reviews, My PRs, Issues) fade under the tabs instead. */
+  .work__panel:not(:has(.section))::before {
+    content: "";
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: block;
+    height: 16px;
+    margin-bottom: -16px;
+    background: linear-gradient(var(--surface), transparent);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .work__panel.is-scrolled:not(:has(.section))::before {
+    opacity: 1;
+  }
+
+  /* A fade at the bottom edge while there's more to scroll. Sticky with a
+     negative margin, so it overlays the last 24px of rows and adds the 8px of
+     end spacing the panel's padding used to give. */
+  .work__panel::after {
+    content: "";
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: block;
+    height: 32px;
+    margin-top: -24px;
+    background: linear-gradient(transparent, var(--surface));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .work__panel.has-more::after {
+    opacity: 1;
+  }
+
+  .side {
+    position: static;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .today {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 100%;
+    overflow: hidden;
+  }
+
+  .today > .panel__head,
+  .today > .agenda,
+  .today > .quiet,
+  .today > .today__foot {
+    flex: none;
+  }
+
+  .today__todos {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
 @media (max-width: 920px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
@@ -1929,11 +2332,11 @@ a.item__title::after {
     display: none;
   }
 
-  .item__snooze {
+  .item__actions {
     visibility: visible;
   }
 
-  .item__time:has(+ .item__snooze) {
+  .item__time:has(+ .item__actions) {
     visibility: hidden;
   }
 }

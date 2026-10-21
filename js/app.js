@@ -12,7 +12,7 @@
 
   /** Per-browser view preferences; losing them is harmless. */
   const ui = (() => {
-    const fallback = { tab: "focus", showLater: false };
+    const fallback = { tab: "focus" };
     try {
       return { ...fallback, ...JSON.parse(localStorage.getItem(UI_KEY) || "{}") };
     } catch {
@@ -110,6 +110,14 @@
     return DD.repos.enabled(state.settings).map((r) => `repo:${r.slug}`).join(" ");
   }
 
+  /** Bob needs the extension (native messaging) and is opt-in. */
+  function aiOn() {
+    return ext && DD.ai.supported && state.settings.ai;
+  }
+
+  /** Row key → what Bob should look at, rebuilt on every work render. */
+  const aiTargets = new Map();
+
   // ---------- small pieces ----------
 
   function iconChip(name, tone) {
@@ -124,7 +132,14 @@
     return `${esc(DD.repos.label(item.repo))} <span class="mono">#${item.number}</span>`;
   }
 
-  function row({ key, url, title, iconName, tone, meta, at, snooze }) {
+  /** `ai` is what Bob gets for this row ({ item, kind, task }); the button only shows when Bob is on. */
+  function row({ key, url, title, iconName, tone, meta, at, snooze, ai }) {
+    const mode = ai && aiOn() ? DD.ai.modeFor(ai.item || {}, ai.kind) : null;
+    if (mode) aiTargets.set(key, ai);
+    const buttons = [
+      mode ? `<button class="icon-btn icon-btn--sm item__bob" data-action="ai-item" data-key="${esc(key)}" title="${esc(DD.ai.MODES[mode].verb)}" aria-label="${esc(DD.ai.MODES[mode].verb)}: ${esc(title)}">${icon("sparkle", 16)}</button>` : "",
+      snooze ? `<button class="icon-btn icon-btn--sm" data-action="snooze" data-key="${esc(snooze)}" title="Snooze until tomorrow" aria-label="Snooze until tomorrow">${icon("snooze", 16)}</button>` : "",
+    ].join("");
     return `
       <li class="item">
         ${iconChip(iconName, tone)}
@@ -134,7 +149,7 @@
         </div>
         <div class="item__end">
           ${timeEl(at)}
-          ${snooze ? `<button class="icon-btn icon-btn--sm item__snooze" data-action="snooze" data-key="${esc(snooze)}" title="Snooze until tomorrow" aria-label="Snooze until tomorrow">${icon("snooze", 16)}</button>` : ""}
+          ${buttons ? `<span class="item__actions">${buttons}</span>` : ""}
         </div>
       </li>`;
   }
@@ -189,6 +204,14 @@
     else if (!d) summary = state.status.error ? "Couldn't reach GitHub. Details below." : "Loading your work…";
     else summary = ins.summary(d, visibleTasks());
     $("#summary").textContent = summary;
+    // Rebuilt every minute by tick(), so only touch it when it changes (keeps focus on the button).
+    const plan = aiOn() && d ? `<button class="link link--bob" data-action="ai-plan">${icon("sparkle", 14)}Plan my day with Bob</button>` : "";
+    const host = $("#hello-ai");
+    if (host.dataset.html !== plan) {
+      host.innerHTML = plan;
+      host.dataset.html = plan;
+      host.hidden = !plan;
+    }
   }
 
   function renderTools() {
@@ -329,6 +352,7 @@
         meta: `<span class="mono">${esc(t.ref.split("@")[1] || "")}</span> · ${esc((t.title || "").split("\n")[0])}`,
         at: t.at,
         snooze: t.key,
+        ai: { kind: "main", task: t },
       });
     }
     const [iconName, base] = TASK_LOOK[t.kind] || ["git", "neutral"];
@@ -343,6 +367,7 @@
       meta: `${ref(t.item)} · ${esc(t.reason)}${detail}`,
       at: t.item.updatedAt,
       snooze: t.key,
+      ai: { item: t.item, kind: t.kind, task: t },
     });
   }
 
@@ -362,7 +387,7 @@
     const [iconName, tone, text] = PR_LOOK[st] || PR_LOOK.waiting;
     const by = st === "changes" && pr.changeRequests.length ? ` by ${esc(pr.changeRequests.join(", "))}` : "";
     const draft = pr.draft && st !== "draft" ? " · draft" : "";
-    return row({ key: pr.id, url: pr.url, title: pr.title, iconName, tone, meta: `${ref(pr)} · ${text}${by}${draft}`, at: pr.updatedAt });
+    return row({ key: pr.id, url: pr.url, title: pr.title, iconName, tone, meta: `${ref(pr)} · ${text}${by}${draft}`, at: pr.updatedAt, ai: { item: pr } });
   }
 
   function reviewRow(pr) {
@@ -377,6 +402,7 @@
       tone: ins.isBot(pr.author) ? "neutral" : stale ? "warning" : "info",
       meta: `${ref(pr)} · ${esc(pr.author)}${stale ? ` · <span class="t-warning">waiting ${Math.floor(days)}d</span>` : ""}${size}`,
       at: pr.createdAt,
+      ai: { item: pr, kind: "review" },
     });
   }
 
@@ -390,6 +416,7 @@
       tone: why === "mention" ? "info" : "neutral",
       meta: `${ref(item)} · ${why === "mention" ? `Mentioned${isPR ? " on a PR" : ""}` : `Assigned${isPR ? " PR" : ""}`} · ${esc(item.author)}`,
       at: item.updatedAt,
+      ai: { item, kind: why === "mention" ? "mention" : null },
     });
   }
 
@@ -400,18 +427,17 @@
     const groups = { now: [], next: [], later: [] };
     tasks.forEach((t) => groups[ins.bucket(t)].push(t));
 
-    const section = (id, title, list) =>
-      list.length ? `<h3 class="group" id="group-${id}">${title} <span>${list.length}</span></h3><ul class="items" aria-labelledby="group-${id}">${list.map(taskRow).join("")}</ul>` : "";
+    // Each heading shares a wrapper with its list, so a sticky heading scrolls away with its own section.
+    const section = (id, title, list, hint = "") =>
+      list.length
+        ? `<div class="section"><h3 class="group" id="group-${id}">${title} <span>${list.length}</span>${hint ? `<small>${hint}</small>` : ""}</h3><ul class="items items--${id}" aria-labelledby="group-${id}">${list.map(taskRow).join("")}</ul></div>`
+        : "";
 
     let body;
     if (!tasks.length) body = emptyState("check", "You're all caught up", "Nothing needs you right now.");
     else {
-      body = section("now", "Now", groups.now) + section("next", "Next", groups.next);
-      if (groups.later.length && !groups.now.length && !groups.next.length) body += section("later", "When you have time", groups.later);
-      else if (groups.later.length) {
-        body += `<button class="more" data-action="toggle-later" aria-expanded="${ui.showLater}">${icon(ui.showLater ? "chevronDown" : "chevron", 14)}${ui.showLater ? "Hide" : "Show"} ${plural(groups.later.length, "item")} that can wait</button>`;
-        if (ui.showLater) body += `<ul class="items items--later">${groups.later.map(taskRow).join("")}</ul>`;
-      }
+      const onlyLater = !groups.now.length && !groups.next.length;
+      body = section("now", "Now", groups.now) + section("next", "Next", groups.next) + section("later", onlyLater ? "When you have time" : "Later", groups.later, onlyLater ? "" : "Can wait");
     }
     const foot = snoozed ? `<span>${plural(snoozed, "item")} snoozed until tomorrow</span><button class="link" data-action="unsnooze">Restore</button>` : "";
     return { body, foot };
@@ -481,8 +507,19 @@
       </div>`;
   }
 
+  /** Edge fades on the scrolling work list: under the pinned heading once scrolled, and at the bottom while more is below. */
+  function updateFades(panel) {
+    if (!panel) return;
+    panel.classList.toggle("is-scrolled", panel.scrollTop > 0);
+    panel.classList.toggle("has-more", panel.scrollTop + panel.clientHeight < panel.scrollHeight - 1);
+  }
+
   function renderWork() {
     const el = $("#work");
+    aiTargets.clear();
+    // Syncs re-render the list; keep the reader's place unless they switched tabs.
+    const prev = $(".work__panel", el);
+    const scroll = prev?.getAttribute("aria-labelledby") === `tab-${ui.tab}` ? prev.scrollTop : 0;
     keepFocus(el, () => {
       if (!connected()) {
         if (!$(".connect", el)) el.innerHTML = connectView();
@@ -508,7 +545,8 @@
       } else {
         body = listView(issueItems(d), issueRow, "Nothing assigned and no new mentions");
         const triage = `is:issue is:open label:"status: needs triage 🕵️‍♀️" ${repoScope()}`;
-        foot = `<a class="link" href="${esc(searchUrl(triage))}">${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a><a class="link" href="${esc(searchUrl(`is:open assignee:${login} ${repoScope()}`))}">Open on GitHub</a>`;
+        const bobTriage = aiOn() && d.triage.items.length ? `<button class="link link--bob" data-action="ai-triage">${icon("sparkle", 14)}Triage with Bob</button>` : "";
+        foot = `<span class="work__foot-group"><a class="link" href="${esc(searchUrl(triage))}">${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a>${bobTriage}</span><a class="link" href="${esc(searchUrl(`is:open assignee:${login} ${repoScope()}`))}">Open on GitHub</a>`;
       }
 
       el.innerHTML = `
@@ -528,6 +566,9 @@
         </div>
         ${foot ? `<footer class="work__foot">${foot}</footer>` : ""}`;
     });
+    const panel = $(".work__panel", el);
+    if (panel) panel.scrollTop = scroll;
+    updateFades(panel);
   }
 
   // ---------- today ----------
@@ -584,6 +625,7 @@
           connected()
             ? `<footer class="today__foot">
                  <button class="btn btn--ghost btn--block" data-action="copy-standup" ${d ? "" : "disabled"} title="Yesterday, today and blockers from your GitHub activity">${icon("copy", 16)}Copy standup update</button>
+                 ${aiOn() ? `<button class="btn btn--ghost btn--block" data-action="ai-standup" ${d ? "" : "disabled"} title="Bob writes it from your PRs, reviews and to-dos; edit before copying">${icon("sparkle", 16)}Write standup with Bob</button>` : ""}
                </footer>`
             : ""
         }`;
@@ -626,6 +668,7 @@
       <header class="drawer__head">
         <h2>Activity</h2>
         <div class="drawer__actions">
+          ${aiOn() && list.length ? `<button class="btn btn--ghost btn--sm" data-action="ai-catchup">${icon("sparkle", 14)}Catch me up</button>` : ""}
           ${list.length && !s.demo ? `<button class="btn btn--ghost btn--sm" data-action="clear-activity">Clear</button>` : ""}
           <button class="icon-btn icon-btn--sm" data-action="close-activity" aria-label="Close">${icon("x", 16)}</button>
         </div>
@@ -650,6 +693,7 @@
     drawer.addEventListener("toggle", async (e) => {
       if (e.newState !== "open") return renderTools();
       $(".drawer__head .icon-btn", drawer)?.focus();
+      state.lastSeenAt = state.seenAt;
       state.seenAt = new Date().toISOString();
       await DD.storage.set({ activitySeenAt: state.seenAt });
     });
@@ -715,6 +759,8 @@
           ${toggle({ attrs: 'data-setting="includeTeamReviews"', checked: s.includeTeamReviews, label: "Include team review requests", hint: "Otherwise only reviews requested from you directly" })}
           ${toggle({ attrs: 'data-setting="demo"', checked: s.demo, label: "Sample data", hint: "Explore with realistic fake data" })}
         </section>
+
+        ${bobSettings()}
 
         <section class="setting-section" id="set-repos">
           <h3>Repositories</h3>
@@ -796,8 +842,59 @@
     if (next) next.scrollTop = scroll;
   }
 
+  function bobSettings() {
+    const s = state.settings;
+    if (!ext || !DD.ai.supported)
+      return `<section class="setting-section" id="set-bob"><h3>Bob</h3><p class="hint">Bob actions run through Bob Shell on your computer, so they need the Chrome extension rather than the web version.</p></section>`;
+    const st = state.bobStatus || {};
+    const helper = st.checking
+      ? `<span class="dot dot--neutral"></span>Looking for the Bob helper…`
+      : st.ok
+        ? `<span class="dot dot--success"></span><span>Helper ready · <b>Bob Shell ${esc(st.version)}</b></span>`
+        : `<span class="dot dot--${st.code === "missing" ? "warning" : "error"}"></span><span>${esc(st.error || "Not checked yet")}</span>`;
+    const setup =
+      st.code === "missing"
+        ? `<ol class="steps">
+             <li>Install <a href="https://bob.ibm.com/docs/shell">Bob Shell</a> (it needs Node.js).</li>
+             <li>In Terminal, from the <code>dev-dashboard</code> folder, run <code>sh ai-helper/install.sh</code></li>
+             <li>Click <b>Check again</b>.</li>
+           </ol>`
+        : "";
+    return `
+      <section class="setting-section" id="set-bob">
+        <h3>Bob</h3>
+        ${toggle({ attrs: 'data-setting="ai"', checked: s.ai, label: "Bob actions", hint: "Review briefs, CI explanations, day plans, standups and answers from IBM Bob, when you ask" })}
+        ${
+          s.ai
+            ? `<p class="status-line">${helper}<button class="link" data-action="bob-check">Check again</button></p>
+               ${setup}
+               <form class="field-row" data-form="bob-key">
+                 <input class="input" type="password" name="key" placeholder="${s.bobKey ? "Paste a new key to replace it" : "Bob API key"}" autocomplete="off" aria-label="Bob API key" data-focus="bob-key">
+                 <button class="btn btn--primary" type="submit">${s.bobKey ? "Replace" : "Save"}</button>
+                 ${s.bobKey ? `<button class="btn btn--danger" type="button" data-action="bob-key-remove">Remove</button>` : ""}
+               </form>
+               <p class="hint">${s.bobKey ? "Key saved. " : ""}Create an <b>Inference</b> key at <a href="https://bob.ibm.com">bob.ibm.com</a> under Settings → API keys. It stays in this browser and is only handed to Bob Shell on this computer.</p>
+               <div class="fields">
+                 <label class="field"><span>Team ID, for General keys only</span><input class="input" data-setting="bobTeamId" value="${esc(s.bobTeamId)}" placeholder="Optional" autocomplete="off"></label>
+               </div>
+               <p class="hint">Nothing goes to Bob until you click a Bob action. Then that item's title, description, comments, diff or CI log is sent through Bob Shell and counts toward your Bob usage.</p>
+               <button class="btn btn--sm" data-action="bob-test" ${s.bobKey && st.ok ? "" : "disabled"}>Send a test prompt</button>`
+            : ""
+        }
+      </section>`;
+  }
+
+  async function refreshBobStatus() {
+    if (!ext || !DD.ai.supported || !state.settings.ai) return;
+    state.bobStatus = { checking: true };
+    if ($("#settings").open) renderSettings();
+    state.bobStatus = await DD.ai.status();
+    if ($("#settings").open) renderSettings();
+  }
+
   function openSettings(section) {
     const dialog = $("#settings");
+    if (!state.bobStatus?.ok) refreshBobStatus();
     renderSettings();
     if (!dialog.open) dialog.showModal();
     if (section) $(`#set-${section}`)?.scrollIntoView({ block: "start" });
@@ -871,6 +968,9 @@
       return [
         connected() && act("Sync now", "refresh", () => requestSync(true), "refresh reload"),
         act("Copy standup update", "copy", copyStandup, "standup slack"),
+        aiOn() && data() && act("Write standup with Bob", "sparkle", bobStandup, "standup slack ai bob"),
+        aiOn() && data() && act("Plan my day with Bob", "sparkle", bobPlan, "plan schedule day ai bob"),
+        aiOn() && act("Catch me up with Bob", "sparkle", bobCatchUp, "activity summary ai bob"),
         act("Open activity", "bell", openActivity, "notifications"),
         act("Open settings", "gear", () => openSettings(), "preferences token"),
         act(`Switch to ${document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches) ? "light" : "dark"} theme`, "moon", toggleTheme, "theme dark light"),
@@ -890,6 +990,11 @@
         : repos[0];
       if (!repo) return null;
       return { group: "Go to", label: `${DD.util.repoShort(repo.slug)}#${m[2]}`, hint: `Open on GitHub`, iconName: "arrowRight", url: `https://github.com/${repo.slug}/issues/${m[2]}` };
+    }
+
+    function isQuestion(q) {
+      const words = q.split(/\s+/).length;
+      return words >= 3 && (/\?$/.test(q) || /^(what|what's|whats|how|why|which|where|when|who|can|could|should|is|are|do|does|did|any|summari[sz]e|explain|list|show me|tell me|help)\b/i.test(q));
     }
 
     function score(item, terms) {
@@ -919,13 +1024,21 @@
         .sort((a, b) => ORDER[a.group] - ORDER[b.group]);
       const target = jump(q);
       const go = target && !matched.some((r) => r.url && target.url.replace("/issues/", "/") === r.url.replace(/\/(issues|pull)\//, "/")) ? target : null;
+      const bobItems = aiOn()
+        ? [
+            { group: "Search", label: `Ask Bob “${q}”`, hint: "About your work and links", iconName: "sparkle", ask: q },
+            { group: "Search", label: `Find with Bob: “${q}”`, hint: "Builds a GitHub search", iconName: "sparkle", find: q },
+          ]
+        : [];
       results = [
         ...(go ? [go] : []),
         ...matched,
+        ...bobItems,
         { group: "Search", label: `Search GitHub for “${q}”`, iconName: "github", url: searchUrl(`org:carbon-design-system ${q}`) },
         { group: "Search", label: `Search the web for “${q}”`, iconName: "globe", web: q },
       ];
-      index = 0;
+      // A question goes to Bob on Enter; anything else still lands on the best match.
+      index = bobItems.length && !go && isQuestion(q) ? results.findIndex((r) => r.ask) : 0;
       draw();
     }
 
@@ -965,6 +1078,8 @@
       input().value = "";
       close();
       if (r.run) return r.run();
+      if (r.ask) return bobAsk(r.ask);
+      if (r.find) return bobFind(r.find);
       if (r.web) return webSearch(r.web, newTab);
       go(r.url, newTab);
     }
@@ -1009,6 +1124,217 @@
   function webSearch(text, newTab) {
     if (ext && chrome.search?.query) return chrome.search.query({ text, disposition: newTab ? "NEW_TAB" : "CURRENT_TAB" });
     go(`https://www.google.com/search?q=${encodeURIComponent(text)}`, newTab);
+  }
+
+  // ---------- Bob ----------
+
+  /**
+   * The Bob sheet shows one conversation: `spec.build()` makes the opening
+   * prompt (fetching GitHub detail if needed), follow-ups resend it with the
+   * exchange so far. Opening answers are cached per item version or per day.
+   */
+  const bob = { spec: null, base: "", cacheKey: null, turns: [], loading: null, error: null, controller: null, timer: 0 };
+
+  function bobContext() {
+    return {
+      login: state.settings.login || data()?.viewer?.login || "",
+      settings: state.settings,
+      data: data(),
+      tasks: visibleTasks(),
+      meetings: DD.sync.todaysMeetings(state.settings),
+      todos: state.day.todos,
+      activity: activity(),
+    };
+  }
+
+  function openBob(spec, { fresh = false } = {}) {
+    bob.controller?.abort();
+    Object.assign(bob, { spec, base: "", cacheKey: null, turns: [], error: null });
+    const dialog = $("#ai");
+    if (!dialog.open) dialog.showModal();
+    runBob(null, fresh);
+  }
+
+  async function runBob(question, fresh = false) {
+    const controller = new AbortController();
+    bob.controller = controller;
+    bob.error = null;
+    bob.loading = { stage: question || bob.base ? "Bob is thinking…" : "Gathering context from GitHub…", since: Date.now() };
+    if (question) bob.turns.push({ role: "user", text: question });
+    renderBob();
+    try {
+      let prompt;
+      if (!question) {
+        const built = await bob.spec.build();
+        if (controller.signal.aborted) return;
+        bob.base = built.prompt;
+        bob.cacheKey = built.cacheKey || null;
+        const hit = !fresh && (await DD.ai.cached(bob.cacheKey));
+        if (hit) return bob.turns.push({ role: "bob", text: hit.text, at: hit.at, cached: true });
+        prompt = bob.base;
+        bob.loading.stage = "Bob is thinking…";
+        renderBob();
+      } else prompt = DD.ai.followUpPrompt(bob.base, bob.turns.slice(0, -1), question);
+      const text = await DD.ai.ask(prompt, state.settings, controller.signal);
+      if (controller.signal.aborted) return;
+      bob.turns.push({ role: "bob", text, at: new Date().toISOString() });
+      if (!question) DD.ai.remember(bob.cacheKey, { text });
+    } catch (err) {
+      if (controller.signal.aborted || err.code === "cancelled") {
+        if (question && bob.turns.at(-1)?.role === "user") bob.turns.pop();
+        if (!bob.turns.length) bob.error = new DD.ai.AIError("You stopped Bob before it answered.", "cancelled");
+        return;
+      }
+      bob.error = err;
+    } finally {
+      if (bob.controller === controller) {
+        bob.controller = null;
+        bob.loading = null;
+        renderBob();
+      }
+    }
+  }
+
+  function bobAnswer(t, first) {
+    const { format } = bob.spec;
+    if (first && format === "edit") return `<textarea class="input bob__edit" rows="11" aria-label="Draft, editable" data-focus="bob-edit" spellcheck="true">${esc(t.text)}</textarea>`;
+    if (first && format === "query")
+      return `<form class="field-row" data-form="bob-query">
+                <input class="input mono" name="q" value="${esc(DD.ai.cleanQuery(t.text))}" aria-label="GitHub search query" data-focus="bob-query" spellcheck="false">
+                <button class="btn btn--primary" type="submit">Search GitHub</button>
+              </form>`;
+    return `<div class="bob__answer">${DD.ai.markdown(t.text)}</div>`;
+  }
+
+  function renderBob() {
+    const el = $("#ai");
+    if (!bob.spec) return;
+    const { spec, turns, loading, error } = bob;
+    const firstBob = turns.find((t) => t.role === "bob");
+    const lastBob = turns.findLast((t) => t.role === "bob");
+    const todos = lastBob && !loading ? DD.ai.checklist(lastBob.text) : [];
+    const thread = turns.map((t) => (t.role === "user" ? `<p class="bob__q">${esc(t.text)}</p>` : bobAnswer(t, t === firstBob))).join("");
+
+    const fix =
+      error?.code === "nokey" || error?.code === "missing"
+        ? `<button class="btn btn--primary btn--sm" data-action="settings" data-section="bob">Bob settings</button>`
+        : "";
+    const failure = error
+      ? `<div class="notice ${error.code === "cancelled" ? "" : "notice--error"}" role="alert">${icon("alert", 16)}<div class="notice__body">
+           <p class="notice__title">${error.code === "missing" ? "Bob helper not found" : error.code === "nokey" ? "No Bob API key" : error.code === "cancelled" ? "Stopped" : "Bob couldn't answer"}</p>
+           <p class="notice__text">${esc(error.message)}</p>
+           <div class="notice__actions">${fix}<button class="btn btn--sm" data-action="bob-retry">Try again</button></div>
+         </div></div>`
+      : "";
+    const waiting = loading
+      ? `<div class="bob__loading" role="status"><span class="bob__spinner" aria-hidden="true"></span><span>${esc(loading.stage)}</span><span class="bob__elapsed mono" data-since="${loading.since}">${Math.round((Date.now() - loading.since) / 1000)}s</span><button class="btn btn--ghost btn--sm" data-action="bob-cancel">Cancel</button></div>`
+      : "";
+    const meta = firstBob ? `<span class="bob__meta">${firstBob.cached ? "Saved answer" : "Answered"} <span data-ago="${esc(firstBob.at)}">${agoText(firstBob.at)}</span></span>` : "";
+    const tools = lastBob
+      ? `<div class="bob__tools">
+           <button class="btn btn--ghost btn--sm" data-action="bob-copy">${icon("copy", 14)}Copy</button>
+           ${todos.length ? `<button class="btn btn--ghost btn--sm" data-action="bob-todos">${icon("plus", 14)}Add ${plural(todos.length, "to-do")}</button>` : ""}
+           <button class="btn btn--ghost btn--sm" data-action="bob-regenerate" ${loading ? "disabled" : ""}>${icon("refresh", 14)}Regenerate</button>
+           ${meta}
+         </div>`
+      : "";
+    const follow = lastBob
+      ? `<form class="bob__follow" data-form="bob-follow">
+           <input class="input" name="q" placeholder="Ask a follow-up" autocomplete="off" aria-label="Follow-up question" data-focus="bob-follow" ${loading ? "disabled" : ""}>
+           <button class="icon-btn" type="submit" aria-label="Send" ${loading ? "disabled" : ""}>${icon("send", 16)}</button>
+         </form>`
+      : "";
+
+    keepFocus(el, () => {
+      el.innerHTML = `
+        <header class="sheet__head bob__head">
+          <span class="chip-icon tone-info">${icon("sparkle", 16)}</span>
+          <div class="bob__title">
+            <h2>${esc(spec.title)}</h2>
+            ${spec.subtitle ? (spec.url ? `<a class="bob__subtitle" href="${esc(spec.url)}" target="_blank" rel="noopener">${esc(spec.subtitle)}</a>` : `<p class="bob__subtitle">${esc(spec.subtitle)}</p>`) : ""}
+          </div>
+          <button class="icon-btn" data-action="bob-close" aria-label="Close">${icon("x", 18)}</button>
+        </header>
+        <div class="sheet__body bob__body">${thread}${waiting}${failure}</div>
+        ${tools || follow ? `<footer class="bob__foot">${tools}${follow}</footer>` : ""}`;
+    });
+    const body = $(".bob__body", el);
+    if (loading || bob.turns.at(-1)?.role === "user") body.scrollTop = body.scrollHeight;
+    else if (bob.turns.length > 1) $$(".bob__q", body).at(-1)?.scrollIntoView({ block: "start" });
+
+    clearInterval(bob.timer);
+    if (loading)
+      bob.timer = setInterval(() => {
+        const t = $(".bob__elapsed", el);
+        if (t) t.textContent = `${Math.round((Date.now() - +t.dataset.since) / 1000)}s`;
+      }, 1000);
+  }
+
+  function closeBob() {
+    bob.controller?.abort();
+    clearInterval(bob.timer);
+    bob.spec = null;
+    if ($("#ai").open) $("#ai").close();
+  }
+
+  function bobItem(key) {
+    const target = aiTargets.get(key);
+    if (!target) return;
+    const mode = DD.ai.modeFor(target.item || {}, target.kind);
+    const subject = target.item || target.task;
+    const ref = target.item ? `${DD.util.repoShort(subject.repo)}#${subject.number}` : target.task.ref;
+    openBob({ title: DD.ai.MODES[mode].label, subtitle: `${ref} · ${subject.title}`, url: subject.url, build: () => DD.ai.itemPrompt(bobContext(), target) });
+  }
+
+  function bobAsk(q) {
+    openBob({ title: "Ask Bob", subtitle: q, build: async () => ({ prompt: DD.ai.askPrompt(bobContext(), q) }) });
+  }
+
+  function bobFind(q) {
+    openBob({ title: "Find on GitHub", subtitle: q, format: "query", build: async () => ({ prompt: DD.ai.searchQueryPrompt(bobContext(), q) }) });
+  }
+
+  function bobPlan() {
+    openBob({ title: "Plan my day", subtitle: new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }), build: async () => ({ prompt: DD.ai.planPrompt(bobContext()), cacheKey: `plan:${DD.util.todayKey()}` }) });
+  }
+
+  function bobStandup() {
+    openBob({ title: "Standup update", subtitle: "Edit it, then copy it into Slack", format: "edit", build: async () => ({ prompt: DD.ai.standupPrompt(bobContext()), cacheKey: `standup:${DD.util.todayKey()}` }) });
+  }
+
+  function bobCatchUp() {
+    const all = activity();
+    const since = state.lastSeenAt ? Date.parse(state.lastSeenAt) : 0;
+    let entries = all.filter((a) => Date.parse(a.createdAt) > since);
+    if (entries.length < 3) entries = all.filter((a) => Date.now() - Date.parse(a.createdAt) < 86400000);
+    if (entries.length < 3) entries = all.slice(0, 30);
+    if ($("#activity").matches(":popover-open")) $("#activity").hidePopover();
+    openBob({ title: "Catch me up", subtitle: plural(entries.length, "update"), build: async () => ({ prompt: DD.ai.catchUpPrompt(bobContext(), entries) }) });
+  }
+
+  function bobTriage() {
+    const d = data();
+    openBob({ title: "Triage", subtitle: `${plural(Math.min(12, d.triage.items.length), "issue")} waiting for triage`, build: async () => ({ prompt: await DD.ai.triagePrompt(bobContext()), cacheKey: `triage:${DD.util.todayKey()}` }) });
+  }
+
+  async function bobCopy() {
+    const last = bob.turns.findLast((t) => t.role === "bob");
+    const edited = bob.spec?.format === "edit" && last === bob.turns.find((t) => t.role === "bob") ? $(".bob__edit", $("#ai"))?.value : null;
+    try {
+      await navigator.clipboard.writeText(edited ?? last?.text ?? "");
+      toast("Copied", "success");
+    } catch {
+      toast("Couldn't copy to the clipboard", "error");
+    }
+  }
+
+  async function bobTodos() {
+    const items = DD.ai.checklist(bob.turns.findLast((t) => t.role === "bob")?.text).map((text) => ({ id: DD.util.uid(), text, done: false }));
+    if (!items.length) return;
+    state.day.todos.push(...items);
+    renderToday();
+    await DD.day.update((d) => d.todos.push(...items));
+    toast(`Added ${plural(items.length, "to-do")}`, "success");
   }
 
   // ---------- actions ----------
@@ -1159,17 +1485,12 @@
     },
     settings: (el) => {
       $("#activity").matches(":popover-open") && $("#activity").hidePopover();
+      if ($("#ai").open) closeBob();
       openSettings(el.dataset.section);
     },
     "close-settings": () => $("#settings").close(),
     snooze: (el) => snooze(el.dataset.key),
     unsnooze,
-    "toggle-later": () => {
-      ui.showLater = !ui.showLater;
-      saveUi();
-      renderWork();
-      $('[data-action="toggle-later"]')?.focus();
-    },
     "demo-on": () => setDemo(true),
     "demo-off": () => setDemo(false),
     "copy-standup": copyStandup,
@@ -1187,6 +1508,32 @@
     },
     theme: (el) => setTheme(el.dataset.theme),
     "test-notification": sendTestNotification,
+    "ai-item": (el) => bobItem(el.dataset.key),
+    "ai-plan": bobPlan,
+    "ai-standup": bobStandup,
+    "ai-catchup": bobCatchUp,
+    "ai-triage": bobTriage,
+    "bob-close": closeBob,
+    "bob-cancel": () => bob.controller?.abort(),
+    "bob-retry": () => {
+      const last = bob.turns.at(-1);
+      if (last?.role !== "user") return openBob(bob.spec, { fresh: true });
+      bob.turns.pop();
+      runBob(last.text);
+    },
+    "bob-regenerate": () => openBob(bob.spec, { fresh: true }),
+    "bob-copy": bobCopy,
+    "bob-todos": bobTodos,
+    "bob-check": refreshBobStatus,
+    "bob-test": () => {
+      $("#settings").close();
+      openBob({ title: "Test prompt", subtitle: "Checks that Bob Shell can answer", build: async () => ({ prompt: "Reply with one short sentence confirming you can read this, and name the model you are if you know it." }) });
+    },
+    "bob-key-remove": async (el) => {
+      if (!confirmed(el, "Click again to remove")) return;
+      state.settings = await DD.settings.save({ bobKey: "" });
+      renderSettings();
+    },
     disconnect: async (el) => {
       if (!confirmed(el, "Click again to disconnect")) return;
       await DD.storage.remove(["cache", "snapshot", "status", "activity"]);
@@ -1256,6 +1603,11 @@
     if (key === "notifications") renderSettings();
     if (key === "includeTeamReviews") resetBaseline();
     if (key === "staleReviewDays") renderAll();
+    if (key === "ai") {
+      renderAll();
+      renderSettings();
+      refreshBobStatus();
+    }
   }
 
   // ---------- events ----------
@@ -1284,6 +1636,24 @@
       if (!form) return;
       e.preventDefault();
       if (form.dataset.form === "connect") connect(new FormData(form).get("token") || "", form);
+      if (form.dataset.form === "bob-key") {
+        const key = String(new FormData(form).get("key") || "").trim();
+        if (!key) return;
+        DD.settings.save({ bobKey: key }).then((s) => {
+          state.settings = s;
+          toast("Bob API key saved", "success");
+          renderSettings();
+          refreshBobStatus();
+        });
+      }
+      if (form.dataset.form === "bob-follow") {
+        const q = String(new FormData(form).get("q") || "").trim();
+        if (q && !bob.loading) runBob(q);
+      }
+      if (form.dataset.form === "bob-query") {
+        const q = String(new FormData(form).get("q") || "").trim();
+        if (q) go(searchUrl(q));
+      }
       if (form.dataset.form === "todo") {
         const input = form.querySelector("input");
         const text = input.value.trim();
@@ -1350,7 +1720,7 @@
         e.preventDefault();
         return search.focus();
       }
-      if (typing || e.metaKey || e.ctrlKey || e.altKey || $("#settings").open) return;
+      if (typing || e.metaKey || e.ctrlKey || e.altKey || $("#settings").open || $("#ai").open) return;
       if (e.key === "/") {
         e.preventDefault();
         search.focus();
@@ -1363,11 +1733,21 @@
       if (e.target === $("#settings")) $("#settings").close();
     });
 
+    $("#ai").addEventListener("click", (e) => {
+      if (e.target === $("#ai")) closeBob();
+    });
+    // Escape closes the dialog natively; stop Bob too. The event is async, so skip it if Bob was reopened meanwhile.
+    $("#ai").addEventListener("close", () => !$("#ai").open && closeBob());
+
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "visible") return;
       tick();
       maybeSync();
     });
+
+    // Scroll events don't bubble, so listen in the capture phase for the work list.
+    document.addEventListener("scroll", (e) => e.target.classList?.contains("work__panel") && updateFades(e.target), true);
+    addEventListener("resize", () => updateFades($(".work__panel")));
 
     bindActivity();
     DD.storage.onChange(onStorage);

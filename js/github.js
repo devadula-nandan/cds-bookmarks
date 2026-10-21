@@ -271,5 +271,111 @@ DD.github = (() => {
     return rest(token, `/notifications/threads/${id}`, { method: "DELETE" });
   }
 
-  return { fetchViewer, fetchDashboard, fetchInbox, markThreadRead, markThreadDone, GitHubError };
+  // ---------- detail for AI context (fetched on demand, never during sync) ----------
+
+  const CHECKS = `
+    statusCheckRollup { state contexts(first: 60) { nodes {
+      __typename
+      ... on CheckRun { databaseId name status conclusion title summary detailsUrl
+        annotations(first: 8) { nodes { path message annotationLevel location { start { line } } } } }
+      ... on StatusContext { context state description targetUrl }
+    } } }`;
+
+  const DETAIL = `
+    query Detail($id: ID!) {
+      node(id: $id) {
+        ... on PullRequest {
+          body baseRefName headRefName changedFiles
+          files(first: 80) { nodes { path additions deletions } }
+          comments(last: 8) { nodes { author { login } body createdAt } }
+          reviews(last: 8) { nodes { author { login } state body submittedAt } }
+          reviewThreads(last: 30) { nodes { isResolved isOutdated path line comments(first: 4) { nodes { author { login } body } } } }
+          commits(last: 1) { nodes { commit { oid ${CHECKS} } } }
+        }
+        ... on Issue {
+          body
+          comments(last: 10) { nodes { author { login } body createdAt } }
+        }
+      }
+    }`;
+
+  function failedChecks(rollup) {
+    return (rollup?.contexts?.nodes || [])
+      .filter((c) => (c.__typename === "CheckRun" ? ["FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED"].includes(c.conclusion) : ["FAILURE", "ERROR"].includes(c.state)))
+      .map((c) =>
+        c.__typename === "CheckRun"
+          ? {
+              id: c.databaseId,
+              name: c.name,
+              conclusion: c.conclusion,
+              title: c.title,
+              summary: c.summary,
+              url: c.detailsUrl,
+              annotations: (c.annotations?.nodes || []).map((a) => ({ path: a.path, line: a.location?.start?.line, level: a.annotationLevel, message: a.message })),
+            }
+          : { name: c.context, conclusion: c.state, title: c.description, url: c.targetUrl, annotations: [] }
+      );
+  }
+
+  /** Body, discussion, review threads and failing checks for one PR or issue. */
+  async function fetchDetail(token, id) {
+    const { data } = await graphql(token, DETAIL, { id });
+    const n = data.node || {};
+    const commit = n.commits?.nodes?.[0]?.commit;
+    return {
+      body: n.body || "",
+      baseRef: n.baseRefName,
+      headRef: n.headRefName,
+      changedFiles: n.changedFiles,
+      files: (n.files?.nodes || []).map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+      comments: (n.comments?.nodes || []).map((c) => ({ author: c.author?.login || "ghost", body: c.body, at: c.createdAt })),
+      reviews: (n.reviews?.nodes || []).map((r) => ({ author: r.author?.login || "ghost", state: r.state, body: r.body, at: r.submittedAt })),
+      threads: (n.reviewThreads?.nodes || []).map((t) => ({
+        resolved: t.isResolved,
+        outdated: t.isOutdated,
+        path: t.path,
+        line: t.line,
+        comments: (t.comments?.nodes || []).map((c) => ({ author: c.author?.login || "ghost", body: c.body })),
+      })),
+      sha: commit?.oid || null,
+      failed: failedChecks(commit?.statusCheckRollup),
+    };
+  }
+
+  /** Failing checks on a branch head, for a broken main. */
+  async function fetchCommitChecks(token, slug, expression) {
+    const [owner, name] = slug.split("/");
+    const { data } = await graphql(
+      token,
+      `query($owner: String!, $name: String!, $expr: String!) { repository(owner: $owner, name: $name) { object(expression: $expr) { ... on Commit { oid message ${CHECKS} } } } }`,
+      { owner, name, expr: expression }
+    );
+    const c = data.repository?.object;
+    return { sha: c?.oid || null, message: c?.message || "", failed: failedChecks(c?.statusCheckRollup) };
+  }
+
+  /** Bodies for a handful of issues at once (triage). */
+  async function fetchBodies(token, ids) {
+    if (!ids.length) return {};
+    const { data } = await graphql(token, `query($ids: [ID!]!) { nodes(ids: $ids) { ... on Issue { id body } ... on PullRequest { id body } } }`, { ids });
+    return Object.fromEntries((data.nodes || []).filter(Boolean).map((n) => [n.id, n.body || ""]));
+  }
+
+  async function fetchDiff(token, slug, number) {
+    const res = await send(`${API}/repos/${slug}/pulls/${number}`, { headers: headers(token, { Accept: "application/vnd.github.diff" }) });
+    if (!res.ok) throw new GitHubError(`Couldn't load the diff (${res.status})`, res.status, ssoUrl(res));
+    return res.text();
+  }
+
+  /**
+   * The tail of a GitHub Actions job log around its error lines. The API
+   * redirects to signed blob storage, which the manifest grants access to.
+   */
+  async function fetchJobLog(token, slug, jobId) {
+    const res = await send(`${API}/repos/${slug}/actions/jobs/${jobId}/logs`, { headers: headers(token) });
+    if (!res.ok) throw new GitHubError(`Couldn't load the job log (${res.status})`, res.status);
+    return res.text();
+  }
+
+  return { fetchViewer, fetchDashboard, fetchInbox, markThreadRead, markThreadDone, fetchDetail, fetchCommitChecks, fetchBodies, fetchDiff, fetchJobLog, GitHubError };
 })();

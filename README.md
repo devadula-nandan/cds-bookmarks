@@ -6,6 +6,7 @@ A Chrome new tab page for Carbon developers: what needs you on GitHub, ranked, p
 - **Repo bar**: each repo opens a menu with its board, issues, PRs, sites and Storybooks, plus `main` health and the latest release.
 - **Search** (`/` or `⌘K`): PRs, issues, links and actions. Type `carbon 23717` to jump straight to an issue or PR.
 - **Today**: your recurring meetings, a to-do list that carries over, and a one-click standup draft.
+- **Bob** (optional): review briefs, CI failure explanations, change-request checklists, merge messages, day plans, standup drafts and answers about your work, from IBM Bob. See [Bob](#bob).
 - **Background sync**: checks GitHub every few minutes, sends desktop notifications and shows a count of urgent items on the toolbar icon, even when no new tab is open.
 
 ## Install
@@ -47,11 +48,42 @@ curl -fsSL -o dev-dashboard.zip https://github.com/devadula-nandan/cds-bookmarks
 
 If you'd rather track `main`, clone the repo and choose the clone's folder in **Load unpacked**. To update, `git pull` and click the reload icon on the extension's card.
 
+## Bob
+
+Bob actions use [Bob Shell](https://bob.ibm.com/docs/shell) on your computer, through a small helper that Chrome starts when you ask something. They only work in the extension, not the web version.
+
+1. Install Bob Shell 2.0 or later (`bob --version`).
+2. From the `dev-dashboard` folder, run:
+
+   ```sh
+   sh ai-helper/install.sh
+   ```
+
+3. Open a new tab, go to **Settings → Bob**, turn on **Bob actions** and paste a Bob API key. Create an **Inference** key at [bob.ibm.com](https://bob.ibm.com) under Settings → API keys. A **General** key also needs your team ID.
+
+Re-run the installer if you move the folder or switch Node versions. `sh ai-helper/install.sh --uninstall` removes the helper.
+
+Where Bob shows up:
+
+| Where | What it does |
+| --- | --- |
+| ✦ on any work item | Picks the right help for the item: a review brief from the diff, why CI or `main` is failing (from the failed checks and job logs), a checklist of requested changes, conflict help, a squash-merge message, a reviewer nudge, what a mention needs from you, or a plan for an issue |
+| Search | **Ask Bob** answers questions about your work and links (Enter picks it for questions). **Find with Bob** turns plain English into a GitHub search |
+| Header | **Plan my day** around your meetings and what's urgent |
+| Today | **Write standup with Bob**, an editable draft for Slack |
+| Activity | **Catch me up** on what changed since you last looked |
+| Issues tab | **Triage with Bob** suggests type, component, severity and duplicates |
+
+Every answer can be copied, regenerated or followed up on, and checklists can be added to your to-dos. Answers are saved per item version (and per day for plans, standups and triage), so reopening one doesn't ask Bob again.
+
+Nothing is sent to Bob until you click a Bob action. Then the helper runs `bob run --mode ask` in an empty folder (`~/.dev-dashboard/bob-workspace`) with that item's title, description, comments, diff or CI logs as the prompt. Your key is stored with your other settings and only handed to Bob Shell on this computer. Requests count toward your Bob usage.
+
 ## Settings
 
 Open them from the gear icon on the new tab:
 
 - **GitHub**: replace or disconnect the token, set the sync interval, and decide when a review counts as overdue.
+- **Bob**: turn Bob actions on, check the helper and save your Bob API key.
 - **Repositories**: turn repos off to hide them from the bar, search and your work list.
 - **Notifications**: choose which events raise a desktop notification. Everything is still recorded under the bell icon.
 - **Meetings**: recurring weekday meetings, reminded 5 minutes before.
@@ -102,4 +134,6 @@ Keep the asset named `dev-dashboard.zip` so the download links above always poin
 | `js/sync.js` | Fetch → diff → activity log → notifications (shared) |
 | `js/github.js`, `js/insights.js` | GitHub API client and prioritization |
 | `js/core.js` | Utilities, storage (`chrome.storage` or `localStorage`), settings, per-day state |
+| `js/ai.js` | Bob: native-messaging client, prompts and context, answer cache, Markdown rendering |
+| `ai-helper/` | Native messaging host that runs Bob Shell, and its installer |
 | `scripts/package.sh` | Builds `dist/dev-dashboard.zip` for a release |
