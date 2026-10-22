@@ -365,17 +365,51 @@ Then **Questions to answer** — any comments that need a reply rather than a co
     }
   }
 
-  function lookupPlanPrompt(ctx, text, purpose) {
+  function lookupPlanPrompt(ctx, text, purpose, pages = []) {
     const repos = DD.repos.enabled(ctx.settings).map((r) => `- ${r.name}: ${r.slug}`).join("\n");
+    const site = pages.length ? `, "pages": ["up to 2 paths from the website pages below whose guidance would help, or none"]` : "";
     return `Plan the GitHub lookups that would help ${purpose}. Today is ${DD.util.todayKey()}; my GitHub login is ${ctx.login || "unknown"}.
 Repos:
 ${repos}
 
 Reply with only this JSON, no prose:
-{"repo": "owner/name the text is most about, or null", "queries": ["up to 3 GitHub issue/PR search queries, each scoped with repo: or org:carbon-design-system, using qualifiers like is:issue, is:pr, is:open, label:, author:, in:title"], "refs": ["owner/name#123 for each issue or PR the text names"], "code": true if reading that repo's source code would help, else false}
-
+{"repo": "owner/name the text is most about, or null", "queries": ["up to 3 GitHub issue/PR search queries, each scoped with repo: or org:carbon-design-system, using qualifiers like is:issue, is:pr, is:open, label:, author:, in:title"], "refs": ["owner/name#123 for each issue or PR the text names"], "code": true if reading that repo's source code would help, else false${site}}
+${pages.length ? `\nCarbon website pages (${SITE}):\n${pages.join("\n")}\n` : ""}
 Text:
 ${clip(text, 6000)}`;
+  }
+
+  // ---------- the Carbon website ----------
+
+  const SITE = "https://www.carbondesignsystem.com";
+  let sitePaths = null;
+
+  /** Every page path in the website's sitemaps, fetched once per tab. Empty if the site can't be reached. */
+  async function websitePages() {
+    sitePaths ||= (async () => {
+      const locs = async (url) => {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${url}: ${res.status}`);
+        return [...(await res.text()).matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].trim());
+      };
+      const maps = await locs(`${SITE}/sitemap.xml`);
+      const urls = (await Promise.all(maps.map((m) => locs(m).catch(() => [])))).flat();
+      return [...new Set(urls.filter((u) => u.startsWith(SITE)).map((u) => u.slice(SITE.length) || "/"))];
+    })().catch(() => {
+      sitePaths = null;
+      return [];
+    });
+    return sitePaths;
+  }
+
+  /** A website page's main content as plain text. */
+  async function fetchWebsitePage(path) {
+    const res = await fetch(SITE + path);
+    if (!res.ok) throw new Error(String(res.status));
+    const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+    const main = doc.querySelector("main") || doc.body;
+    main.querySelectorAll("script, style, svg, nav, iframe").forEach((n) => n.remove());
+    return main.textContent.replace(/\s+/g, " ").trim();
   }
 
   /**
@@ -383,12 +417,13 @@ ${clip(text, 6000)}`;
    * from GitHub, and the result goes into the final prompt. When the text is
    * about code and that repo has a local clone, the final run reads it too.
    */
-  async function retrieve(ctx, text, purpose, stage = () => {}, signal) {
+  async function retrieve(ctx, text, purpose, stage = () => {}, signal, { website = false } = {}) {
     const token = ctx.settings.demo ? null : ctx.settings.token;
     stage("Planning what to look up…");
+    const pages = website ? await websitePages() : [];
     let plan = null;
     try {
-      plan = parseJson(await ask(lookupPlanPrompt(ctx, text, purpose), ctx.settings, signal, { maxTurns: 1, timeoutMs: 90000 }));
+      plan = parseJson(await ask(lookupPlanPrompt(ctx, text, purpose, pages), ctx.settings, signal, { maxTurns: 1, timeoutMs: 90000 }));
     } catch (err) {
       if (["cancelled", "nokey", "missing"].includes(err.code)) throw err;
     }
@@ -411,9 +446,16 @@ ${clip(text, 6000)}`;
         )
       );
     }
+    const picked = (plan.pages || []).map((p) => String(p).replace(SITE, "")).filter((p) => pages.includes(p)).slice(0, 2);
+    let site = "";
+    if (picked.length) {
+      stage(`Reading the Carbon website (${plural(picked.length, "page")})…`);
+      const texts = await Promise.all(picked.map((p) => fetchWebsitePage(p).catch((err) => `(unavailable: ${err.message})`)));
+      site = `## Retrieved from the Carbon website\n${picked.map((p, i) => `### ${SITE}${p}\n${clip(texts[i], 8000)}`).join("\n\n")}`;
+    }
     const clone = plan.code && plan.repo ? ctx.settings.clones?.[plan.repo] : null;
     return {
-      block: token ? `## Retrieved from GitHub\n${parts.join("\n\n") || "- Nothing relevant found."}` : "",
+      block: [token ? `## Retrieved from GitHub\n${parts.join("\n\n") || "- Nothing relevant found."}` : "", site].filter(Boolean).join("\n\n"),
       repo: plan.repo || null,
       code: clone ? plan.repo : null,
       opts: clone ? { workspace: clone, maxTurns: 30, timeoutMs: 420000 } : {},
@@ -421,7 +463,7 @@ ${clip(text, 6000)}`;
   }
 
   async function askBuild(ctx, question, stage, signal) {
-    const found = await retrieve(ctx, question, "answer my question", stage, signal);
+    const found = await retrieve(ctx, question, "answer my question", stage, signal, { website: true });
     stage(found.code ? `Reading ${repoShort(found.code)} and thinking…` : "Bob is thinking…");
     return {
       prompt: [preamble(ctx, { code: found.code }), workContext(ctx), `## Recent activity\n${activityContext(ctx.activity, 15)}`, linksContext(), found.block, `## My question\n${question}`].filter(Boolean).join("\n\n"),
@@ -431,13 +473,13 @@ ${clip(text, 6000)}`;
 
   /** Extra lookups for a follow-up question, appended to the original context. */
   async function askAugment(ctx, question, stage, signal) {
-    const found = await retrieve(ctx, question, "answer my follow-up question", stage, signal);
+    const found = await retrieve(ctx, question, "answer my follow-up question", stage, signal, { website: true });
     stage("Bob is thinking…");
     return { extra: found.block, opts: found.opts };
   }
 
   async function slackBuild(ctx, thread, stage, signal) {
-    const found = await retrieve(ctx, thread, "answer the support question in this Slack thread", stage, signal);
+    const found = await retrieve(ctx, thread, "answer the support question in this Slack thread", stage, signal, { website: true });
     stage(found.code ? `Reading ${repoShort(found.code)} and drafting…` : "Drafting the reply…");
     const prompt = [
       preamble(ctx, { code: found.code }),

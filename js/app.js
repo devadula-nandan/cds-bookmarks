@@ -1654,13 +1654,13 @@
   function bobSlack() {
     openBob({
       title: "Slack reply",
-      subtitle: "Bob drafts a reply grounded in GitHub and the code",
+      subtitle: "Bob drafts a reply grounded in GitHub, the code and the website",
       trigger: '[data-action="ai-slack"]',
       format: "reply",
       input: {
         label: "Slack thread",
         placeholder: "Paste the whole thread here, oldest message first…",
-        hint: "Bob looks up related issues and PRs, reads your local clone when the question is about code, and cites what it used.",
+        hint: "Bob looks up related issues and PRs, reads carbondesignsystem.com pages and your local clone when they help, and cites what it used.",
         submit: "Draft reply",
       },
       build(stage, signal) {

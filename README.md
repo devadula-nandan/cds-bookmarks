@@ -74,10 +74,10 @@ Where Bob shows up:
 | Today | **Write standup with Bob**, an editable draft for Slack |
 | Activity | **Catch me up** on what changed since you last looked |
 | Issues tab | **Triage with Bob** suggests type, component, severity and duplicates |
-| Slack icon (top right) | Paste a support thread; Bob looks up related issues and PRs, reads your local clone if it's about code, and drafts a reply with its sources |
+| Slack icon (top right) | Paste a support thread; Bob looks up related issues and PRs, reads relevant carbondesignsystem.com pages and your local clone if it's about code, and drafts a reply with its sources |
 | Today | **Bug of the day**, see below |
 
-**Ask Bob** and Slack replies first have Bob plan what to look up (searches and issue numbers). The dashboard fetches those from GitHub and Bob answers from what was found. If the question is about code and that repo has a local clone, Bob reads it too.
+**Ask Bob** and Slack replies first have Bob plan what to look up (searches and issue numbers). The dashboard fetches those from GitHub and Bob answers from what was found. If the question is about code and that repo has a local clone, Bob reads it too. Bob also picks up to two pages from the carbondesignsystem.com sitemap, and the dashboard reads them for it.
 
 ### Local clones and the bug hunter
 
