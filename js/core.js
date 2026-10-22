@@ -47,10 +47,6 @@ DD.util = {
     return `${y}-${m}-${d}`;
   },
 
-  isoDate(date) {
-    return DD.util.todayKey(date);
-  },
-
   /** Start of the previous working day (skips weekends). */
   previousWorkday(date = new Date()) {
     const d = new Date(date);
@@ -80,18 +76,13 @@ DD.util = {
     return String(slug || "").split("/").pop();
   },
 
+  /** "carbon#123" for an issue or PR. */
+  itemRef(item) {
+    return `${DD.util.repoShort(item.repo)}#${item.number}`;
+  },
+
   plural(n, word, many = `${word}s`) {
     return `${n} ${n === 1 ? word : many}`;
-  },
-};
-
-DD.bus = {
-  handlers: {},
-  on(event, fn) {
-    (this.handlers[event] ||= []).push(fn);
-  },
-  emit(event, payload) {
-    (this.handlers[event] || []).forEach((fn) => fn(payload));
   },
 };
 
@@ -227,7 +218,7 @@ DD.settings = (() => {
       ...base,
       ...saved,
       notifyOn: { ...base.notifyOn, ...(saved.notifyOn || {}) },
-      meetings: Array.isArray(saved.meetings) ? saved.meetings : base.meetings,
+      meetings: (Array.isArray(saved.meetings) ? saved.meetings : base.meetings).map((m) => ({ ...m, minutes: m.minutes || 15 })),
       disabledRepos: Array.isArray(saved.disabledRepos) ? saved.disabledRepos : [],
       clones: saved.clones && typeof saved.clones === "object" ? saved.clones : {},
     };

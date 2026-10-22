@@ -45,6 +45,8 @@
   --font: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.2, 0, 0, 1);
+  /* The sweep of light that means "Bob is working" (Bob buttons, the bug hunt, the thinking row). */
+  --bob-sweep: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--magic) 14%, transparent), transparent 65%) 0 0 / 300% 100%;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -259,6 +261,31 @@ kbd {
   color: var(--error);
 }
 
+/* ---------- motion ---------- */
+
+/*
+ * Every interactive surface eases between states instead of snapping. :where() keeps this at zero
+ * specificity, so any element that sets its own transition wins.
+ */
+:where(a, button, summary, input, select, textarea, kbd, .item, .todo, .search__box, .search__item, .menu__link, .menu__status, .hunt__report) {
+  transition-property: color, background-color, border-color, box-shadow, opacity, outline-color;
+  transition-duration: 120ms;
+  transition-timing-function: var(--ease);
+}
+
+/* A press you can feel. */
+:where(.btn, .icon-btn, .pill-btn, .repo, .sync):active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Theme switches crossfade as one picture (see setTheme); per-element transitions would finish out of step. */
+.is-theming,
+.is-theming *,
+.is-theming *::before,
+.is-theming *::after {
+  transition: none !important;
+}
+
 /* ---------- layout ---------- */
 
 .page {
@@ -413,7 +440,7 @@ body:has(#sync-error:popover-open) button.sync--error {
   background: transparent;
   color: var(--text-2);
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background 120ms ease, color 120ms ease, transform 80ms var(--ease);
 }
 
 .icon-btn:hover {
@@ -435,6 +462,10 @@ body:has(#sync-error:popover-open) button.sync--error {
   to {
     transform: rotate(360deg);
   }
+}
+
+.badge-dot.is-entering {
+  animation: dot-in 360ms var(--ease);
 }
 
 .badge-dot {
@@ -465,7 +496,7 @@ body:has(#sync-error:popover-open) button.sync--error {
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 80ms var(--ease);
 }
 
 .btn:hover {
@@ -603,6 +634,10 @@ body:has(#sync-error:popover-open) button.sync--error {
   visibility: hidden;
 }
 
+.search__results:not([hidden]) {
+  animation: pop-in 120ms var(--ease);
+}
+
 .search__results {
   position: absolute;
   z-index: 30;
@@ -642,6 +677,10 @@ body:has(#sync-error:popover-open) button.sync--error {
   border-radius: var(--radius-sm);
   color: var(--text-2);
   cursor: pointer;
+}
+
+.search__item:hover {
+  background: var(--surface-hover);
 }
 
 .search__item.is-active {
@@ -689,12 +728,19 @@ body:has(#sync-error:popover-open) button.sync--error {
   color: var(--text);
   font-size: 13px;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color 120ms ease, background 120ms ease, transform 80ms var(--ease);
+}
+
+.repo > .icon:last-child {
+  transition: transform 160ms var(--ease);
+}
+
+.repo.is-open > .icon:last-child {
+  transform: rotate(180deg);
 }
 
 .repo:hover,
-.repo:has(+ :popover-open),
-.repo[aria-expanded="true"] {
+.repo.is-open {
   border-color: var(--border-strong);
   background: var(--surface-hover);
 }
@@ -757,8 +803,58 @@ body:has(#sync-error:popover-open) button.sync--error {
   position-try-fallbacks: flip-inline, flip-block, flip-block flip-inline;
 }
 
+/* Fades out as well as in: display and overlay stay discrete until the fade ends. */
+.menu {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 140ms var(--ease), transform 140ms var(--ease), overlay 140ms allow-discrete, display 140ms allow-discrete;
+}
+
 .menu:popover-open {
-  animation: pop-in 140ms var(--ease);
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  .menu:popover-open {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.snooze-menu {
+  width: 260px;
+  padding: 4px;
+  position-area: bottom span-left;
+}
+
+.snooze-menu__opt {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.snooze-menu__opt small {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.snooze-menu__opt:hover,
+.snooze-menu__opt:focus-visible {
+  background: var(--surface-sunken);
+}
+
+.snooze-menu__opt:focus-visible {
+  outline-offset: -2px;
 }
 
 @keyframes pop-in {
@@ -919,6 +1015,7 @@ body:has(#sync-error:popover-open) button.sync--error {
 
 .tab[aria-selected="true"]::after {
   content: "";
+  transform-origin: left;
   position: absolute;
   left: 10px;
   right: 10px;
@@ -994,7 +1091,7 @@ body:has(#sync-error:popover-open) button.sync--error {
   gap: 12px;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  transition: background 100ms ease;
+  transition: background 120ms var(--ease);
 }
 
 .item:hover {
@@ -1088,21 +1185,36 @@ a.item__title::after {
   font-variant-numeric: tabular-nums;
 }
 
+/* Visibility flips at the visible end of the fade, so hidden actions stay out of the tab order and the hit area. */
+.item__time,
+.item__actions {
+  transition: opacity 120ms var(--ease), visibility 120ms;
+}
+
 .item__actions {
   display: flex;
   gap: 2px;
   visibility: hidden;
+  opacity: 0;
   color: var(--text-2);
 }
 
 .item:hover .item__actions,
-.item:focus-within .item__actions {
+.item:focus-within .item__actions,
+.item.is-active .item__actions {
   visibility: visible;
+  opacity: 1;
 }
 
 .item:hover .item__time:has(+ .item__actions),
-.item:focus-within .item__time:has(+ .item__actions) {
+.item:focus-within .item__time:has(+ .item__actions),
+.item.is-active .item__time:has(+ .item__actions) {
   visibility: hidden;
+  opacity: 0;
+}
+
+.item.is-active {
+  background: var(--surface-hover);
 }
 
 /* Bob actions hover to the accent, icon-only or with text. Comes after .btn--ghost so it wins the tie. */
@@ -1133,12 +1245,20 @@ a.item__title::after {
   pointer-events: none;
 }
 
-.bob-btn:hover:not(:disabled)::before,
-.search__item.bob-btn.is-active::before {
+.bob-btn[data-glow]:hover:not(:disabled)::before {
   opacity: 1;
 }
 
-/* Bob's search results: the label takes the accent too, not just the icon. */
+/*
+ * Ripple only, no glow, for Bob's search results (a glow would also land on the row picked as you type, under no
+ * pointer) and the Bug of the day card (a block of text, not a button). Search results also take Bob's accent on the label.
+ */
+.search__item.bob-btn::before,
+.hunt__report.bob-btn::before {
+  content: none;
+}
+
+.search__item.bob-btn.is-active .search__label,
 .search__item.bob-btn:hover .search__label {
   color: var(--accent);
 }
@@ -1173,11 +1293,66 @@ a.item__title::after {
   }
 }
 
-/* A minimised Bob still working: a light sweeps across its button. */
-.bob-btn[data-bob-status="running"]::before {
-  background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--magic) 14%, transparent), transparent 65%) 0 0 / 300% 100%;
+/* A minimised Bob still working: a light sweeps across the text button that started it. Icon buttons keep just the spinner dot. */
+.bob-btn[data-bob-status="running"]:not(.icon-btn)::before {
+  background: var(--bob-sweep);
   opacity: 1;
   animation: bob-shimmer 1.8s linear infinite;
+}
+
+/* The same sweep on a status line rather than a button: a running bug hunt. */
+.bob-shimmer {
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--radius-sm);
+}
+
+.bob-shimmer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--bob-sweep);
+  animation: bob-shimmer 1.8s linear infinite;
+  pointer-events: none;
+}
+
+/* Something Bob already made (a saved answer, today's plan or standup draft): its ✦ stays in Bob's blue. */
+.bob-made .icon {
+  color: var(--accent);
+}
+
+/* A minimised Bob, wherever the button that opened it has gone. */
+.bob-pill-host {
+  margin-top: 8px;
+}
+
+.bob-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent-soft);
+}
+
+.bob-pill:hover {
+  border-color: var(--accent);
+}
+
+.bob-pill .icon {
+  color: var(--accent);
+}
+
+.bob-pill b {
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+.bob-pill[data-bob-status="error"] {
+  border-color: color-mix(in srgb, var(--error) 45%, transparent);
+  background: var(--error-soft);
 }
 
 @keyframes bob-shimmer {
@@ -1189,11 +1364,7 @@ a.item__title::after {
   }
 }
 
-/* Bob's mark in the dialog breathes while it thinks. */
-.chip-icon.is-thinking {
-  animation: bob-breathe 1.8s ease-in-out infinite;
-}
-
+/* Bob's mark in the dialog twinkles while it thinks; the shimmer on the "thinking" row carries the rest. */
 .chip-icon.is-thinking .icon {
   animation: bob-twinkle 1.8s var(--ease) infinite;
 }
@@ -1201,12 +1372,6 @@ a.item__title::after {
 @keyframes bob-twinkle {
   40% {
     transform: scale(1.12);
-  }
-}
-
-@keyframes bob-breathe {
-  50% {
-    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 14%, transparent), 0 0 14px color-mix(in srgb, var(--magic) 30%, transparent);
   }
 }
 
@@ -1266,6 +1431,7 @@ a.item__title::after {
   height: 40px;
   margin-bottom: 8px;
   border-radius: 50%;
+  animation: dot-in 360ms var(--ease);
 }
 
 .empty__title {
@@ -1493,15 +1659,19 @@ a.item__title::after {
   font-size: 13px;
 }
 
+/* Today's meetings on a vertical rail: dot, title, length. Hovering a dot shows its times. */
 .agenda {
+  --rail: 12px; /* padding + half the dot column, minus half the rail */
   margin: 0;
   padding: 0 10px;
   list-style: none;
 }
 
-.agenda__item {
+.agenda__item,
+.agenda__now {
+  position: relative;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 7px 8px;
@@ -1509,10 +1679,50 @@ a.item__title::after {
   font-size: 13px;
 }
 
-.agenda__item time {
-  color: var(--text-3);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+/* The rail runs through every row and stops at the first and last dots. */
+.agenda > li::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--rail);
+  width: 2px;
+  background: var(--border);
+}
+
+.agenda > li:first-child::before {
+  top: 50%;
+}
+
+.agenda > li:last-child::before {
+  bottom: 50%;
+}
+
+.agenda > li:only-child::before {
+  display: none;
+}
+
+/* Rail behind meetings that are over takes the accent, so the day reads as progress. */
+.agenda > .is-past::before {
+  background: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.agenda__dot {
+  position: relative;
+  z-index: 1;
+  justify-self: center;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+}
+
+/* A bigger target than the dot itself, so its tooltip (the page's shared one) is easy to hit. */
+.agenda__dot::before {
+  content: "";
+  position: absolute;
+  inset: -8px;
 }
 
 .agenda__title {
@@ -1524,24 +1734,162 @@ a.item__title::after {
 .agenda__when {
   color: var(--text-3);
   font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .agenda__item.is-past {
   color: var(--text-3);
 }
 
-.agenda__item.is-past .agenda__title {
-  text-decoration: line-through;
-  text-decoration-color: var(--border-strong);
+.agenda__item.is-past .agenda__dot {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.agenda__item.is-next .agenda__dot {
+  border-color: var(--accent);
+}
+
+.agenda__item.is-next .agenda__title {
+  font-weight: 500;
 }
 
 .agenda__item.is-live {
   background: var(--accent-soft);
 }
 
+.agenda__item.is-live .agenda__dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  animation: agenda-pulse 2s var(--ease) infinite;
+}
+
+.agenda__item.is-live .agenda__title {
+  font-weight: 500;
+}
+
+@keyframes agenda-pulse {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+}
+
 .agenda__live {
   color: var(--accent);
   font-weight: 500;
+}
+
+/* How far through the current meeting we are. */
+.agenda__progress {
+  position: absolute;
+  right: 8px;
+  bottom: 3px;
+  left: calc(var(--rail) + 14px);
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(var(--accent), var(--accent)) 0 0 / var(--done) 100% no-repeat, color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* The current time, between the last meeting and the next. */
+.agenda__now {
+  grid-template-columns: 10px minmax(16px, 1fr) minmax(0, max-content);
+  padding-block: 3px;
+}
+
+.agenda > .agenda__now::before,
+.agenda > .is-live::before {
+  background: linear-gradient(color-mix(in srgb, var(--accent) 40%, var(--border)) 50%, var(--border) 50%);
+}
+
+.agenda__now .agenda__when {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.agenda__now .agenda__dot {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  background: var(--accent);
+}
+
+.agenda__line {
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 10%, transparent));
+}
+
+.agenda__now .agenda__when {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agenda__item.is-live .agenda__dot {
+    animation: none;
+  }
+}
+
+.agenda-done {
+  margin: 0 10px;
+  border-radius: 6px;
+}
+
+.agenda-done summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 13px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.agenda-done summary::-webkit-details-marker {
+  display: none;
+}
+
+.agenda-done summary:hover {
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+
+.agenda-done summary .icon:first-child {
+  color: var(--success);
+}
+
+.agenda-done summary .icon:last-child {
+  margin-left: auto;
+  transition: transform 160ms var(--ease);
+}
+
+.agenda-done[open] summary .icon:last-child {
+  transform: rotate(180deg);
+}
+
+.agenda-done .agenda {
+  margin-top: 4px;
+}
+
+@supports selector(::details-content) {
+  .agenda-done {
+    interpolate-size: allow-keywords;
+  }
+
+  .agenda-done::details-content {
+    height: 0;
+    overflow: clip;
+    opacity: 0;
+    transition: height 200ms var(--ease), opacity 200ms var(--ease), content-visibility 200ms allow-discrete;
+  }
+
+  .agenda-done[open]::details-content {
+    height: auto;
+    opacity: 1;
+  }
 }
 
 .today__todos {
@@ -1607,6 +1955,7 @@ a.item__title::after {
 
 .todo__remove {
   opacity: 0;
+  transition: opacity 120ms var(--ease);
   flex: none;
   margin-top: 1px;
   color: var(--text-3);
@@ -1671,13 +2020,13 @@ a.item__title::after {
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--shadow-lg);
+  flex-direction: column;
   transition: transform 200ms var(--ease), overlay 200ms allow-discrete, display 200ms allow-discrete;
   transform: translateX(100%);
 }
 
 .drawer:popover-open {
   display: flex;
-  flex-direction: column;
   transform: none;
 }
 
@@ -1689,6 +2038,18 @@ a.item__title::after {
 
 .drawer::backdrop {
   background: var(--backdrop);
+  opacity: 0;
+  transition: opacity 200ms var(--ease), overlay 200ms allow-discrete, display 200ms allow-discrete;
+}
+
+.drawer:popover-open::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .drawer:popover-open::backdrop {
+    opacity: 0;
+  }
 }
 
 .drawer__head {
@@ -1787,16 +2148,39 @@ a.item__title::after {
   box-shadow: var(--shadow-lg);
 }
 
-.sheet[open] {
-  display: flex;
+/* Layout lives on the base rule: [open] goes away as the fade-out starts, but the dialog stays visible until it ends. */
+.sheet {
   flex-direction: column;
-  animation: sheet-in 180ms var(--ease);
+  opacity: 0;
+  transform: translateY(8px) scale(0.99);
+  transition: opacity 180ms var(--ease), transform 180ms var(--ease), overlay 180ms allow-discrete, display 180ms allow-discrete;
 }
 
-@keyframes sheet-in {
-  from {
+.sheet[open] {
+  display: flex;
+  opacity: 1;
+  transform: none;
+}
+
+@starting-style {
+  .sheet[open] {
     opacity: 0;
     transform: translateY(8px) scale(0.99);
+  }
+}
+
+.sheet::backdrop {
+  opacity: 0;
+  transition: opacity 180ms var(--ease), overlay 180ms allow-discrete, display 180ms allow-discrete;
+}
+
+.sheet[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  .sheet[open]::backdrop {
+    opacity: 0;
   }
 }
 
@@ -2066,6 +2450,39 @@ a.item__title::after {
   font-size: 13px;
 }
 
+/* ---------- tooltip ---------- */
+
+/* Placed by script (bindTooltips) with translate; the popover's own centring is undone. */
+.tooltip {
+  position: fixed;
+  inset: 0 auto auto 0;
+  max-width: 280px;
+  margin: 0;
+  padding: 5px 9px;
+  overflow: visible;
+  border: 0;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms var(--ease), overlay 120ms allow-discrete, display 120ms allow-discrete;
+}
+
+.tooltip:popover-open {
+  opacity: 1;
+}
+
+@starting-style {
+  .tooltip:popover-open {
+    opacity: 0;
+  }
+}
+
 /* ---------- toasts ---------- */
 
 .toasts {
@@ -2097,9 +2514,75 @@ a.item__title::after {
   color: #fff;
 }
 
+.toast:has(.toast__action) {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-right: 8px;
+  pointer-events: auto;
+}
+
+.toast__action {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toast__action:hover {
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.toast__action:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
 .toast.is-leaving {
   opacity: 0;
   transform: translateY(6px);
+}
+
+/* New rows: a brief wash of the accent, so what changed since the last sync is easy to spot. */
+@keyframes row-new {
+  from {
+    background: var(--info-soft);
+  }
+}
+
+.item.is-new-row {
+  animation: row-new 1.6s var(--ease);
+}
+
+/* Counts that change give a small bump. */
+@keyframes bump {
+  40% {
+    transform: scale(1.25);
+  }
+}
+
+.is-bumped {
+  animation: bump 280ms var(--ease);
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes dot-in {
+  from {
+    transform: scale(0);
+  }
+  60% {
+    transform: scale(1.3);
+  }
 }
 
 @keyframes toast-in {
@@ -2134,6 +2617,14 @@ a.item__title::after {
   justify-content: flex-start;
   gap: 12px;
   padding-left: 20px;
+}
+
+/* As tall as the title and subtitle beside it, so Bob's mark (and its twinkle) reads at the same scale. */
+.bob__head .chip-icon {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
 }
 
 .bob__title {
@@ -2183,15 +2674,137 @@ a.bob__subtitle:hover {
 .bob__answer p,
 .bob__answer ul,
 .bob__answer ol,
-.bob__answer pre,
+.bob__answer .code,
+.bob__answer .table,
 .bob__answer blockquote {
   margin: 0 0 12px;
+}
+
+.bob__answer h3 {
+  margin: 20px 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .bob__answer h4 {
   margin: 16px 0 6px;
   font-size: 14px;
   font-weight: 600;
+}
+
+.bob__answer hr {
+  margin: 16px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Inside a list item, nested lists, paragraphs and code sit closer. */
+.bob__answer li > ul,
+.bob__answer li > ol,
+.bob__answer li > p,
+.bob__answer li > .code {
+  margin: 6px 0 0;
+}
+
+.bob__answer ul ul {
+  list-style-type: circle;
+}
+
+.bob__answer .table {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.bob__answer table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  overflow-wrap: normal;
+}
+
+.bob__answer th,
+.bob__answer td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.bob__answer th {
+  background: var(--surface-sunken);
+  font-weight: 600;
+}
+
+.bob__answer tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Code blocks: language and Copy on a bar above, diffs coloured line by line. */
+.bob__answer .code {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+
+.code__bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 6px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.code__copy {
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.code__copy:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.bob__answer .code pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.diff-add,
+.diff-del,
+.diff-hunk,
+.diff-file {
+  display: inline-block;
+  min-width: 100%;
+}
+
+.diff-add {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.diff-del {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+.diff-hunk {
+  color: var(--info);
+}
+
+.diff-file {
+  color: var(--text-3);
 }
 
 .bob__answer ul,
@@ -2239,9 +2852,6 @@ a.bob__subtitle:hover {
 .bob__answer pre {
   overflow: auto;
   padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
 }
 
 .bob__answer pre code {
@@ -2268,6 +2878,43 @@ a.bob__subtitle:hover {
   overflow-wrap: anywhere;
 }
 
+/* A revised draft: what was asked for, with Undo; the field flashes as the new version lands. */
+.bob__revised {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 -8px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.bob__revised .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.bob__revised span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bob__revised .btn {
+  margin-left: auto;
+}
+
+@keyframes revised {
+  from {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+}
+
+.input.is-revised {
+  animation: revised 900ms var(--ease);
+}
+
 .bob__edit {
   width: 100%;
   height: auto;
@@ -2279,10 +2926,24 @@ a.bob__subtitle:hover {
   resize: vertical;
 }
 
+.bob__turn {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.bob__body > .is-entering,
+.bob__body > .notice {
+  animation: rise-in 220ms var(--ease);
+}
+
+/* Shimmers like a running bug hunt; the padding gives the sweep room without moving the text off the body's edge. */
 .bob__loading {
   display: flex;
   align-items: center;
   gap: 10px;
+  margin: 0 -10px;
+  padding: 6px 10px;
   color: var(--text-2);
   font-size: 14px;
 }
@@ -2338,10 +2999,12 @@ a.bob__subtitle:hover {
 /* Row buttons only show on hover; keep the one with Bob's status visible. */
 .item:has([data-bob-status]) .item__actions {
   visibility: visible;
+  opacity: 1;
 }
 
 .item:has([data-bob-status]) .item__time:has(+ .item__actions) {
   visibility: hidden;
+  opacity: 0;
 }
 
 .bob__elapsed {
@@ -2739,12 +3402,22 @@ a.bob__subtitle:hover {
     display: none;
   }
 
+}
+
+/* Without hover (touch screens) or on a phone, row actions can't wait to be revealed. */
+@media (max-width: 640px), (hover: none) {
   .item__actions {
     visibility: visible;
+    opacity: 0.6;
   }
 
   .item__time:has(+ .item__actions) {
     visibility: hidden;
+    opacity: 0;
+  }
+
+  .todo__remove {
+    opacity: 0.6;
   }
 }
 
@@ -2758,8 +3431,8 @@ a.bob__subtitle:hover {
 
   /* Looping at 1ms would flicker; hold these still instead. */
   .bob-btn::before,
+  .bob-shimmer::before,
   .bob-btn .icon,
-  .chip-icon.is-thinking,
   .chip-icon.is-thinking .icon {
     animation: none !important;
   }

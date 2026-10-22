@@ -87,6 +87,11 @@ DD.ai = (() => {
     return call({ type: "git-info", path });
   }
 
+  /** Fetches the latest main of `slug` into the bug hunter's own worktree of the clone at `path`. */
+  async function huntCheckout(path, slug) {
+    return call({ type: "hunt-checkout", path, slug });
+  }
+
   // ---------- cache ----------
 
   async function cached(key) {
@@ -112,7 +117,7 @@ DD.ai = (() => {
     return s.length > max ? `${s.slice(0, max)}\n…[truncated ${s.length - max} chars]` : s;
   };
 
-  const refOf = (i) => `${repoShort(i.repo)}#${i.number}`;
+  const refOf = DD.util.itemRef;
   const linkOf = (i) => `[${refOf(i)}](${i.url})`;
 
   function itemLine(i, extra = "") {
@@ -313,6 +318,12 @@ Then **Questions to answer** — any comments that need a reply rather than a co
     summary: `Summarize where this PR stands: what it does (one or two sentences), what's left before it can merge, and the single next action for me.`,
   };
 
+  /** Where an item's answer is saved: a new commit or any update to the item makes a new key. The page uses it to show answers that are ready. */
+  function answerKey({ item, kind, task }) {
+    const mode = modeFor(item || {}, kind);
+    return mode === "main" ? task.key : `${mode}:${item.id}:${item.updatedAt}`;
+  }
+
   /** Builds the prompt for one work item, fetching its description, discussion, diff and CI as needed. */
   async function itemPrompt(ctx, { item, kind, task }) {
     const mode = modeFor(item || {}, kind);
@@ -328,7 +339,7 @@ Then **Questions to answer** — any comments that need a reply rather than a co
         parts.push(await checksContext(checks.failed, { token, slug: task.repo }));
       }
       parts.push(`## Task\n${INSTRUCTIONS.main}`);
-      return { mode, prompt: parts.join("\n\n"), cacheKey: `main:${task.repo}:${health?.sha}` };
+      return { mode, prompt: parts.join("\n\n"), cacheKey: answerKey({ kind, task }) };
     }
 
     parts.push(`## ${item.kind === "pr" ? "Pull request" : "Issue"}\n${itemLine(item)}\nOpened ${timeAgo(item.createdAt)} ago.`);
@@ -348,7 +359,7 @@ Then **Questions to answer** — any comments that need a reply rather than a co
       }
     } else parts.push("(Sample data: only the title and status are available.)");
     parts.push(`## Task\n${INSTRUCTIONS[mode]}`);
-    return { mode, prompt: parts.filter(Boolean).join("\n\n"), cacheKey: `${mode}:${item.id}:${item.updatedAt}` };
+    return { mode, prompt: parts.filter(Boolean).join("\n\n"), cacheKey: answerKey({ item, kind, task }) };
   }
 
   // ---------- lookups: Bob plans them, the dashboard runs them ----------
@@ -616,6 +627,33 @@ Request: ${request}`;
     return `${base}\n\n## Conversation so far\n${history}\n\n## Follow-up question\n${question}\nAnswer the follow-up directly, using the same context.`;
   }
 
+  const DRAFT_KIND = { edit: "standup update", reply: "Slack reply", query: "GitHub search query" };
+
+  /**
+   * A follow-up on a draft asks for a revision of the draft as it stands now, with the reader's own edits.
+   * A question about the draft comes back prefixed with ANSWER: so the page can tell the two apart.
+   */
+  function revisePrompt(base, draft, request, format) {
+    const kind = DRAFT_KIND[format] || "draft";
+    const keep =
+      format === "reply"
+        ? `Reply with the full revised message, then a line containing just "SOURCES:", then the "- " list of links or file paths it relies on.`
+        : format === "query"
+          ? "Reply with only the revised query on one line, no code fences."
+          : "Reply with the full revised update only, in the same format, with no preamble.";
+    return `${base}
+
+## Current ${kind}
+This is the draft as it stands now, including any edits I made by hand. Keep my edits unless I ask otherwise.
+${draft}
+
+## What I want changed
+${request}
+
+${keep}
+If what I wrote is a question about the draft rather than a change to it, start your reply with "ANSWER:" and answer it instead of rewriting.`;
+  }
+
   /** First line of a reply, stripped of fences and quotes, for the GitHub query feature. */
   function cleanQuery(text) {
     return String(text)
@@ -625,98 +663,6 @@ Request: ${request}`;
       .find(Boolean)
       ?.replace(/^`|`$/g, "")
       .replace(/^(query:\s*)/i, "") || "";
-  }
-
-  // ---------- rendering ----------
-
-  function inline(text) {
-    const { esc } = DD.util;
-    const codes = [];
-    let s = String(text).replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
-    s = esc(s)
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => `<a href="${url}" target="_blank" rel="noopener">${label}</a>`)
-      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, pre, url) => `${pre}<a href="${url}" target="_blank" rel="noopener">${url.replace(/^https:\/\/(www\.)?github\.com\//, "")}</a>`)
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, "$1<em>$2</em>")
-      .replace(/~~([^~]+)~~/g, "<del>$1</del>");
-    return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[+i])}</code>`);
-  }
-
-  /** A small, escape-first Markdown renderer: headings, lists, task lists, quotes, code, links. */
-  function markdown(src) {
-    const { esc } = DD.util;
-    const lines = String(src || "").replace(/\r/g, "").split("\n");
-    const out = [];
-    let list = null;
-    let para = [];
-    const flushPara = () => {
-      if (para.length) out.push(`<p>${para.map(inline).join("<br>")}</p>`);
-      para = [];
-    };
-    const closeList = () => {
-      if (list) out.push(`</${list}>`);
-      list = null;
-    };
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const fence = line.match(/^\s*```(\w*)/);
-      if (fence) {
-        flushPara();
-        closeList();
-        const body = [];
-        while (++i < lines.length && !/^\s*```/.test(lines[i])) body.push(lines[i]);
-        out.push(`<pre><code>${esc(body.join("\n"))}</code></pre>`);
-        continue;
-      }
-      const heading = line.match(/^(#{1,4})\s+(.*)/);
-      const task = line.match(/^\s*[-*+]\s+\[( |x|X)\]\s+(.*)/);
-      const bullet = line.match(/^\s*(?:[-*+•])\s+(.*)/);
-      const numbered = line.match(/^\s*\d+[.)]\s+(.*)/);
-      const quote = line.match(/^\s*>\s?(.*)/);
-      if (!line.trim()) {
-        flushPara();
-        closeList();
-      } else if (heading) {
-        flushPara();
-        closeList();
-        out.push(`<h4>${inline(heading[2])}</h4>`);
-      } else if (task || bullet || numbered) {
-        flushPara();
-        const tag = numbered && !task && !bullet ? "ol" : "ul";
-        if (list !== tag) {
-          closeList();
-          out.push(`<${tag}>`);
-          list = tag;
-        }
-        out.push(task ? `<li class="is-task${task[1].trim() ? " is-done" : ""}">${inline(task[2])}</li>` : `<li>${inline((bullet || numbered)[1])}</li>`);
-      } else if (quote) {
-        flushPara();
-        closeList();
-        const body = [quote[1]];
-        while (i + 1 < lines.length && /^\s*>/.test(lines[i + 1])) body.push(lines[++i].replace(/^\s*>\s?/, ""));
-        out.push(`<blockquote>${body.map(inline).join("<br>")}</blockquote>`);
-      } else {
-        closeList();
-        para.push(line);
-      }
-    }
-    flushPara();
-    closeList();
-    return out.join("");
-  }
-
-  /** Unchecked "- [ ] …" lines, as plain to-do text. */
-  function checklist(text) {
-    return String(text || "")
-      .split("\n")
-      .map((l) => l.match(/^\s*[-*+]\s+\[ \]\s+(.*)/)?.[1])
-      .filter(Boolean)
-      .map((t) =>
-        t
-          .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-          .replace(/\*\*|`/g, "")
-          .trim()
-      );
   }
 
   return {
@@ -738,14 +684,16 @@ Request: ${request}`;
     reportPrompt,
     findClones,
     gitInfo,
+    huntCheckout,
     planPrompt,
     standupPrompt,
     catchUpPrompt,
     triagePrompt,
     searchQueryPrompt,
     followUpPrompt,
+    answerKey,
+    CACHE_KEY,
+    revisePrompt,
     cleanQuery,
-    markdown,
-    checklist,
   };
 })();

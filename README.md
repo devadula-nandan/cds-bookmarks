@@ -2,7 +2,7 @@
 
 A Chrome new tab page for Carbon developers: what needs you on GitHub, ranked, plus every repo's links one click away.
 
-- **For you**: one prioritized list of broken `main`, failing CI, conflicts, change requests, PRs ready to merge, overdue reviews and mentions. Snooze anything until tomorrow.
+- **For you**: one prioritized list of broken `main`, failing CI, conflicts, change requests, PRs ready to merge, overdue reviews and mentions. Move through it with `J`/`K`, press `S` to snooze an item until tomorrow or until there's new activity on it, and undo from the message that appears. `?` lists every shortcut.
 - **Repo bar**: each repo opens a menu with its board, issues, PRs, sites and Storybooks, plus `main` health, the latest release and, with Bob on, **Open in VS Code** for your local clone.
 - **Search** (`/` or `⌘K`): PRs, issues, links and actions. Type `carbon 23717` to jump straight to an issue or PR.
 - **Following**: issues and PRs you commented on or reacted to with 👀, with new replies flagged. **Reviews** also lists open PRs you've already reviewed and flags new commits since your review.
@@ -71,7 +71,7 @@ Where Bob shows up:
 | ✦ on any work item | Picks the right help for the item: a review brief from the diff, why CI or `main` is failing (from the failed checks and job logs), a checklist of requested changes, conflict help, a squash-merge message, a reviewer nudge, what a mention needs from you, or a plan for an issue |
 | Search | **Ask Bob** answers questions about your work and links (Enter picks it for questions). **Find with Bob** turns plain English into a GitHub search |
 | Header | **Plan my day** around your meetings and what's urgent |
-| Today | **Write standup with Bob**, an editable draft for Slack |
+| Today | **Write standup with Bob**, an editable draft for Slack (it replaces **Copy standup update**) |
 | Activity | **Catch me up** on what changed since you last looked |
 | Issues tab | **Triage with Bob** suggests type, component, severity and duplicates |
 | Slack icon (top right) | Paste a support thread; Bob looks up related issues and PRs, reads relevant carbondesignsystem.com pages and your local clone if it's about code, and drafts a reply with its sources |
@@ -83,9 +83,9 @@ Where Bob shows up:
 
 With Bob on, the dashboard links each repo to its clone on your computer automatically: it looks one level inside `~/Source`, `~/src`, `~/code`, `~/Projects` and similar folders, at most once a day, and never replaces a path you set. Edit the paths under **Settings → Bob → Local clones**, or click **Find clones on this computer** to look again. A linked repo gets **Open in VS Code** in its repo bar menu. Bob runs in ask mode in these clones, so it reads files but doesn't change them.
 
-Turn on **Daily bug hunt** for a **Bug of the day**. At the time you pick (9:00 by default, or when Chrome is next open after that) Bob reads one clone, taking turns between repos, and reports the most obvious easy-to-fix bug it can confirm in the code: where it is, why it's wrong, a minimal diff and how confident it is. It skips places it reported before, notes the branch and commit it checked, and lists GitHub issues that might already cover it. You get a notification, the report is on the Today card with a link to the exact line in VS Code, and follow-ups such as "write this up as an issue" read the same clone. **Hunt again** runs one now. A hunt can take several minutes and uses your Bob quota, and it's only as current as your clone, so keep it pulled.
+Turn on **Daily bug hunt** for a **Bug of the day**. At the time you pick (9:00 by default, or when Chrome is next open after that) Bob reads one clone, taking turns between repos, and reports the most obvious easy-to-fix bug it can confirm in the code: where it is, why it's wrong, a minimal diff and how confident it is. It skips places it reported before, notes the branch and commit it checked, and lists GitHub issues that might already cover it. You get a notification, the report is on the Today card with a link to the exact line in VS Code, and follow-ups such as "write this up as an issue" read the same clone. **Hunt again** runs one now. Before each hunt the dashboard fetches the latest `main` (from the remote that points at the Carbon repo, so forks work too) and checks it out in a separate worktree under `~/.dev-dashboard/hunts/`, so your clone's branch and changes are never touched. If that fails, for example offline, Bob hunts your clone as it is. A hunt can take several minutes and uses your Bob quota.
 
-Every answer can be copied, regenerated or followed up on, and checklists can be added to your to-dos. Answers are saved per item version (and per day for plans, standups and triage), so reopening one doesn't ask Bob again.
+Every answer can be copied, regenerated or followed up on, and checklists can be added to your to-dos. Answers are saved per item version (and per day for plans, standups and triage), so reopening one doesn't ask Bob again. You can tell what's waiting: on a row Bob has already answered, the ✦ turns blue (hover it to see which answer), and once you've made today's plan or standup the buttons become **Today's plan** and **Today's standup draft**, which open the saved one instantly. Minimise Bob while it works and the button that started it shows its progress; if that button isn't on screen (a row on another tab, say), a pill under the greeting does, and either one brings Bob back. Follow-ups on a standup, Slack reply or GitHub query revise the draft itself, starting from your edits, with **Undo**.
 
 Nothing is sent to Bob until you click a Bob action. Then the helper runs `bob run --mode ask` in an empty folder (`~/.dev-dashboard/bob-workspace`) with that item's title, description, comments, diff or CI logs as the prompt. Your key is stored with your other settings and only handed to Bob Shell on this computer. Requests count toward your Bob usage.
 
@@ -141,10 +141,14 @@ Keep the asset named `dev-dashboard.zip` so the download links above always poin
 | --- | --- |
 | `manifest.json` | MV3 manifest; overrides the new tab page |
 | `background.js` | Service worker: alarms, sync, notifications, toolbar badge |
-| `index.html`, `js/app.js`, `css/app.css` | The new tab page |
+| `index.html`, `css/app.css` | The new tab page |
+| `js/app.js` | The page's entry module: wires up events, keeps it rendered and in step with storage |
+| `js/page/` | The page's parts as ES modules: `state` and `pieces` (shared state and view helpers), `top` (header and repo bar), `work`, `today`, `activity`, `settings`, `search` and `bob` |
 | `js/sync.js` | Fetch → diff → activity log → notifications (shared) |
 | `js/github.js`, `js/insights.js` | GitHub API client and prioritization |
 | `js/core.js` | Utilities, storage (`chrome.storage` or `localStorage`), settings, per-day state |
-| `js/ai.js` | Bob: native-messaging client, prompts and context, answer cache, Markdown rendering |
+| `js/ai.js` | Bob: native-messaging client, prompts and context, answer cache |
+| `js/markdown.js` | Renders Bob's answers (Markdown with tables and coloured diffs) and reads their checklists |
+| `js/motion.js`, `js/tooltip.js` | Script-driven motion (folding rows, staggered lists) and the page's one tooltip |
 | `ai-helper/` | Native messaging host that runs Bob Shell, and its installer |
 | `scripts/package.sh` | Builds `dist/dev-dashboard.zip` for a release |
