@@ -29,6 +29,7 @@
   --success-soft: #defbe6;
   --info: #0f62fe;
   --info-soft: #edf4ff;
+  --magic: #8a3ffc;
   --neutral: #525252;
   --neutral-soft: #f0f0f0;
 
@@ -72,6 +73,7 @@
     --success-soft: rgba(66, 190, 101, 0.15);
     --info: #78a9ff;
     --info-soft: rgba(69, 137, 255, 0.16);
+    --magic: #a56eff;
     --neutral: #b0b0b0;
     --neutral-soft: #262626;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -108,6 +110,7 @@
   --success-soft: rgba(66, 190, 101, 0.15);
   --info: #78a9ff;
   --info-soft: rgba(69, 137, 255, 0.16);
+  --magic: #a56eff;
   --neutral: #b0b0b0;
   --neutral-soft: #262626;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -1105,6 +1108,111 @@ a.item__title::after {
 /* Bob actions hover to the accent, icon-only or with text. Comes after .btn--ghost so it wins the tie. */
 .bob-btn:hover:not(:disabled) {
   color: var(--accent);
+}
+
+/*
+ * Bob's magic. Effects paint between the button's background and its content
+ * (isolation + z-index -1), and ripples clip to the button inside .bob-fx so
+ * the minimised-status badge can still sit outside the corner.
+ */
+.bob-btn {
+  position: relative;
+  isolation: isolate;
+}
+
+/* A glow that follows the pointer; --mx/--my are set on pointermove. */
+.bob-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(circle 56px at var(--mx, 50%) var(--my, 50%), color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--magic) 8%, transparent) 60%, transparent);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+}
+
+.bob-btn:hover:not(:disabled)::before,
+.search__item.bob-btn.is-active::before {
+  opacity: 1;
+}
+
+/* Bob's search results: the label takes the accent too, not just the icon. */
+.search__item.bob-btn:hover .search__label {
+  color: var(--accent);
+}
+
+.bob-fx {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* Spreads from where the pointer came in; a press sends a brighter, quicker one. */
+.bob-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 26%, transparent), color-mix(in srgb, var(--magic) 16%, transparent) 50%, transparent 70%);
+  transform: translate(-50%, -50%) scale(0);
+  animation: bob-ripple 700ms var(--ease) forwards;
+}
+
+.bob-ripple--press {
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--magic) 26%, transparent) 50%, transparent 70%);
+  animation-duration: 450ms;
+}
+
+@keyframes bob-ripple {
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+/* The sparkle twinkles on hover. */
+.bob-btn:hover:not(:disabled) .icon {
+  animation: bob-twinkle 900ms var(--ease);
+}
+
+@keyframes bob-twinkle {
+  40% {
+    transform: scale(1.12);
+  }
+}
+
+/* A minimised Bob still working: a light sweeps across its button. */
+.bob-btn[data-bob-status="running"]::before {
+  background: linear-gradient(100deg, transparent 35%, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--magic) 14%, transparent), transparent 65%) 0 0 / 300% 100%;
+  opacity: 1;
+  animation: bob-shimmer 1.8s linear infinite;
+}
+
+@keyframes bob-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
+/* Bob's mark in the dialog breathes while it thinks. */
+.chip-icon.is-thinking {
+  animation: bob-breathe 1.8s ease-in-out infinite;
+}
+
+.chip-icon.is-thinking .icon {
+  animation: bob-twinkle 1.8s var(--ease) infinite;
+}
+
+@keyframes bob-breathe {
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 14%, transparent), 0 0 14px color-mix(in srgb, var(--magic) 30%, transparent);
+  }
 }
 
 /* Later stays visible but reads as lower priority until you reach for it. */
@@ -2651,5 +2759,13 @@ a.bob__subtitle:hover {
   *::after {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
+  }
+
+  /* Looping at 1ms would flicker; hold these still instead. */
+  .bob-btn::before,
+  .bob-btn .icon,
+  .chip-icon.is-thinking,
+  .chip-icon.is-thinking .icon {
+    animation: none !important;
   }
 }

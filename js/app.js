@@ -1220,14 +1220,15 @@
     function actionIndex() {
       const s = state.settings;
       const act = (label, iconName, run, terms = "") => ({ group: "Actions", label, iconName, run, terms });
+      const bobAct = (...args) => ({ ...act(...args), bob: true });
       return [
         connected() && act("Sync now", "refresh", () => requestSync(true), "refresh reload"),
         act("Copy standup update", "copy", copyStandup, "standup slack"),
-        aiOn() && data() && act("Write standup with Bob", "sparkle", bobStandup, "standup slack ai bob"),
-        aiOn() && data() && act("Plan my day with Bob", "sparkle", bobPlan, "plan schedule day ai bob"),
-        aiOn() && act("Catch me up with Bob", "sparkle", bobCatchUp, "activity summary ai bob"),
-        aiOn() && act("Draft a Slack reply with Bob", "slack", bobSlack, "slack support question thread reply help"),
-        aiOn() && state.settings.bugHunt && act("Hunt for a bug now", "bug", huntNow, "bug hunt bob daily"),
+        aiOn() && data() && bobAct("Write standup with Bob", "sparkle", bobStandup, "standup slack ai bob"),
+        aiOn() && data() && bobAct("Plan my day with Bob", "sparkle", bobPlan, "plan schedule day ai bob"),
+        aiOn() && bobAct("Catch me up with Bob", "sparkle", bobCatchUp, "activity summary ai bob"),
+        aiOn() && bobAct("Draft a Slack reply with Bob", "slack", bobSlack, "slack support question thread reply help"),
+        aiOn() && state.settings.bugHunt && bobAct("Hunt for a bug now", "bug", huntNow, "bug hunt bob daily"),
         aiOn() && state.bugHunts[0] && act("Open the latest bug report", "bug", () => bobReport(state.bugHunts[0]), "bug hunt report daily"),
         act("Open activity", "bell", openActivity, "notifications"),
         act("Open settings", "gear", () => openSettings(), "preferences token"),
@@ -1284,8 +1285,8 @@
       const go = target && !matched.some((r) => r.url && target.url.replace("/issues/", "/") === r.url.replace(/\/(issues|pull)\//, "/")) ? target : null;
       const bobItems = aiOn()
         ? [
-            { group: "Search", label: `Ask Bob “${q}”`, hint: "About your work and links", iconName: "sparkle", ask: q },
-            { group: "Search", label: `Find with Bob: “${q}”`, hint: "Builds a GitHub search", iconName: "sparkle", find: q },
+            { group: "Search", label: `Ask Bob “${q}”`, hint: "About your work and links", iconName: "sparkle", ask: q, bob: true },
+            { group: "Search", label: `Find with Bob: “${q}”`, hint: "Builds a GitHub search", iconName: "sparkle", find: q, bob: true },
           ]
         : [];
       results = [
@@ -1319,7 +1320,7 @@
     }
 
     function option(r, i) {
-      return `<li class="search__item ${i === index ? "is-active" : ""}" id="sr-${i}" role="option" aria-selected="${i === index}" data-index="${i}">${icon(r.iconName, 16)}<span class="search__label">${esc(r.label)}</span>${r.hint ? `<span class="search__hint">${esc(r.hint)}</span>` : ""}</li>`;
+      return `<li class="search__item ${r.bob ? "bob-btn" : ""} ${i === index ? "is-active" : ""}" id="sr-${i}" role="option" aria-selected="${i === index}" data-index="${i}">${icon(r.iconName, 16)}<span class="search__label">${esc(r.label)}</span>${r.hint ? `<span class="search__hint">${esc(r.hint)}</span>` : ""}</li>`;
     }
 
     function close() {
@@ -1527,7 +1528,7 @@
            <button class="btn btn--ghost btn--sm" data-action="bob-copy">${icon("copy", 14)}Copy</button>
            ${todos.length ? `<button class="btn btn--ghost btn--sm" data-action="bob-todos">${icon("plus", 14)}Add ${plural(todos.length, "to-do")}</button>` : ""}
            ${spec.input ? `<button class="btn btn--ghost btn--sm" data-action="bob-edit-input" ${loading ? "disabled" : ""}>${icon("message", 14)}New thread</button>` : ""}
-           ${spec.regenerate === false ? "" : `<button class="btn btn--ghost btn--sm" data-action="bob-regenerate" ${loading ? "disabled" : ""}>${icon("refresh", 14)}Regenerate</button>`}
+           ${spec.regenerate === false ? "" : `<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-regenerate" ${loading ? "disabled" : ""}>${icon("refresh", 14)}Regenerate</button>`}
            ${meta}
          </div>`
       : "";
@@ -1541,7 +1542,7 @@
     keepFocus(el, () => {
       el.innerHTML = `
         <header class="sheet__head bob__head">
-          <span class="chip-icon tone-info">${icon("sparkle", 16)}</span>
+          <span class="chip-icon tone-info ${loading ? "is-thinking" : ""}">${icon("sparkle", 16)}</span>
           <div class="bob__title">
             <h2>${esc(spec.title)}</h2>
             ${spec.subtitle ? (spec.url ? `<a class="bob__subtitle" href="${esc(spec.url)}" target="_blank" rel="noopener">${esc(spec.subtitle)}</a>` : `<p class="bob__subtitle">${esc(spec.subtitle)}</p>`) : ""}
@@ -1586,6 +1587,41 @@
     bob.minimised = false;
     $("#ai").showModal();
     renderBob();
+  }
+
+  /** Bob buttons: a ripple from where the pointer comes in (a brighter one where it presses) and a glow that follows it. */
+  function bindBobMagic() {
+    const calm = matchMedia("(prefers-reduced-motion: reduce)");
+    const bobBtn = (e) => {
+      const btn = e.target.closest?.(".bob-btn");
+      return btn && !btn.disabled ? btn : null;
+    };
+    function ripple(btn, e, press) {
+      if (calm.matches) return;
+      const fx = btn.querySelector(":scope > .bob-fx") || btn.appendChild(Object.assign(document.createElement("span"), { className: "bob-fx" }));
+      const r = btn.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      // Big enough to reach the farthest corner from where it starts.
+      const size = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y));
+      const dot = Object.assign(document.createElement("span"), { className: `bob-ripple${press ? " bob-ripple--press" : ""}` });
+      dot.style.cssText = `left: ${x}px; top: ${y}px; width: ${size}px; height: ${size}px`;
+      dot.addEventListener("animationend", () => dot.remove());
+      fx.append(dot);
+    }
+    // pointerenter doesn't bubble, but capture-phase listeners on the document still see it.
+    document.addEventListener("pointerenter", (e) => e.target.classList?.contains("bob-btn") && !e.target.disabled && ripple(e.target, e), true);
+    document.addEventListener("pointerdown", (e) => {
+      const btn = bobBtn(e);
+      if (btn) ripple(btn, e, true);
+    });
+    document.addEventListener("pointermove", (e) => {
+      const btn = bobBtn(e);
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      btn.style.setProperty("--mx", `${e.clientX - r.left}px`);
+      btn.style.setProperty("--my", `${e.clientY - r.top}px`);
+    });
   }
 
   /** Puts a minimised Bob's status (running, done, error) on whatever matches its spec's `trigger` selector. */
@@ -2088,6 +2124,8 @@
       },
       true
     );
+
+    bindBobMagic();
 
     $("#sync-error").addEventListener("toggle", (e) => {
       if (e.newState === "open" && !CSS.supports("anchor-name: --a")) placeMenu(e.target);
