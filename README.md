@@ -3,10 +3,11 @@
 A Chrome new tab page for Carbon developers: what needs you on GitHub, ranked, plus every repo's links one click away.
 
 - **For you**: one prioritized list of broken `main`, failing CI, conflicts, change requests, PRs ready to merge, overdue reviews and mentions. Snooze anything until tomorrow.
-- **Repo bar**: each repo opens a menu with its board, issues, PRs, sites and Storybooks, plus `main` health and the latest release.
+- **Repo bar**: each repo opens a menu with its board, issues, PRs, sites and Storybooks, plus `main` health, the latest release and, with Bob on, **Open in VS Code** for your local clone.
 - **Search** (`/` or `⌘K`): PRs, issues, links and actions. Type `carbon 23717` to jump straight to an issue or PR.
+- **Following**: issues and PRs you commented on or reacted to with 👀, with new replies flagged. **Reviews** also lists open PRs you've already reviewed and flags new commits since your review.
 - **Today**: your recurring meetings, a to-do list that carries over, and a one-click standup draft.
-- **Bob** (optional): review briefs, CI failure explanations, change-request checklists, merge messages, day plans, standup drafts and answers about your work, from IBM Bob. See [Bob](#bob).
+- **Bob** (optional): review briefs, CI failure explanations, change-request checklists, merge messages, day plans, standup drafts, Slack replies, answers that look things up on GitHub, and a daily bug hunt in your local clones, from IBM Bob. See [Bob](#bob).
 - **Background sync**: checks GitHub every few minutes, sends desktop notifications and shows a count of urgent items on the toolbar icon, even when no new tab is open.
 
 ## Install
@@ -73,6 +74,16 @@ Where Bob shows up:
 | Today | **Write standup with Bob**, an editable draft for Slack |
 | Activity | **Catch me up** on what changed since you last looked |
 | Issues tab | **Triage with Bob** suggests type, component, severity and duplicates |
+| Slack icon (top right) | Paste a support thread; Bob looks up related issues and PRs, reads your local clone if it's about code, and drafts a reply with its sources |
+| Today | **Bug of the day**, see below |
+
+**Ask Bob** and Slack replies first have Bob plan what to look up (searches and issue numbers). The dashboard fetches those from GitHub and Bob answers from what was found. If the question is about code and that repo has a local clone, Bob reads it too.
+
+### Local clones and the bug hunter
+
+With Bob on, the dashboard links each repo to its clone on your computer automatically: it looks one level inside `~/Source`, `~/src`, `~/code`, `~/Projects` and similar folders, at most once a day, and never replaces a path you set. Edit the paths under **Settings → Bob → Local clones**, or click **Find clones on this computer** to look again. A linked repo gets **Open in VS Code** in its repo bar menu. Bob runs in ask mode in these clones, so it reads files but doesn't change them.
+
+Turn on **Daily bug hunt** for a **Bug of the day**. At the time you pick (9:00 by default, or when Chrome is next open after that) Bob reads one clone, taking turns between repos, and reports the most obvious easy-to-fix bug it can confirm in the code: where it is, why it's wrong, a minimal diff and how confident it is. It skips places it reported before, notes the branch and commit it checked, and lists GitHub issues that might already cover it. You get a notification, the report is on the Today card with a link to the exact line in VS Code, and follow-ups such as "write this up as an issue" read the same clone. **Hunt again** runs one now. A hunt can take several minutes and uses your Bob quota, and it's only as current as your clone, so keep it pulled.
 
 Every answer can be copied, regenerated or followed up on, and checklists can be added to your to-dos. Answers are saved per item version (and per day for plans, standups and triage), so reopening one doesn't ask Bob again.
 
@@ -83,7 +94,7 @@ Nothing is sent to Bob until you click a Bob action. Then the helper runs `bob r
 Open them from the gear icon on the new tab:
 
 - **GitHub**: replace or disconnect the token, set the sync interval, and decide when a review counts as overdue.
-- **Bob**: turn Bob actions on, check the helper and save your Bob API key.
+- **Bob**: turn Bob actions on, check the helper, save your Bob API key, set local clones and the daily bug hunt.
 - **Repositories**: turn repos off to hide them from the bar, search and your work list.
 - **Notifications**: choose which events raise a desktop notification. Everything is still recorded under the bell icon.
 - **Meetings**: recurring weekday meetings, reminded 5 minutes before.

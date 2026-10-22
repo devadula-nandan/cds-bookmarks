@@ -67,9 +67,16 @@ DD.github = (() => {
     author { login avatarUrl }
     labels(first: 6) { nodes { name color } }
     comments { totalCount }
-    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+    commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
     latestReviews(first: 10) { nodes { state author { login } } }
     mergedAt
+  `;
+
+  /** Extra fields for threads the viewer follows: their own 👀 reactions and the latest replies. */
+  const FOLLOW_FIELDS = `
+    closed
+    reactionGroups { content viewerHasReacted }
+    recent: comments(last: 10) { nodes { author { login } createdAt url reactionGroups { content viewerHasReacted } } }
   `;
 
   const ISSUE_FIELDS = `
@@ -81,11 +88,13 @@ DD.github = (() => {
     comments { totalCount }
   `;
 
-  const SEARCH = (alias, variable, first) => `
+  const SEARCH = (alias, variable, first, extra = "", prExtra = "") => `
     ${alias}: search(type: ISSUE, query: $${variable}, first: ${first}) {
       issueCount
-      nodes { ... on PullRequest { ${PR_FIELDS} } ... on Issue { ${ISSUE_FIELDS} } }
+      nodes { ... on PullRequest { ${PR_FIELDS} ${extra} ${prExtra} } ... on Issue { ${ISSUE_FIELDS} ${extra} } }
     }`;
+
+  const MY_REVIEW = "myReviews: reviews(author: $login, last: 1) { nodes { state submittedAt } }";
 
   const TRIAGE_LABELS = `label:"status: needs triage 🕵️‍♀️","status: needs triage :female_detective:"`;
 
@@ -112,7 +121,8 @@ DD.github = (() => {
 
     return `
       query Dashboard($reviews: String!, $mine: String!, $assigned: String!, $mentions: String!,
-                      $triage: String!, $merged: String!, $reviewed: String!) {
+                      $triage: String!, $merged: String!, $reviewed: String!,
+                      $commented: String!, $eyes: String!, $reviewedOpen: String!, $watched: [ID!]!, $login: String!) {
         viewer { login name avatarUrl }
         rateLimit { remaining limit resetAt cost }
         ${SEARCH("reviews", "reviews", 50)}
@@ -122,14 +132,40 @@ DD.github = (() => {
         ${SEARCH("triage", "triage", 30)}
         ${SEARCH("merged", "merged", 30)}
         ${SEARCH("reviewed", "reviewed", 30)}
+        ${SEARCH("commented", "commented", 30, FOLLOW_FIELDS)}
+        ${SEARCH("eyes", "eyes", 40, FOLLOW_FIELDS)}
+        ${SEARCH("reviewedOpen", "reviewedOpen", 30, "", MY_REVIEW)}
+        watched: nodes(ids: $watched) { ... on PullRequest { ${PR_FIELDS} ${FOLLOW_FIELDS} } ... on Issue { ${ISSUE_FIELDS} ${FOLLOW_FIELDS} } }
         ${repoBlocks}
       }`;
   }
 
-  function normalizeItem(node) {
+  const eyes = (groups) => (groups || []).some((g) => g.content === "EYES" && g.viewerHasReacted);
+
+  /**
+   * Where the viewer stands on a followed thread: whether they reacted 👀 (to
+   * the thread or one of its last comments), their last comment, and the
+   * latest reply from someone else (bots ignored).
+   */
+  function followInfo(node, login) {
+    if (!node.recent) return undefined;
+    const comments = node.recent.nodes || [];
+    const mine = comments.filter((c) => c.author?.login === login).at(-1);
+    const other = comments.filter((c) => c.author?.login !== login && !DD.insights.isBot(c.author?.login)).at(-1);
+    return {
+      eyes: eyes(node.reactionGroups) || comments.some((c) => eyes(c.reactionGroups)),
+      closed: !!node.closed,
+      myCommentAt: mine?.createdAt || null,
+      lastReply: other ? { author: other.author?.login || "ghost", at: other.createdAt, url: other.url } : null,
+    };
+  }
+
+  function normalizeItem(node, login) {
     if (!node || !node.repository) return null;
     const isPR = node.__typename === "PullRequest";
     const reviews = node.latestReviews?.nodes || [];
+    const commit = node.commits?.nodes?.[0]?.commit;
+    const myReview = node.myReviews?.nodes?.[0];
     return {
       id: node.id,
       kind: isPR ? "pr" : "issue",
@@ -149,19 +185,48 @@ DD.github = (() => {
         mergeable: node.mergeable,
         additions: node.additions,
         deletions: node.deletions,
-        ci: node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state || null,
+        ci: commit?.statusCheckRollup?.state || null,
+        lastCommitAt: commit?.committedDate || null,
+        myReview: myReview ? { state: myReview.state, at: myReview.submittedAt } : undefined,
         approvals: reviews.filter((r) => r.state === "APPROVED").map((r) => r.author?.login),
         changeRequests: reviews.filter((r) => r.state === "CHANGES_REQUESTED").map((r) => r.author?.login),
         mergedAt: node.mergedAt,
       }),
+      follow: followInfo(node, login),
     };
   }
 
-  function list(search) {
+  function list(search, login) {
     return {
       total: search?.issueCount || 0,
-      items: (search?.nodes || []).map(normalizeItem).filter(Boolean),
+      items: (search?.nodes || []).map((n) => normalizeItem(n, login)).filter(Boolean),
     };
+  }
+
+  /**
+   * Threads to follow: ones with the viewer's 👀 (found among recently
+   * updated items, then remembered by id in `watching`) and ones they
+   * commented on. A reply counts as new when it's after the viewer's last
+   * comment, or after the thread was first watched.
+   */
+  function following({ commented, eyesScan, watched, watching }) {
+    const out = new Map();
+    const add = (item, reason) => {
+      if (!item?.follow || item.follow.closed) return;
+      const entry = out.get(item.id) || { ...item, reasons: [] };
+      if (!entry.reasons.includes(reason)) entry.reasons.push(reason);
+      out.set(item.id, entry);
+    };
+    eyesScan.filter((i) => i.follow?.eyes).forEach((i) => add(i, "eyes"));
+    watched.filter((i) => i.follow?.eyes).forEach((i) => add(i, "eyes"));
+    commented.forEach((i) => add(i, "commented"));
+    const now = new Date().toISOString();
+    return [...out.values()].map((i) => {
+      // A 👀 thread seen for the first time starts from now, so older replies don't count as new.
+      const since = i.follow.myCommentAt || watching[i.id]?.addedAt || (i.reasons.includes("eyes") ? now : null);
+      const reply = i.follow.lastReply;
+      return { ...i, follow: { ...i.follow, newReply: !!reply && (!since || reply.at > since) } };
+    });
   }
 
   async function fetchViewer(token) {
@@ -169,10 +234,12 @@ DD.github = (() => {
     return { ...data.viewer, scopes };
   }
 
-  async function fetchDashboard({ token, login, repos, includeTeamReviews }) {
+  async function fetchDashboard({ token, login, repos, includeTeamReviews, watching = {} }) {
     const scope = repos.map((r) => `repo:${r.slug}`).join(" ");
     const since = DD.util.isoDate(DD.util.previousWorkday());
     const weekAgo = DD.util.isoDate(new Date(Date.now() - 7 * 86400000));
+    const monthAgo = DD.util.isoDate(new Date(Date.now() - 30 * 86400000));
+    const threeDaysAgo = DD.util.isoDate(new Date(Date.now() - 3 * 86400000));
     const reviewQualifier = includeTeamReviews ? "review-requested" : "user-review-requested";
 
     const variables = {
@@ -183,9 +250,13 @@ DD.github = (() => {
       triage: `is:issue is:open ${TRIAGE_LABELS} ${scope}`,
       merged: `is:pr is:merged author:${login} merged:>=${weekAgo} ${scope}`,
       reviewed: `is:pr reviewed-by:${login} -author:${login} updated:>=${since} ${scope}`,
+      commented: `is:open commenter:${login} -author:${login} updated:>=${monthAgo} ${scope} sort:updated-desc`,
+      // There's no "reacted by" search, so scan what changed lately for the viewer's 👀.
+      eyes: `is:open updated:>=${threeDaysAgo} ${scope} sort:updated-desc`,
+      reviewedOpen: `is:pr is:open reviewed-by:${login} -author:${login} ${scope}`,
     };
 
-    const { data, errors, sso, scopes } = await graphql(token, buildQuery(repos), variables);
+    const { data, errors, sso, scopes } = await graphql(token, buildQuery(repos), { ...variables, watched: Object.keys(watching).slice(0, 60), login });
     const searches = Object.keys(variables);
     if (searches.every((k) => !data[k])) throw new GitHubError(errors[0] || "GitHub returned no data for your searches.", 200, sso);
 
@@ -223,6 +294,15 @@ DD.github = (() => {
       triage: list(data.triage),
       merged: list(data.merged),
       reviewed: list(data.reviewed),
+      reviewedOpen: list(data.reviewedOpen, login),
+      following: following({
+        commented: list(data.commented, login).items,
+        eyesScan: list(data.eyes, login).items,
+        watched: (data.watched || []).map((n) => normalizeItem(n, login)).filter(Boolean),
+        watching,
+      }),
+      // For the watch list: every id seen with or without the viewer's 👀 this sync.
+      eyesSeen: [...list(data.eyes, login).items, ...(data.watched || []).map((n) => normalizeItem(n, login)).filter(Boolean)].map((i) => ({ id: i.id, eyes: !!i.follow?.eyes && !i.follow.closed })),
       repos: repoHealth,
       warnings: errors,
       failed: searches.filter((k) => !data[k]),
@@ -377,5 +457,36 @@ DD.github = (() => {
     return res.text();
   }
 
-  return { fetchViewer, fetchDashboard, fetchInbox, markThreadRead, markThreadDone, fetchDetail, fetchCommitChecks, fetchBodies, fetchDiff, fetchJobLog, GitHubError };
+  // ---------- lookups for Bob (Ask, Slack replies, bug hunts) ----------
+
+  /** Issues and PRs matching a search, with a trimmed body each. */
+  async function searchItems(token, query, first = 6) {
+    const { data } = await graphql(
+      token,
+      `query($q: String!, $n: Int!) { search(type: ISSUE, query: $q, first: $n) { issueCount nodes {
+        ... on PullRequest { ${PR_FIELDS} body state } ... on Issue { ${ISSUE_FIELDS} body state } } } }`,
+      { q: query, n: first }
+    );
+    return {
+      total: data.search?.issueCount || 0,
+      items: (data.search?.nodes || []).filter((n) => n?.repository).map((n) => ({ ...normalizeItem(n), body: n.body || "", state: n.state })),
+    };
+  }
+
+  /** One issue or PR by repo and number, with its latest comments. */
+  async function fetchRef(token, slug, number) {
+    const [owner, name] = slug.split("/");
+    const { data } = await graphql(
+      token,
+      `query($owner: String!, $name: String!, $n: Int!) { repository(owner: $owner, name: $name) { issueOrPullRequest(number: $n) {
+        ... on PullRequest { ${PR_FIELDS} body state lastComments: comments(last: 6) { nodes { author { login } body createdAt } } }
+        ... on Issue { ${ISSUE_FIELDS} body state lastComments: comments(last: 6) { nodes { author { login } body createdAt } } } } } }`,
+      { owner, name, n: Number(number) }
+    );
+    const n = data.repository?.issueOrPullRequest;
+    if (!n) return null;
+    return { ...normalizeItem(n), body: n.body || "", state: n.state, discussion: (n.lastComments?.nodes || []).map((c) => ({ author: c.author?.login || "ghost", body: c.body, at: c.createdAt })) };
+  }
+
+  return { fetchViewer, fetchDashboard, searchItems, fetchRef, fetchInbox, markThreadRead, markThreadDone, fetchDetail, fetchCommitChecks, fetchBodies, fetchDiff, fetchJobLog, GitHubError };
 })();

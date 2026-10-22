@@ -93,6 +93,16 @@ DD.insights = (() => {
 
     data.mentions.items.forEach((item) => add(task(item, "mention", "medium", `You were mentioned on this ${item.kind === "pr" ? "PR" : "issue"}`)));
 
+    (data.following || [])
+      .filter((i) => i.follow.newReply)
+      .forEach((i) => add(task(i, "reply", "medium", `${i.follow.lastReply.author} replied on a thread you follow`, { at: i.follow.lastReply.at })));
+
+    // A PR you reviewed got new commits: worth a second look, sooner if you'd asked for changes.
+    (data.reviewedOpen?.items || []).forEach((pr) => {
+      if (pr.myReview && pr.lastCommitAt && pr.lastCommitAt > pr.myReview.at)
+        add(task(pr, "recheck", pr.myReview.state === "APPROVED" ? "low" : "medium", "New commits since your review", { detail: pr.myReview.state === "CHANGES_REQUESTED" ? "you requested changes" : null }));
+    });
+
     data.assigned.items.forEach((item) =>
       add(task(item, "assigned", item.kind === "pr" ? "medium" : "low", item.kind === "pr" ? "Assigned PR" : "Assigned issue"))
     );

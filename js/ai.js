@@ -20,6 +20,15 @@ DD.ai = (() => {
 
   // ---------- transport ----------
 
+  /** Turns Bob Shell's errors into ones the page can explain and act on. */
+  function helperError(message = "Bob didn't answer.") {
+    const text = String(message).replace(/^Error:\s*/, "");
+    if (/license agreement is required|accept the license/i.test(text))
+      return new AIError("Bob Shell needs its license accepted once. In Terminal, run `bob --show-license` to read it, then `bob --accept-license`.", "license");
+    if (/api key is required|invalid api key|unauthori[sz]ed|401/i.test(text)) return new AIError(`Bob rejected the API key. Check it in Settings → Bob. (${text})`, "nokey");
+    return new AIError(text);
+  }
+
   /** One request per port, so closing the port (Cancel) stops Bob. */
   function call(message, signal) {
     return new Promise((resolve, reject) => {
@@ -39,7 +48,7 @@ DD.ai = (() => {
         } catch {}
         fn(value);
       };
-      port.onMessage.addListener((reply) => finish(reply?.ok ? resolve : reject, reply?.ok ? reply : new AIError(reply?.error || "Bob didn't answer.")));
+      port.onMessage.addListener((reply) => finish(reply?.ok ? resolve : reject, reply?.ok ? reply : helperError(reply?.error)));
       port.onDisconnect.addListener(() => {
         const msg = chrome.runtime.lastError?.message || "The Bob helper stopped unexpectedly.";
         const missing = /not found|forbidden|not registered/i.test(msg);
@@ -53,16 +62,29 @@ DD.ai = (() => {
   async function status() {
     try {
       const reply = await call({ type: "ping" });
-      return { ok: true, version: reply.version };
+      return { ok: true, version: reply.version, home: reply.home || null };
     } catch (err) {
       return { ok: false, code: err.code, error: err.message };
     }
   }
 
-  async function ask(prompt, settings, signal) {
+  /**
+   * `opts.workspace` runs Bob inside a local clone (still ask mode, so it
+   * reads but doesn't change files); `maxTurns` and `timeoutMs` give it room
+   * to explore.
+   */
+  async function ask(prompt, settings, signal, { workspace, maxTurns, timeoutMs } = {}) {
     if (!settings.bobKey) throw new AIError("Add your Bob API key in Settings → Bob.", "nokey");
-    const reply = await call({ type: "ask", prompt, key: settings.bobKey, teamId: settings.bobTeamId || undefined }, signal);
+    const reply = await call({ type: "ask", prompt, key: settings.bobKey, teamId: settings.bobTeamId || undefined, workspace, maxTurns, timeoutMs }, signal);
     return reply.text;
+  }
+
+  async function findClones(slugs) {
+    return (await call({ type: "find-clones", slugs })).clones;
+  }
+
+  async function gitInfo(path) {
+    return call({ type: "git-info", path });
   }
 
   // ---------- cache ----------
@@ -109,13 +131,16 @@ DD.ai = (() => {
     return items.length ? `### ${title}\n${items.map((i) => render(i)).join("\n")}` : `### ${title}\n- none`;
   }
 
-  function preamble(ctx) {
+  /** `code` is set when Bob runs inside a local clone and should read it. */
+  function preamble(ctx, { code } = {}) {
     const now = new Date();
     return [
       `You are Bob, helping ${ctx.login || "a developer"}, who works on IBM's Carbon Design System, from their browser new-tab dashboard.`,
       `It is ${now.toLocaleString(undefined, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}.`,
       "Rules:",
-      "- Work only from the context below. Don't call tools or read files; everything you need is here. If something isn't in the context, say so in one line.",
+      code
+        ? `- You're running in a local clone of ${code}. Read and search its files to ground your answer, and cite them as [path:line](https://github.com/${code}/blob/main/path#Lline). Combine that with the context below. If neither settles it, say what you checked and what's missing.`
+        : "- Work only from the context below. Don't call tools or read files; everything you need is here. If something isn't in the context, say what's missing in one line.",
       "- Be concise and concrete. Lead with the answer. No greeting, preamble or sign-off.",
       "- Format with GitHub Markdown. Link PRs and issues as [repo#123](url) using the URLs given.",
     ].join("\n");
@@ -240,8 +265,8 @@ DD.ai = (() => {
   /** Which kind of help fits an item, from the work list it appears in. */
   function modeFor(item, kind) {
     if (kind === "main") return "main";
-    if (kind === "review") return "review";
-    if (kind === "mention") return "mention";
+    if (kind === "review" || kind === "recheck") return "review";
+    if (kind === "mention" || kind === "reply") return "mention";
     if (kind === "ciFailed") return "ci";
     if (["changes", "conflict", "ready", "nudge"].includes(kind)) return kind;
     if (item.kind === "issue") return "issue";
@@ -326,8 +351,163 @@ Then **Questions to answer** — any comments that need a reply rather than a co
     return { mode, prompt: parts.filter(Boolean).join("\n\n"), cacheKey: `${mode}:${item.id}:${item.updatedAt}` };
   }
 
-  function askPrompt(ctx, question) {
-    return [preamble(ctx), workContext(ctx), `## Recent activity\n${activityContext(ctx.activity, 15)}`, linksContext(), `## My question\n${question}`].join("\n\n");
+  // ---------- lookups: Bob plans them, the dashboard runs them ----------
+
+  /** The first JSON object in a reply, fenced or not. */
+  function parseJson(text) {
+    const s = String(text || "");
+    const fenced = s.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+    const raw = fenced ? fenced[1] : s.slice(s.indexOf("{"), s.lastIndexOf("}") + 1);
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function lookupPlanPrompt(ctx, text, purpose) {
+    const repos = DD.repos.enabled(ctx.settings).map((r) => `- ${r.name}: ${r.slug}`).join("\n");
+    return `Plan the GitHub lookups that would help ${purpose}. Today is ${DD.util.todayKey()}; my GitHub login is ${ctx.login || "unknown"}.
+Repos:
+${repos}
+
+Reply with only this JSON, no prose:
+{"repo": "owner/name the text is most about, or null", "queries": ["up to 3 GitHub issue/PR search queries, each scoped with repo: or org:carbon-design-system, using qualifiers like is:issue, is:pr, is:open, label:, author:, in:title"], "refs": ["owner/name#123 for each issue or PR the text names"], "code": true if reading that repo's source code would help, else false}
+
+Text:
+${clip(text, 6000)}`;
+  }
+
+  /**
+   * Bob turns the text into searches and refs, the dashboard fetches them
+   * from GitHub, and the result goes into the final prompt. When the text is
+   * about code and that repo has a local clone, the final run reads it too.
+   */
+  async function retrieve(ctx, text, purpose, stage = () => {}, signal) {
+    const token = ctx.settings.demo ? null : ctx.settings.token;
+    stage("Planning what to look up…");
+    let plan = null;
+    try {
+      plan = parseJson(await ask(lookupPlanPrompt(ctx, text, purpose), ctx.settings, signal, { maxTurns: 1, timeoutMs: 90000 }));
+    } catch (err) {
+      if (["cancelled", "nokey", "missing"].includes(err.code)) throw err;
+    }
+    plan ||= {};
+    const parts = [];
+    if (token) {
+      const queries = (plan.queries || []).filter((q) => typeof q === "string" && q.trim()).slice(0, 3);
+      const refs = (plan.refs || []).map((r) => String(r).match(/^([\w.-]+\/[\w.-]+)#(\d+)$/)).filter(Boolean).slice(0, 4);
+      stage(`Searching GitHub${queries.length ? ` (${plural(queries.length, "query", "queries")})` : ""}…`);
+      const [results, fetched] = await Promise.all([
+        Promise.all(queries.map((q) => DD.github.searchItems(token, q, 6).then((r) => ({ q, ...r }), (err) => ({ q, error: err.message, items: [] })))),
+        Promise.all(refs.map((m) => DD.github.fetchRef(token, m[1], m[2]).catch(() => null))),
+      ]);
+      fetched.filter(Boolean).forEach((i) =>
+        parts.push(`### ${linkOf(i)} "${i.title}" (${i.state.toLowerCase()})\n${clip(i.body, 3000)}${i.discussion.length ? `\nLatest comments:\n${i.discussion.map((c) => `- ${c.author}: ${clip(c.body, 600)}`).join("\n")}` : ""}`)
+      );
+      results.forEach((r) =>
+        parts.push(
+          `### Search \`${r.q}\` — ${r.error ? `failed: ${r.error}` : plural(r.total, "result")}\n${r.items.map((i) => `${itemLine(i, ` · ${i.state.toLowerCase()}`)}${i.body ? `\n  > ${clip(i.body, 400).replace(/\n+/g, " ")}` : ""}`).join("\n") || "- no results"}`
+        )
+      );
+    }
+    const clone = plan.code && plan.repo ? ctx.settings.clones?.[plan.repo] : null;
+    return {
+      block: token ? `## Retrieved from GitHub\n${parts.join("\n\n") || "- Nothing relevant found."}` : "",
+      repo: plan.repo || null,
+      code: clone ? plan.repo : null,
+      opts: clone ? { workspace: clone, maxTurns: 30, timeoutMs: 420000 } : {},
+    };
+  }
+
+  async function askBuild(ctx, question, stage, signal) {
+    const found = await retrieve(ctx, question, "answer my question", stage, signal);
+    stage(found.code ? `Reading ${repoShort(found.code)} and thinking…` : "Bob is thinking…");
+    return {
+      prompt: [preamble(ctx, { code: found.code }), workContext(ctx), `## Recent activity\n${activityContext(ctx.activity, 15)}`, linksContext(), found.block, `## My question\n${question}`].filter(Boolean).join("\n\n"),
+      opts: found.opts,
+    };
+  }
+
+  /** Extra lookups for a follow-up question, appended to the original context. */
+  async function askAugment(ctx, question, stage, signal) {
+    const found = await retrieve(ctx, question, "answer my follow-up question", stage, signal);
+    stage("Bob is thinking…");
+    return { extra: found.block, opts: found.opts };
+  }
+
+  async function slackBuild(ctx, thread, stage, signal) {
+    const found = await retrieve(ctx, thread, "answer the support question in this Slack thread", stage, signal);
+    stage(found.code ? `Reading ${repoShort(found.code)} and drafting…` : "Drafting the reply…");
+    const prompt = [
+      preamble(ctx, { code: found.code }),
+      `## Slack thread (oldest first)\n${clip(thread, 12000)}`,
+      found.block,
+      linksContext(),
+      `## Task
+Draft my reply in this thread as a Carbon maintainer. Ground every claim in the sources above${found.code ? " or the code you read" : ""}; never invent props, APIs, tokens or versions. If the sources don't settle it, say what's unknown and ask for what we'd need (package and version, a StackBlitz or repro, a screenshot). Point to an existing issue or PR when one covers it.
+Tone: friendly, direct, brief — a few short lines, not an essay. Use Slack formatting: *bold*, \`code\`, "• " bullets, links as <url|text>.
+Reply with the message only, then a line containing just "SOURCES:", then a "- " list of the links or file paths you relied on.`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    return { prompt, opts: found.opts };
+  }
+
+  /** Splits a Slack draft into the message and its "SOURCES:" list. */
+  function splitSources(text) {
+    const s = String(text || "");
+    const at = s.search(/^\s*\**SOURCES:?\**\s*$/im);
+    return at < 0 ? { reply: s.trim(), sources: "" } : { reply: s.slice(0, at).trim(), sources: s.slice(at).replace(/^\s*\**SOURCES:?\**\s*$/im, "").trim() };
+  }
+
+  // ---------- bug hunt ----------
+
+  function huntPrompt({ slug, branch, head, previous }) {
+    return `You're hunting for one real bug in ${slug}, checked out locally at ${branch} (${String(head).slice(0, 7)}). You're in ask mode: read and search the code, don't change anything.
+
+Find the single most obvious bug that's easy to fix — something a maintainer could fix in under an hour with a small diff. Good candidates: inverted or wrong conditions, off-by-one errors, a missing null check that can throw, the wrong variable or prop used, listeners or timers never cleaned up, a React hook missing a dependency so state goes stale, wrong ARIA attributes or roles, misspelled class names or tokens that silently break styling, copy-paste mistakes between sibling components.
+Not wanted: style nits, refactors, missing features, TODO comments, test-only problems, or anything you can't point to in the code.
+Prefer component and library source (for example under packages/) over docs, stories or examples. Look somewhere different from these earlier finds:
+${previous || "- none yet"}
+
+Before reporting, read the surrounding code and its callers to make sure it's really a bug. If you find nothing you're confident about, say so rather than guessing.
+
+Report in GitHub Markdown:
+## <one-line title>
+**Where** — the file and line.
+**What's wrong** — 2–4 sentences, quoting the offending lines in a code block.
+**Why it's a bug** — the wrong behaviour a user would actually see, and how to reproduce it if you can.
+**Fix** — a minimal diff in a \`\`\`diff block.
+**Confidence** — high, medium or low, with one line of reasoning.
+
+Finish with this JSON block and nothing after it:
+\`\`\`json
+{"found": true, "title": "…", "file": "path/from/repo/root", "line": 123, "severity": "low|medium|high", "effort": "e.g. 15 min", "confidence": "high|medium|low", "search": "2–4 keywords to look for an existing GitHub issue"}
+\`\`\``;
+  }
+
+/** Context for follow-ups on a bug report; they run in the same clone. */
+  function reportPrompt(ctx, report) {
+    return [
+      preamble(ctx, { code: report.repo }),
+      `## Bug you found earlier\nIn a local clone of ${report.repo} at ${report.branch} (${String(report.head || "").slice(0, 7)}), ${timeAgo(report.at)} ago.\n\n${report.markdown}`,
+      report.related?.length ? `## Possibly related GitHub issues\n${report.related.map((r) => `- [${r.ref}](${r.url}) "${r.title}" (${String(r.state).toLowerCase()})`).join("\n")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }
+
+  /** The Markdown report and the trailing JSON summary of a hunt. */
+  function splitReport(text) {
+    const s = String(text || "");
+    const fences = [...s.matchAll(/```json\s*([\s\S]*?)```/g)];
+    const last = fences.at(-1);
+    let meta = null;
+    try {
+      meta = last ? JSON.parse(last[1]) : null;
+    } catch {}
+    return { markdown: (last ? s.slice(0, last.index) : s).trim(), meta };
   }
 
   function planPrompt(ctx) {
@@ -507,7 +687,15 @@ Request: ${request}`;
     MODES,
     modeFor,
     itemPrompt,
-    askPrompt,
+    askBuild,
+    askAugment,
+    slackBuild,
+    splitSources,
+    huntPrompt,
+    splitReport,
+    reportPrompt,
+    findClones,
+    gitInfo,
     planPrompt,
     standupPrompt,
     catchUpPrompt,

@@ -23,7 +23,11 @@ DD.sync = (() => {
     release: { icon: "tag", tone: "neutral", setting: "release" },
     inbox: { icon: "inbox", tone: "neutral", setting: "githubInbox" },
     meeting: { icon: "calendar", tone: "info", setting: "meetings" },
+    reply: { icon: "message", tone: "info", setting: "replies" },
+    recheck: { icon: "refresh", tone: "warning", setting: "recheck" },
+    bugHunt: { icon: "bug", tone: "warning", setting: "bugHunt" },
   };
+  const WATCH_DAYS = 60;
 
   let notifier = async () => {};
 
@@ -47,6 +51,8 @@ DD.sync = (() => {
       main: Object.fromEntries(Object.entries(data.repos).map(([s, r]) => [s, r.main?.state || null])),
       release: Object.fromEntries(Object.entries(data.repos).map(([s, r]) => [s, r.release?.tagName || null])),
       inbox: inbox ? Object.fromEntries(inbox.map((t) => [t.id, t.updatedAt])) : null,
+      following: Object.fromEntries((data.following || []).map((i) => [i.id, i.follow.lastReply?.at || null])),
+      reviewedOpen: Object.fromEntries((data.reviewedOpen?.items || []).map((p) => [p.id, p.lastCommitAt])),
     };
   }
 
@@ -113,6 +119,21 @@ DD.sync = (() => {
         events.push({ type: "release", key: `release:${slug}:${tag}`, title: `${repoShort(slug)} ${tag} released`, body: health.release.isPrerelease ? "Pre-release" : "Stable release", url: health.release.url, repo: slug });
     });
 
+    // Older snapshots don't have these yet; the first sync just records a baseline.
+    if (prev.following)
+      (data.following || []).forEach((i) => {
+        const reply = i.follow.lastReply;
+        if (i.follow.newReply && reply && prev.following[i.id] !== reply.at)
+          events.push({ type: "reply", key: `reply:${i.id}:${reply.at}`, title: `${reply.author} replied on ${ref(i)}`, body: i.title, url: reply.url || i.url, repo: i.repo });
+      });
+
+    if (prev.reviewedOpen)
+      (data.reviewedOpen?.items || []).forEach((pr) => {
+        const before = prev.reviewedOpen[pr.id];
+        if (before !== undefined && pr.lastCommitAt !== before && pr.myReview && pr.lastCommitAt > pr.myReview.at)
+          events.push({ type: "recheck", key: `recheck:${pr.id}:${pr.lastCommitAt}`, title: `New commits on ${ref(pr)} since your review`, body: `${pr.author} · ${pr.title}`, url: `${pr.url}/files`, repo: pr.repo });
+      });
+
     if (inbox && prev.inbox) {
       inbox
         .filter((t) => t.unread && prev.inbox[t.id] !== t.updatedAt)
@@ -148,6 +169,22 @@ DD.sync = (() => {
     else if (loud.length) await notifier(loud);
   }
 
+  /**
+   * The 👀 watch list: ids join when a sync sees the viewer's 👀, and leave
+   * when it's removed, the thread closes, or it's been quiet for WATCH_DAYS.
+   */
+  function updateWatching(watching, seen = []) {
+    const next = { ...watching };
+    const now = new Date().toISOString();
+    seen.forEach(({ id, eyes }) => {
+      if (eyes) next[id] ||= { addedAt: now };
+      else delete next[id];
+    });
+    const cutoff = new Date(Date.now() - WATCH_DAYS * 86400000).toISOString();
+    Object.keys(next).forEach((id) => next[id].addedAt < cutoff && delete next[id]);
+    return next;
+  }
+
   async function setStatus(patch) {
     const { status = {} } = await DD.storage.get("status");
     const next = { ...status, ...patch };
@@ -171,8 +208,9 @@ DD.sync = (() => {
         await DD.settings.save({ login, tokenScopes: viewer.scopes });
       }
       const repos = DD.repos.enabled(settings);
+      const { watching = {} } = await DD.storage.get("watching");
       const [data, inboxResult] = await Promise.all([
-        DD.github.fetchDashboard({ token: settings.token, login, repos, includeTeamReviews: settings.includeTeamReviews }),
+        DD.github.fetchDashboard({ token: settings.token, login, repos, includeTeamReviews: settings.includeTeamReviews, watching }),
         DD.github.fetchInbox(settings.token, repos).then(
           (threads) => ({ threads }),
           (err) => ({ err })
@@ -190,7 +228,7 @@ DD.sync = (() => {
       if (prev && inbox && !prev.inbox) prev.inbox = next.inbox;
       const events = prev ? detect(prev, data, inbox) : [];
 
-      await DD.storage.set({ cache: { data, inbox }, snapshot: next });
+      await DD.storage.set({ cache: { data, inbox }, snapshot: next, watching: updateWatching(watching, data.eyesSeen) });
       await setStatus({ syncing: false, at: new Date().toISOString(), error: null, errorSso: null, inboxError });
       if (data.scopes !== settings.tokenScopes) await DD.settings.save({ tokenScopes: data.scopes });
       await record(events, await DD.settings.load());
@@ -244,5 +282,5 @@ DD.sync = (() => {
     if (Date.now() - last >= settings.pollMinutes * 60000 - 5000) await run();
   }
 
-  return { TYPES, run, tick, setNotifier, todaysMeetings };
+  return { TYPES, run, tick, record, setNotifier, todaysMeetings };
 })();

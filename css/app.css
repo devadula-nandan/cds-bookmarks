@@ -35,6 +35,9 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
   --backdrop: rgba(22, 22, 22, 0.32);
+  --scrollbar: rgba(22, 22, 22, 0.22);
+  --scrollbar-hover: rgba(22, 22, 22, 0.4);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236f6f6f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 
   --radius: 12px;
   --radius-sm: 8px;
@@ -74,6 +77,9 @@
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
     --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
     --backdrop: rgba(0, 0, 0, 0.55);
+    --scrollbar: rgba(255, 255, 255, 0.18);
+    --scrollbar-hover: rgba(255, 255, 255, 0.34);
+    --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238f8f8f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
 }
 
@@ -107,6 +113,9 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
   --backdrop: rgba(0, 0, 0, 0.55);
+  --scrollbar: rgba(255, 255, 255, 0.18);
+  --scrollbar-hover: rgba(255, 255, 255, 0.34);
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238f8f8f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* ---------- base ---------- */
@@ -172,6 +181,37 @@ kbd {
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+/* Thin scrollbars that follow the theme. Chrome 121+ uses scrollbar-color;
+   the ::-webkit-scrollbar rules cover older Chromium. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar) transparent;
+}
+
+*:hover {
+  scrollbar-color: var(--scrollbar-hover) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar) padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-hover);
 }
 
 .icon {
@@ -460,7 +500,7 @@ body.is-ready .page {
   text-decoration: underline;
 }
 
-/* Bob entry points: a link with the sparkle in front. */
+/* A link with an icon in front. */
 .link--bob {
   display: inline-flex;
   align-items: center;
@@ -470,6 +510,11 @@ body.is-ready .page {
 .hello__ai {
   margin: 10px 0 0;
   font-size: 14px;
+}
+
+/* Ghost button padding would indent it; line its text up with the greeting instead. */
+.hello__ai .btn {
+  margin-left: -10px;
 }
 
 /* ---------- search ---------- */
@@ -1026,7 +1071,8 @@ a.item__title::after {
   visibility: hidden;
 }
 
-.item__bob:hover {
+/* Bob actions hover to the accent, icon-only or with text. Comes after .btn--ghost so it wins the tie. */
+.bob-btn:hover:not(:disabled) {
   color: var(--accent);
 }
 
@@ -1055,7 +1101,18 @@ a.item__title::after {
 .work__foot-group {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px 16px;
+}
+
+/* Ghost buttons in footers: keep the footer its usual height and the button's text where a link's would be. */
+.work__foot-group .btn {
+  margin: -6px 0 -6px -10px;
+}
+
+.work__foot > .btn,
+.drawer__foot .btn {
+  margin: -6px -10px -6px auto;
 }
 
 .work__foot > :only-child {
@@ -1262,9 +1319,13 @@ a.item__title::after {
   font-size: 13px;
 }
 
+/* Our own chevron, inset from the edge like the other controls, instead of the native arrow. */
 .input--select {
   flex: none;
-  padding-right: 8px;
+  padding-right: 36px;
+  appearance: none;
+  background: var(--surface) var(--select-chevron) no-repeat right 12px center / 16px;
+  cursor: pointer;
 }
 
 /* ---------- today ---------- */
@@ -1286,8 +1347,9 @@ a.item__title::after {
   font-weight: 500;
 }
 
-.panel__head .link {
-  font-size: 13px;
+/* Keeps the head its usual height and the button's text on the right edge. */
+.panel__head .btn {
+  margin: -6px -10px -6px 0;
 }
 
 .quiet {
@@ -1567,6 +1629,10 @@ a.item__title::after {
 }
 
 .drawer__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--border);
   color: var(--text-3);
@@ -1686,6 +1752,8 @@ a.item__title::after {
 }
 
 .switch {
+  /* Contains the visually hidden checkbox; otherwise it's placed against the dialog and makes the whole sheet scroll. */
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -2098,6 +2166,50 @@ a.bob__subtitle:hover {
   animation: spin 800ms linear infinite;
 }
 
+/* A minimised Bob shows on the button that opened it: a spinner while it works, then a dot. */
+[data-bob-status] {
+  position: relative;
+  cursor: pointer;
+}
+
+[data-bob-status]::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+[data-bob-status="running"]::after {
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  background: var(--surface);
+  animation: spin 800ms linear infinite;
+}
+
+[data-bob-status="done"]::after,
+[data-bob-status="error"]::after {
+  border: 2px solid var(--surface);
+  background: var(--success);
+}
+
+[data-bob-status="error"]::after {
+  background: var(--error);
+}
+
+/* Row buttons only show on hover; keep the one with Bob's status visible. */
+.item:has([data-bob-status]) .item__actions {
+  visibility: visible;
+}
+
+.item:has([data-bob-status]) .item__time:has(+ .item__actions) {
+  visibility: hidden;
+}
+
 .bob__elapsed {
   color: var(--text-3);
   font-size: 12px;
@@ -2127,6 +2239,166 @@ a.bob__subtitle:hover {
 .bob__follow {
   display: flex;
   gap: 6px;
+}
+
+/* ---------- bug of the day ---------- */
+
+.hunt {
+  margin-top: 10px;
+  padding: 12px 10px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.hunt .subhead {
+  align-items: center;
+  padding: 0 8px;
+}
+
+.hunt__status,
+.hunt__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 2px 8px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.hunt__error {
+  margin-top: 6px;
+  color: var(--error);
+}
+
+.hunt__report {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hunt__report:hover {
+  background: var(--surface-hover);
+}
+
+.hunt__title {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hunt__report.is-empty .hunt__title {
+  color: var(--text-2);
+}
+
+.hunt__meta {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* Line the button's text up with the card's 8px inset. */
+.hunt__action {
+  margin: 4px 0 0 -2px;
+}
+
+/* ---------- Bob sheet: input, sources, reports ---------- */
+
+.bob__input {
+  display: grid;
+  gap: 12px;
+}
+
+.bob__input-foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bob__input-foot .hint {
+  margin: 0;
+}
+
+.bob__sources h4,
+.bob__label {
+  margin: 0 0 6px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.bob__report-meta {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.bob__report-meta .bob__label {
+  margin: 0;
+}
+
+.bob__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.bob__links {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+/* A list of buttons: no bullets, and long titles wrap with their text on the list's edge. */
+.bob__links--buttons {
+  padding-left: 0;
+  list-style: none;
+}
+
+.bob__links--buttons .btn {
+  height: auto;
+  min-height: 30px;
+  margin-left: -10px;
+  padding: 4px 10px;
+  white-space: normal;
+  text-align: left;
+}
+
+.bob__links a {
+  color: var(--accent);
+}
+
+.quiet-inline {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.setting-sub {
+  margin: 22px 0 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.clones {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 /* ---------- fit to the viewport ----------
@@ -2272,6 +2544,7 @@ a.bob__subtitle:hover {
   .today > .panel__head,
   .today > .agenda,
   .today > .quiet,
+  .today > .hunt,
   .today > .today__foot {
     flex: none;
   }

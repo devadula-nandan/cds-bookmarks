@@ -1,5 +1,5 @@
 /* Dev Dashboard — background worker: polls GitHub, raises OS notifications, keeps the toolbar badge current. */
-importScripts("bookmarks-data.js", "js/core.js", "js/repos.js", "js/github.js", "js/insights.js", "js/sync.js");
+importScripts("bookmarks-data.js", "js/core.js", "js/repos.js", "js/github.js", "js/insights.js", "js/sync.js", "js/ai.js", "js/hunt.js");
 
 const ALARM = "tick";
 const ICON = "icons/icon-128.png";
@@ -16,7 +16,7 @@ DD.sync.setNotifier(async (events) => {
       iconUrl: ICON,
       title: e.title,
       message: e.body || "",
-      priority: ["ciFailed", "mainBroken", "changes", "conflict"].includes(e.type) ? 1 : 0,
+      priority: ["ciFailed", "mainBroken", "changes", "conflict", "bugHunt"].includes(e.type) ? 1 : 0,
     });
   }
 });
@@ -51,13 +51,32 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (Object.keys(changes).some((k) => k === "cache" || k === "settings" || k.startsWith(DD.day.PREFIX))) updateBadge();
 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === ALARM) DD.sync.tick();
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== ALARM) return;
+  await DD.sync.tick();
+  // The daily bug hunt can take several minutes; the native messaging port keeps the worker alive meanwhile.
+  DD.hunt.maybeRun();
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, respond) => {
+  if (msg?.type === "ping") {
+    respond({ ok: true, rev: DD.REV });
+    return false;
+  }
   if (msg?.type === "sync") {
     DD.sync.run().then(respond);
+    return true;
+  }
+  // Reply as soon as the hunt starts: it can outlast Chrome's 5-minute limit on a message reply.
+  // The page follows progress and results through huntState and bugHunts in storage.
+  if (msg?.type === "bug-hunt") {
+    DD.hunt
+      .check()
+      .then((ready) => {
+        respond(ready);
+        if (ready.ok) DD.hunt.run({ slug: msg.slug });
+      })
+      .catch((err) => respond({ ok: false, error: err?.message || String(err) }));
     return true;
   }
   if (msg?.type === "test-notification") {

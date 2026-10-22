@@ -6,7 +6,7 @@
 DD.repos = (() => {
   const LINK_GROUP_KEYS = ["github", "website", "storybooks", "others"];
   const GROUP_TITLES = { github: "GitHub", others: "Playgrounds" };
-  const SHORT_NAMES = { cds: "Carbon", c4ip: "IBM Products", c4ai: "AI Chat", labs: "Labs", charts: "Charts" };
+  const SHORT_NAMES = { cds: "Carbon", c4ai: "AI Chat", labs: "Labs", charts: "Charts" };
 
   function findSlug(entry) {
     const hrefs = (entry.github?.buttons || []).map((b) => b.href || "");

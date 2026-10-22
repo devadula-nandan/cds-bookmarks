@@ -4,6 +4,14 @@
  */
 globalThis.DD = globalThis.DD || {};
 
+/**
+ * Code revision shared by the page and the background worker. Chrome keeps
+ * running the old worker until the extension is reloaded, so the page compares
+ * this with the worker's and offers a reload when they differ. Bump it when
+ * background behavior changes.
+ */
+DD.REV = 4;
+
 DD.util = {
   esc(value) {
     return String(value ?? "")
@@ -196,11 +204,19 @@ DD.settings = (() => {
         release: false,
         githubInbox: false,
         meetings: true,
+        replies: true,
+        recheck: true,
+        bugHunt: true,
       },
       disabledRepos: [],
       ai: false,
       bobKey: "",
       bobTeamId: "",
+      clones: {},
+      clonesCheckedAt: null,
+      homeDir: "",
+      bugHunt: false,
+      bugHuntTime: "09:00",
       meetings: [{ id: "standup", title: "Daily standup", time: "10:00", minutes: 15, days: [1, 2, 3, 4, 5] }],
     };
   }
@@ -213,6 +229,7 @@ DD.settings = (() => {
       notifyOn: { ...base.notifyOn, ...(saved.notifyOn || {}) },
       meetings: Array.isArray(saved.meetings) ? saved.meetings : base.meetings,
       disabledRepos: Array.isArray(saved.disabledRepos) ? saved.disabledRepos : [],
+      clones: saved.clones && typeof saved.clones === "object" ? saved.clones : {},
     };
   }
 
