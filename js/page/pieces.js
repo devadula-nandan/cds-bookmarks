@@ -104,11 +104,12 @@ export function duration(mins) {
   return h ? `${h}h${m ? ` ${m}m` : ""}` : `${m}m`;
 }
 
-export function dayLabel(at) {
+/** "Today", "Yesterday", or "Earlier" for older days; `dated` gives their date instead, such as "Oct 20". */
+export function dayLabel(at, { dated = false } = {}) {
   const key = DD.util.todayKey(new Date(at));
   if (key === DD.util.todayKey()) return "Today";
   if (key === DD.util.todayKey(new Date(Date.now() - 86400000))) return "Yesterday";
-  return "Earlier";
+  return dated ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Earlier";
 }
 
 /** Copies `text` and says so in a toast (`done`, or nothing when null). True when it worked. */

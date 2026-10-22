@@ -2926,8 +2926,10 @@ a.bob__subtitle:hover {
   resize: vertical;
 }
 
+/* The column can't grow past the sheet, so a long code line scrolls inside its block instead of widening the answer. */
 .bob__turn {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
 }
@@ -3131,6 +3133,7 @@ a.bob__subtitle:hover {
 
 .bob__report-meta {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
@@ -3161,19 +3164,46 @@ a.bob__subtitle:hover {
   font-size: 13px;
 }
 
-/* A list of buttons: no bullets, and long titles wrap with their text on the list's edge. */
-.bob__links--buttons {
-  padding-left: 0;
+/* Earlier bug hunts: one line each, the title cut short (its tooltip has all of it) and where/when on the right. */
+.hunt-list {
+  margin: 0 -10px;
+  padding: 0;
   list-style: none;
 }
 
-.bob__links--buttons .btn {
-  height: auto;
-  min-height: 30px;
-  margin-left: -10px;
+.hunt-list__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
   padding: 4px 10px;
-  white-space: normal;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
   text-align: left;
+  cursor: pointer;
+}
+
+.hunt-list__item:hover {
+  background: var(--surface-hover);
+}
+
+.hunt-list__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hunt-list__meta {
+  flex: none;
+  color: var(--text-3);
+  font-size: 12px;
 }
 
 .bob__links a {

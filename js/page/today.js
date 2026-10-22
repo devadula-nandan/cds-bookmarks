@@ -120,7 +120,7 @@ function huntCard() {
     const where = [DD.util.repoShort(latest.repo), latest.file ? `${latest.file.split("/").pop()}${latest.line ? `:${latest.line}` : ""}` : "", latest.effort, latest.found && latest.confidence && `${latest.confidence} confidence`].filter(Boolean).join(" · ");
     body = `<button class="hunt__report bob-btn ${latest.found ? "" : "is-empty"}" data-action="hunt-open" data-id="${esc(latest.id)}">
               <span class="hunt__title">${esc(latest.title)}</span>
-              <span class="hunt__meta">${latest.day === DD.util.todayKey() ? "Today" : esc(dayLabel(latest.at))} · ${esc(where)}${latest.related?.length ? ` · ${plural(latest.related.length, "related issue")}` : ""}</span>
+              <span class="hunt__meta">${latest.day === DD.util.todayKey() ? "Today" : esc(dayLabel(latest.at, { dated: true }))} · ${esc(where)}${latest.related?.length ? ` · ${plural(latest.related.length, "related issue")}` : ""}</span>
             </button>`;
   } else body = `<p class="hunt__status">First hunt at ${esc(DD.util.fmtTime(DD.util.parseTime(s.bugHuntTime)))}.</p>`;
   // A hunt still marked running after the stale window was cut off (browser closed or worker stopped).
@@ -160,7 +160,18 @@ function huntExtra(report) {
       ${report.file && vscodeUrl(report.path, report.file, report.line) ? `<p class="bob__label"><a class="link link--bob" href="${esc(vscodeUrl(report.path, report.file, report.line))}">${icon("code", 14)}Open ${esc(report.file.split("/").pop())}${report.line ? `:${report.line}` : ""} in VS Code</a></p>` : ""}
       <p class="bob__label">Checked ${esc(DD.util.repoShort(report.repo))} at <span class="mono">${esc(report.branch)} ${esc(String(report.head || "").slice(0, 7))}</span> in <span class="mono">${esc(report.path)}</span></p>
       ${related}
-      ${earlier.length ? `<p class="bob__label">Earlier hunts</p><ul class="bob__links bob__links--buttons">${earlier.map((h) => `<li><button class="btn btn--ghost btn--sm" data-action="hunt-open" data-id="${esc(h.id)}">${esc(h.title)}</button> <span class="quiet-inline">${esc(DD.util.repoShort(h.repo))} · ${esc(dayLabel(h.at))}</span></li>`).join("")}</ul>` : ""}
+      ${
+        earlier.length
+          ? `<p class="bob__label">Earlier hunts</p>
+             <ul class="hunt-list">${earlier
+               .map(
+                 (h) => `<li><button class="hunt-list__item bob-btn bob-made" data-action="hunt-open" data-id="${esc(h.id)}" data-tooltip="${esc(h.title)}">
+                   ${icon("sparkle", 14)}<span class="hunt-list__title">${esc(h.title)}</span><span class="hunt-list__meta">${esc(DD.util.repoShort(h.repo))} · ${esc(dayLabel(h.at, { dated: true }))}</span>
+                 </button></li>`
+               )
+               .join("")}</ul>`
+          : ""
+      }
     </div>`;
 }
 
