@@ -218,7 +218,7 @@
     $("#greeting").textContent = `${ins.greeting(now)}${name ? `, ${name}` : ""}`;
     let summary;
     if (!connected()) summary = "Connect GitHub to see what needs you today.";
-    else if (!d) summary = state.status.error ? "Couldn't reach GitHub. Details below." : "Loading your work…";
+    else if (!d) summary = state.status.error ? "Couldn't reach GitHub. Click “Sync failed” above for details." : "Loading your work…";
     else summary = ins.summary(d, visibleTasks());
     $("#summary").textContent = summary;
     // Rebuilt every minute by tick(), so only touch it when it changes (keeps focus on the button).
@@ -239,7 +239,7 @@
     if (state.staleWorker) status = `<button class="pill-btn" data-action="reload-extension" title="The background worker is running older code than this page">Update ready <span class="pill-btn__sep">·</span> Reload extension</button>`;
     else if (s.demo) status = `<button class="pill-btn" data-action="demo-off" title="You're looking at sample data">Sample data <span class="pill-btn__sep">·</span> Exit</button>`;
     else if (s.token && st.syncing) status = `<span class="sync">Syncing…</span>`;
-    else if (s.token && st.error) status = `<span class="sync sync--error">Sync failed</span>`;
+    else if (s.token && st.error) status = `<button class="sync sync--error" popovertarget="sync-error" style="anchor-name: --sync" title="See what went wrong">${icon("alert", 14)}Sync failed</button>`;
     else if (s.token && st.at) status = `<span class="sync" title="Last synced ${esc(new Date(st.at).toLocaleString())}">Updated <span data-ago="${esc(st.at)}">${agoText(st.at)}</span></span>`;
 
     $("#tools").innerHTML = `
@@ -250,6 +250,15 @@
       </button>
       ${aiOn() ? `<button class="icon-btn bob-btn" data-action="ai-slack" title="Draft a Slack reply with Bob" aria-label="Draft a Slack reply with Bob">${icon("slack", 18)}</button>` : ""}
       <button class="icon-btn" data-action="settings" title="Settings" aria-label="Settings">${icon("gear", 18)}</button>`;
+
+    // The popup lives outside #tools so re-rendering the header doesn't close it; only touch it when the error changes.
+    const pop = $("#sync-error");
+    const notice = status.includes('popovertarget="sync-error"') ? syncNotice(true) : "";
+    if (pop.dataset.html !== notice) {
+      pop.innerHTML = notice;
+      pop.dataset.html = notice;
+    }
+    if (!notice && pop.matches(":popover-open")) pop.hidePopover();
   }
 
   // ---------- repos bar + link menus ----------
@@ -531,14 +540,15 @@
     ];
   }
 
-  function syncNotice() {
+  /** The sync error for the header's "Sync failed" popup (`failed`), or, when the sync worked, partial-data warnings for the work panel. */
+  function syncNotice(failed = false) {
     const s = state.settings;
     if (s.demo || !s.token) return "";
     const { error, errorSso } = state.status;
     const d = state.cache?.data;
-    const warnings = error ? [] : d?.warnings || [];
-    if (!error && !warnings.length) return "";
-    const messages = error ? [error] : warnings;
+    if (failed ? !error : error) return "";
+    const messages = failed ? [error] : d?.warnings || [];
+    if (!messages.length) return "";
     const text = messages.join(" ");
     const sso = errorSso || d?.sso;
     const hints = [];
@@ -547,10 +557,10 @@
     if (/401|rejected/i.test(text)) hints.push(`Create a new <a href="${CLASSIC_TOKEN_URL}">classic token</a> on github.com and paste it in Settings.`);
     if (/reach api\.github\.com/i.test(text)) hints.push("On a corporate network or VPN, a proxy may be blocking api.github.com.");
     return `
-      <div class="notice notice--${error ? "error" : "warning"}" role="alert">
+      <div class="notice notice--${failed ? "error" : "warning"}" ${failed ? "" : 'role="alert"'}>
         ${icon("alert", 16)}
         <div class="notice__body">
-          <p class="notice__title">${error ? "Couldn't sync with GitHub" : `Some data couldn't load${d?.failed?.length ? ` (${esc(d.failed.join(", "))})` : ""}`}</p>
+          <p class="notice__title">${failed ? "Couldn't sync with GitHub" : `Some data couldn't load${d?.failed?.length ? ` (${esc(d.failed.join(", "))})` : ""}`}</p>
           <p class="notice__text">${esc(messages.slice(0, 2).join(" · "))}</p>
           ${hints.length ? `<ul class="notice__hints">${hints.map((h) => `<li>${h}</li>`).join("")}</ul>` : ""}
           <div class="notice__actions">
@@ -1820,6 +1830,7 @@
     },
     settings: (el) => {
       $("#activity").matches(":popover-open") && $("#activity").hidePopover();
+      $("#sync-error").matches(":popover-open") && $("#sync-error").hidePopover();
       if ($("#ai").open) closeBob();
       openSettings(el.dataset.section);
     },
@@ -2077,6 +2088,10 @@
       },
       true
     );
+
+    $("#sync-error").addEventListener("toggle", (e) => {
+      if (e.newState === "open" && !CSS.supports("anchor-name: --a")) placeMenu(e.target);
+    });
 
     $("#work").addEventListener("keydown", (e) => {
       if (!e.target.matches("[role=tab]")) return;

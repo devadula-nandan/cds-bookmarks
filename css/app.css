@@ -345,6 +345,37 @@ body.is-ready .page {
   color: var(--error);
 }
 
+/* "Sync failed" opens the details in a popup. */
+button.sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button.sync--error:hover,
+body:has(#sync-error:popover-open) button.sync--error {
+  background: var(--error-soft);
+}
+
+/* .menu comes later in the file, so match it with two classes. */
+.menu.sync-pop {
+  width: 380px;
+  padding: 0;
+  position-area: bottom span-left;
+}
+
+.sync-pop .notice {
+  margin: 0;
+}
+
 .pill-btn {
   height: 28px;
   margin-right: 8px;
