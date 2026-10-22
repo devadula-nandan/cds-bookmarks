@@ -40,7 +40,8 @@ async function updateBadge() {
   const data = settings.token && !settings.demo ? cache?.data : null;
   if (!data) return chrome.action.setBadgeText({ text: "" });
   const { snoozed = {} } = await DD.day.load();
-  const now = DD.insights.focusQueue(data, settings).filter((t) => !snoozed[t.key] && DD.insights.bucket(t) === "now");
+  const { snoozedUntilChange = {} } = await DD.storage.get("snoozedUntilChange");
+  const now = DD.insights.focusQueue(data, settings).filter((t) => !DD.insights.isSnoozed(t, snoozed, snoozedUntilChange) && DD.insights.bucket(t) === "now");
   await chrome.action.setBadgeText({ text: now.length ? String(now.length) : "" });
   await chrome.action.setBadgeBackgroundColor({ color: now.some((t) => t.priority === "urgent") ? "#da1e28" : "#0f62fe" });
   await chrome.action.setTitle({ title: now.length ? `${DD.util.plural(now.length, "thing")} need${now.length === 1 ? "s" : ""} you` : "Dev Dashboard" });
@@ -48,7 +49,7 @@ async function updateBadge() {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (Object.keys(changes).some((k) => k === "cache" || k === "settings" || k.startsWith(DD.day.PREFIX))) updateBadge();
+  if (Object.keys(changes).some((k) => k === "cache" || k === "settings" || k === "snoozedUntilChange" || k.startsWith(DD.day.PREFIX))) updateBadge();
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {

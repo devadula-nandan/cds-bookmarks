@@ -236,10 +236,10 @@ DD.github = (() => {
 
   async function fetchDashboard({ token, login, repos, includeTeamReviews, watching = {} }) {
     const scope = repos.map((r) => `repo:${r.slug}`).join(" ");
-    const since = DD.util.isoDate(DD.util.previousWorkday());
-    const weekAgo = DD.util.isoDate(new Date(Date.now() - 7 * 86400000));
-    const monthAgo = DD.util.isoDate(new Date(Date.now() - 30 * 86400000));
-    const threeDaysAgo = DD.util.isoDate(new Date(Date.now() - 3 * 86400000));
+    const since = DD.util.todayKey(DD.util.previousWorkday());
+    const weekAgo = DD.util.todayKey(new Date(Date.now() - 7 * 86400000));
+    const monthAgo = DD.util.todayKey(new Date(Date.now() - 30 * 86400000));
+    const threeDaysAgo = DD.util.todayKey(new Date(Date.now() - 3 * 86400000));
     const reviewQualifier = includeTeamReviews ? "review-requested" : "user-review-requested";
 
     const variables = {
@@ -341,14 +341,6 @@ DD.github = (() => {
         title: t.subject.title,
         url: subjectHtmlUrl(t),
       }));
-  }
-
-  function markThreadRead(token, id) {
-    return rest(token, `/notifications/threads/${id}`, { method: "PATCH" });
-  }
-
-  function markThreadDone(token, id) {
-    return rest(token, `/notifications/threads/${id}`, { method: "DELETE" });
   }
 
   // ---------- detail for AI context (fetched on demand, never during sync) ----------
@@ -488,5 +480,5 @@ DD.github = (() => {
     return { ...normalizeItem(n), body: n.body || "", state: n.state, discussion: (n.lastComments?.nodes || []).map((c) => ({ author: c.author?.login || "ghost", body: c.body, at: c.createdAt })) };
   }
 
-  return { fetchViewer, fetchDashboard, searchItems, fetchRef, fetchInbox, markThreadRead, markThreadDone, fetchDetail, fetchCommitChecks, fetchBodies, fetchDiff, fetchJobLog, GitHubError };
+  return { fetchViewer, fetchDashboard, searchItems, fetchRef, fetchInbox, fetchDetail, fetchCommitChecks, fetchBodies, fetchDiff, fetchJobLog };
 })();

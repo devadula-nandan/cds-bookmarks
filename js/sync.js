@@ -4,7 +4,7 @@
  * each context plugs in its own notifier.
  */
 DD.sync = (() => {
-  const { repoShort, todayKey, uid } = DD.util;
+  const { itemRef: ref, repoShort, todayKey, uid } = DD.util;
   const ACTIVITY_MAX = 100;
   const BURST = 4;
 
@@ -54,10 +54,6 @@ DD.sync = (() => {
       following: Object.fromEntries((data.following || []).map((i) => [i.id, i.follow.lastReply?.at || null])),
       reviewedOpen: Object.fromEntries((data.reviewedOpen?.items || []).map((p) => [p.id, p.lastCommitAt])),
     };
-  }
-
-  function ref(item) {
-    return `${repoShort(item.repo)}#${item.number}`;
   }
 
   function detect(prev, data, inbox) {
@@ -247,7 +243,7 @@ DD.sync = (() => {
       .filter((m) => !m.days?.length || m.days.includes(now.getDay()))
       .map((m) => {
         const start = DD.util.parseTime(m.time, now);
-        return { ...m, start, end: new Date(start.getTime() + (m.minutes || 15) * 60000) };
+        return { ...m, start, end: new Date(start.getTime() + m.minutes * 60000) };
       })
       .sort((a, b) => a.start - b.start);
   }
@@ -268,7 +264,7 @@ DD.sync = (() => {
     await notifier(
       due.map((m) => {
         const mins = Math.ceil((m.start - now) / 60000);
-        return { type: "meeting", key: `meeting:${today}:${m.id}`, title: mins > 0 ? `${m.title} in ${mins} min` : `${m.title} is starting`, body: `${m.time} · ${m.minutes || 15} min` };
+        return { type: "meeting", key: `meeting:${today}:${m.id}`, title: mins > 0 ? `${m.title} in ${mins} min` : `${m.title} is starting`, body: `${m.time} · ${m.minutes} min` };
       })
     );
   }

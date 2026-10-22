@@ -34,7 +34,7 @@ DD.hunt = (() => {
     if (!enabled(settings)) return;
     const { huntState } = await load();
     if (running(huntState) || huntState.lastDay === DD.util.todayKey(now)) return;
-    if (now < DD.util.parseTime(settings.bugHuntTime || "09:00", now)) return;
+    if (now < DD.util.parseTime(settings.bugHuntTime, now)) return;
     await run();
   }
 
@@ -66,8 +66,13 @@ DD.hunt = (() => {
     // An extension API call every 20s keeps the background worker from being stopped as idle mid-hunt.
     const keepAlive = setInterval(() => globalThis.chrome?.runtime?.getPlatformInfo?.(() => {}), 20000);
     try {
-      const path = settings.clones[repo.slug];
-      const git = await DD.ai.gitInfo(path);
+      // Hunt the latest main in a worktree of its own; if that fails (offline, no main), hunt the clone as it is.
+      const clone = settings.clones[repo.slug];
+      const git = await DD.ai.huntCheckout(clone, repo.slug).catch((err) => {
+        console.warn("Couldn't check out the latest main; hunting the clone as it is", err);
+        return DD.ai.gitInfo(clone).then((info) => ({ ...info, path: clone }));
+      });
+      const path = git.path;
       const previous = bugHunts
         .filter((h) => h.repo === repo.slug && h.found)
         .slice(0, 15)
@@ -85,7 +90,7 @@ DD.hunt = (() => {
       let related = [];
       if (found && meta.search && settings.token && !settings.demo) {
         const res = await DD.github.searchItems(settings.token, `repo:${repo.slug} ${meta.search}`, 5).catch(() => ({ items: [] }));
-        related = res.items.map((i) => ({ ref: `${DD.util.repoShort(i.repo)}#${i.number}`, title: i.title, url: i.url, state: i.state, kind: i.kind }));
+        related = res.items.map((i) => ({ ref: DD.util.itemRef(i), title: i.title, url: i.url, state: i.state, kind: i.kind }));
       }
 
       const report = {

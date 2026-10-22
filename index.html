@@ -20,6 +20,7 @@
           <h1 class="hello__greeting" id="greeting">&nbsp;</h1>
           <p class="hello__summary" id="summary">&nbsp;</p>
           <p class="hello__ai" id="hello-ai" hidden></p>
+          <div class="bob-pill-host" id="bob-pill" hidden></div>
         </div>
         <div class="tools" id="tools"></div>
       </header>
@@ -55,11 +56,16 @@
     </div>
 
     <div id="repo-menus"></div>
+    <div class="menu snooze-menu" id="snooze-menu" popover aria-label="Snooze" style="position-anchor: --snooze">
+      <button class="snooze-menu__opt" data-action="snooze-for" data-until="tomorrow">Until tomorrow<small>Back first thing in the morning</small></button>
+      <button class="snooze-menu__opt" data-action="snooze-for" data-until="change">Until there's new activity<small>A push, comment or review brings it back</small></button>
+    </div>
     <div class="menu sync-pop" id="sync-error" popover aria-label="Sync error" style="position-anchor: --sync"></div>
     <aside class="drawer" id="activity" popover aria-label="Activity"></aside>
     <dialog class="sheet" id="settings" aria-label="Settings"></dialog>
     <dialog class="sheet bob" id="ai" aria-label="Bob"></dialog>
     <div class="toasts" id="toasts" aria-live="polite"></div>
+    <div class="tooltip" id="tooltip" popover="manual" role="tooltip"></div>
 
     <script src="bookmarks-data.js"></script>
     <script src="js/core.js"></script>
@@ -71,6 +77,9 @@
     <script src="js/sync.js"></script>
     <script src="js/ai.js"></script>
     <script src="js/hunt.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/markdown.js"></script>
+    <script src="js/motion.js"></script>
+    <script src="js/tooltip.js"></script>
+    <script type="module" src="js/app.js"></script>
   </body>
 </html>

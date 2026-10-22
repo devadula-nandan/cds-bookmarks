@@ -14,6 +14,7 @@
  *                                                      → { ok, text } | { ok: false, error }
  *   { type: "find-clones", slugs }                     → { ok, clones: { slug: path } }
  *   { type: "git-info", path }                         → { ok, branch, head, committed }
+ *   { type: "hunt-checkout", path, slug }              → { ok, path, branch, head, committed }
  * Closing the port (Cancel in the page) ends stdin, which stops Bob.
  */
 const { spawn, execFile } = require("node:child_process");
@@ -112,8 +113,47 @@ function findClones({ slugs = [] }) {
   return Promise.resolve({ ok: true, clones: { ...forks, ...exact } });
 }
 
+/** Runs git in `dir`; fails with git's own message. */
+function gitStrict(dir, args, timeout = 10000) {
+  return new Promise((resolve, reject) =>
+    execFile("git", ["-C", dir, ...args], { timeout }, (err, out, stderr) => (err ? reject(new Error(String(stderr).trim().split("\n").pop() || err.message)) : resolve(String(out).trim())))
+  );
+}
+
+/** Like gitStrict(), but an empty string instead of a failure, for details that are nice to have. */
 function git(dir, args) {
-  return new Promise((resolve) => execFile("git", ["-C", dir, ...args], { timeout: 10000 }, (err, out) => resolve(err ? "" : String(out).trim())));
+  return gitStrict(dir, args).catch(() => "");
+}
+
+/**
+ * The latest `main` of `slug`, checked out in a worktree of the user's clone
+ * that only the bug hunter uses, so the clone's own branch and changes are
+ * never touched. Fetches from the remote that points at `slug` (often
+ * "upstream" in a fork), else "upstream", else "origin".
+ */
+async function huntCheckout({ path: p, slug }) {
+  try {
+    const dir = cloneDir(p);
+    const lines = (await gitStrict(dir, ["remote", "-v"])).split("\n");
+    const names = [...new Set(lines.map((l) => l.split(/\s+/)[0]).filter(Boolean))];
+    const match = lines.find((l) => new RegExp(`github\\.com[:/]${String(slug).replace(/[.]/g, "\\.")}(\\.git)?\\s`, "i").test(l));
+    const remote = match ? match.split(/\s+/)[0] : names.includes("upstream") ? "upstream" : "origin";
+    await gitStrict(dir, ["fetch", "--quiet", remote, "main"], 180000);
+    const head = await gitStrict(dir, ["rev-parse", "FETCH_HEAD"]);
+    const target = path.join(os.homedir(), ".dev-dashboard", "hunts", String(slug).replace("/", "__"));
+    if (fs.existsSync(path.join(target, ".git"))) {
+      await gitStrict(target, ["checkout", "--quiet", "--force", "--detach", head], 300000);
+    } else {
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      await gitStrict(dir, ["worktree", "prune"]);
+      await gitStrict(dir, ["worktree", "add", "--quiet", "--detach", target, head], 300000);
+    }
+    const committed = await git(target, ["log", "-1", "--format=%cI"]);
+    return { ok: true, path: target.replace(os.homedir(), "~"), branch: `${remote}/main`, head, committed };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
 async function gitInfo({ path: p }) {
@@ -201,7 +241,7 @@ process.stdin.on("data", (chunk) => {
       send({ ok: false, error: "Malformed message." });
       continue;
     }
-    const handler = { ping, ask, "find-clones": findClones, "git-info": gitInfo }[message.type];
+    const handler = { ping, ask, "find-clones": findClones, "git-info": gitInfo, "hunt-checkout": huntCheckout }[message.type];
     if (!handler) send({ id: message.id, ok: false, error: `Unknown request: ${message.type}` });
     else handler(message).then((reply) => send({ id: message.id, ...reply }));
   }

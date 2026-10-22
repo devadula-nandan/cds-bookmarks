@@ -1,6 +1,6 @@
 /** Turns raw GitHub data into the developer's prioritized day. */
 DD.insights = (() => {
-  const { ageDays, repoShort } = DD.util;
+  const { ageDays, repoShort, itemRef, plural } = DD.util;
 
   const PRIORITY = { urgent: 0, high: 1, medium: 2, low: 3 };
 
@@ -37,7 +37,7 @@ DD.insights = (() => {
       title: item.title,
       url: item.url,
       repo: item.repo,
-      ref: `${repoShort(item.repo)}#${item.number}`,
+      ref: itemRef(item),
       at: item.updatedAt,
       ...extra,
     };
@@ -82,7 +82,7 @@ DD.insights = (() => {
 
     data.reviews.items.forEach((pr) => {
       const days = ageDays(pr.createdAt);
-      const stale = days >= (settings.staleReviewDays || 2);
+      const stale = days >= settings.staleReviewDays;
       const bot = isBot(pr.author);
       add(
         task(pr, "review", bot ? "low" : stale ? "high" : "medium", `Review requested by ${pr.author}`, {
@@ -121,7 +121,7 @@ DD.insights = (() => {
   function standup(data) {
     if (!data) return "";
     const since = DD.util.previousWorkday();
-    const line = (i) => `• ${i.title} (${repoShort(i.repo)}#${i.number})`;
+    const line = (i) => `• ${i.title} (${itemRef(i)})`;
     const shipped = data.merged.items.filter((p) => new Date(p.mergedAt) >= since);
     const reviewed = data.reviewed.items;
     const inFlight = data.mine.items.filter((p) => !isBlocked(p));
@@ -130,11 +130,11 @@ DD.insights = (() => {
     const out = [];
     out.push("*Yesterday*");
     shipped.forEach((p) => out.push(`${line(p)} — merged`));
-    if (reviewed.length) out.push(`• Reviewed ${reviewed.length} PR${reviewed.length > 1 ? "s" : ""}: ${reviewed.slice(0, 5).map((p) => `${repoShort(p.repo)}#${p.number}`).join(", ")}`);
+    if (reviewed.length) out.push(`• Reviewed ${plural(reviewed.length, "PR")}: ${reviewed.slice(0, 5).map(itemRef).join(", ")}`);
     if (!shipped.length && !reviewed.length) out.push("• —");
     out.push("", "*Today*");
     inFlight.slice(0, 5).forEach((p) => out.push(`${line(p)}${p.draft ? " — draft" : ""}`));
-    if (data.reviews.total) out.push(`• ${data.reviews.total} review${data.reviews.total > 1 ? "s" : ""} in my queue`);
+    if (data.reviews.total) out.push(`• ${plural(data.reviews.total, "review")} in my queue`);
     data.assigned.items.filter((i) => i.kind === "issue").slice(0, 3).forEach((i) => out.push(line(i)));
     if (out[out.length - 1] === "*Today*") out.push("• —");
     out.push("", "*Blockers*");
@@ -161,6 +161,11 @@ DD.insights = (() => {
     return task.priority === "medium" ? "next" : "later";
   }
 
+  /** Hidden for today, or until the item has new activity (its timestamp moves on from the one saved). */
+  function isSnoozed(task, today = {}, untilChange = {}) {
+    return !!today[task.key] || (task.key in untilChange && untilChange[task.key] === (task.at || ""));
+  }
+
   /** One calm sentence for the header. */
   function summary(data, tasks) {
     if (!data) return "";
@@ -181,5 +186,5 @@ DD.insights = (() => {
     return `${list[0].toUpperCase()}${list.slice(1)} ${now.length === 1 ? "needs" : "need"} you.`;
   }
 
-  return { focusQueue, standup, prState, isBlocked, hasConflict, isBot, greeting, bucket, summary, PRIORITY };
+  return { focusQueue, standup, prState, hasConflict, isBot, greeting, bucket, isSnoozed, summary };
 })();
