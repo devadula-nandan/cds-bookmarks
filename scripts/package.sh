@@ -11,6 +11,13 @@ stage="dist/dev-dashboard"
 rm -rf dist
 mkdir -p "$stage"
 cp -R manifest.json background.js index.html bookmarks-data.js css js icons ai-helper "$stage/"
+# Strip the "key" field — not allowed in Chrome Web Store uploads
+node -e "
+  const fs = require('fs');
+  const m = JSON.parse(fs.readFileSync('$stage/manifest.json', 'utf8'));
+  delete m.key;
+  fs.writeFileSync('$stage/manifest.json', JSON.stringify(m, null, 2) + '\n');
+"
 (cd dist && zip -qrX dev-dashboard.zip dev-dashboard)
 rm -rf "$stage"
 echo "Built dist/dev-dashboard.zip (v$version)"
