@@ -5,7 +5,7 @@ A Chrome new tab page for Carbon developers: what needs you on GitHub, ranked, p
 - **For you**: one prioritized list of broken `main`, failing CI, conflicts, change requests, PRs ready to merge, overdue reviews and mentions. Move through it with `J`/`K`, press `S` to snooze an item until tomorrow or until there's new activity on it, and undo from the message that appears. `?` lists every shortcut.
 - **Repo bar**: each repo opens a menu with its board, issues, PRs, sites and Storybooks, plus `main` health, the latest release and, with Bob on, **Open in VS Code** for your local clone.
 - **Search** (`/` or `⌘K`): PRs, issues, links and actions. Type `carbon 23717` to jump straight to an issue or PR.
-- **Following**: issues and PRs you commented on or reacted to with 👀, with new replies flagged. **Reviews** also lists open PRs you've already reviewed and flags new commits since your review.
+- **Issues, Pull requests, Following**: your assigned issues and mentions; review requests, your own PRs and PRs you've reviewed (flagging new commits since your review); and issues and PRs you commented on or reacted to with 👀, with new replies flagged.
 - **Today**: your recurring meetings, a to-do list that carries over, and a one-click standup draft.
 - **Bob** (optional): review briefs, CI failure explanations, change-request checklists, merge messages, day plans, standup drafts, Slack replies, answers that look things up on GitHub, and a daily bug hunt in your local clones, from IBM Bob. See [Bob](#bob).
 - **Background sync**: checks GitHub every few minutes, sends desktop notifications and shows a count of urgent items on the toolbar icon, even when no new tab is open.
@@ -28,7 +28,7 @@ Optionally, pin the extension from the puzzle-piece menu so the urgent-item coun
 2. If the `carbon-design-system` org asks for SSO, choose **Configure SSO** next to the token on [your tokens page](https://github.com/settings/tokens) and authorize it.
 3. Paste the token into the new tab and click **Connect**.
 
-The token is stored in the extension's local storage and is only sent to `api.github.com`. Not ready to connect? Choose **Explore with sample data first**.
+The token is stored in the extension's local storage and is only sent to `api.github.com`.
 
 ### Update
 
@@ -51,7 +51,7 @@ If you'd rather track `main`, clone the repo and choose the clone's folder in **
 
 ## Bob
 
-Bob actions use [Bob Shell](https://bob.ibm.com/docs/shell) on your computer, through a small helper that Chrome starts when you ask something. They only work in the extension, not the web version.
+Bob actions use [Bob Shell](https://bob.ibm.com/docs/shell) on your computer, through a small helper that Chrome starts when you ask something.
 
 1. Install Bob Shell 2.0 or later (`bob --version`).
 2. From the `dev-dashboard` folder, run:
@@ -60,7 +60,7 @@ Bob actions use [Bob Shell](https://bob.ibm.com/docs/shell) on your computer, th
    sh ai-helper/install.sh
    ```
 
-3. Open a new tab, go to **Settings → Bob**, turn on **Bob actions** and paste a Bob API key. Create an **Inference** key at [bob.ibm.com](https://bob.ibm.com) under Settings → API keys. A **General** key also needs your team ID.
+3. Open a new tab, go to **Settings → Bob**, turn on **Bob actions** and paste a Bob API key. Create an **Inference** key at [bob.ibm.com](https://bob.ibm.com) under Settings → API keys.
 
 Re-run the installer if you move the folder or switch Node versions. `sh ai-helper/install.sh --uninstall` removes the helper.
 
@@ -68,33 +68,33 @@ Where Bob shows up:
 
 | Where | What it does |
 | --- | --- |
-| ✦ on any work item | Picks the right help for the item: a review brief from the diff, why CI or `main` is failing (from the failed checks and job logs), a checklist of requested changes, conflict help, a squash-merge message, a reviewer nudge, what a mention needs from you, or a plan for an issue |
+| ✦ on any work item | Picks the right help for the item: a review brief, why CI or `main` is failing, a checklist of requested changes, conflict help, a squash-merge message, a reviewer nudge, what a mention needs from you, or a plan for an issue |
 | Search | **Ask Bob** answers questions about your work and links (Enter picks it for questions). **Find with Bob** turns plain English into a GitHub search |
 | Header | **Plan my day** around your meetings and what's urgent |
 | Today | **Write standup with Bob**, an editable draft for Slack (it replaces **Copy standup update**) |
 | Activity | **Catch me up** on what changed since you last looked |
 | Issues tab | **Triage with Bob** suggests type, component, severity and duplicates |
-| Slack icon (top right) | Paste a support thread; Bob looks up related issues and PRs, reads relevant carbondesignsystem.com pages and your local clone if it's about code, and drafts a reply with its sources |
+| Slack icon (top right) | Paste a support thread; Bob looks up related issues, PRs, docs and code and drafts a reply with its sources |
 | Today | **Bug of the day**, see below |
 
-**Ask Bob** and Slack replies first have Bob plan what to look up (searches and issue numbers). The dashboard fetches those from GitHub and Bob answers from what was found. If the question is about code and that repo has a local clone, Bob reads it too. Bob also picks up to two pages from the carbondesignsystem.com sitemap, and the dashboard reads them for it.
+Each action sends Bob a plain question with the item's link. Bob looks up the rest itself: `gh` for GitHub (it uses your own `gh` login), the web, and your local clone when it runs in one.
 
 ### Local clones and the bug hunter
 
-With Bob on, the dashboard links each repo to its clone on your computer automatically: it looks one level inside `~/Source`, `~/src`, `~/code`, `~/Projects` and similar folders, at most once a day, and never replaces a path you set. Edit the paths under **Settings → Bob → Local clones**, or click **Find clones on this computer** to look again. A linked repo gets **Open in VS Code** in its repo bar menu. Bob runs in ask mode in these clones, so it reads files but doesn't change them.
+Each repo's local clone is its **Local clone** path (like `~/Source/carbon`) in **Settings → Repositories → Edit repositories**, or `clone` on its entry in `bookmarks.json`; leave it blank to skip that repo. A linked repo gets **Open in VS Code** in its repo bar menu. Bob runs unrestricted in these clones (agent mode, with MCP servers and subagents), so it can run commands and change files.
 
 Turn on **Daily bug hunt** for a **Bug of the day**. At the time you pick (9:00 by default, or when Chrome is next open after that) Bob reads one clone, taking turns between repos, and reports the most obvious easy-to-fix bug it can confirm in the code: where it is, why it's wrong, a minimal diff and how confident it is. It skips places it reported before, notes the branch and commit it checked, and lists GitHub issues that might already cover it. You get a notification, the report is on the Today card with a link to the exact line in VS Code, and follow-ups such as "write this up as an issue" read the same clone. **Hunt again** runs one now. Before each hunt the dashboard fetches the latest `main` (from the remote that points at the Carbon repo, so forks work too) and checks it out in a separate worktree under `~/.dev-dashboard/hunts/`, so your clone's branch and changes are never touched. If that fails, for example offline, Bob hunts your clone as it is. A hunt can take several minutes and uses your Bob quota.
 
-Every answer can be copied, regenerated or followed up on, and checklists can be added to your to-dos. Answers are saved per item version (and per day for plans, standups and triage), so reopening one doesn't ask Bob again. You can tell what's waiting: on a row Bob has already answered, the ✦ turns blue (hover it to see which answer), and once you've made today's plan or standup the buttons become **Today's plan** and **Today's standup draft**, which open the saved one instantly. Minimise Bob while it works and the button that started it shows its progress; if that button isn't on screen (a row on another tab, say), a pill under the greeting does, and either one brings Bob back. Follow-ups on a standup, Slack reply or GitHub query revise the draft itself, starting from your edits, with **Undo**.
+Every answer can be copied, regenerated or followed up on, and checklists can be added to your to-dos. Answers are saved per item version (and per day for plans, standups and triage), so reopening one doesn't ask Bob again. You can tell what's waiting: on a row Bob has already answered, the ✦ turns blue (hover it to see which answer), and once you've made today's plan or standup the buttons become **Today's plan** and **Today's standup draft**, which open the saved one instantly. Bob works minimised, several tasks at once, and the button that started each one shows its progress (or its tab, for Triage); click it to bring Bob back. A toast with **Open** says when each one finishes. Follow-ups on a standup, Slack reply or GitHub query revise the draft itself, starting from your edits, with **Undo**.
 
-Nothing is sent to Bob until you click a Bob action. Then the helper runs `bob run --mode ask` in an empty folder (`~/.dev-dashboard/bob-workspace`) with that item's title, description, comments, diff or CI logs as the prompt. Your key is stored with your other settings and only handed to Bob Shell on this computer. Requests count toward your Bob usage.
+Nothing is sent to Bob until you click a Bob action. Then the helper runs `bob run` unrestricted (agent mode, with MCP servers and subagents) in an empty folder (`~/.dev-dashboard/bob-workspace`), or in a repo clone for triage and bug hunts. Every answer has a **Bob Shell log** toggle with Bob's full transcript (set `SHOW_LOGS` in `src/page/bob.js` to hide them). Your key is stored with your other settings and only handed to Bob Shell on this computer. Requests count toward your Bob usage.
 
 ## Settings
 
 Open them from the gear icon on the new tab:
 
 - **GitHub**: replace or disconnect the token, set the sync interval, and decide when a review counts as overdue.
-- **Bob**: turn Bob actions on, check the helper, save your Bob API key, set local clones and the daily bug hunt.
+- **Bob**: turn Bob actions on, check the helper, save your Bob API key and set the daily bug hunt.
 - **Repositories**: turn repos off to hide them from the bar, search and your work list.
 - **Notifications**: choose which events raise a desktop notification. Everything is still recorded under the bell icon.
 - **Meetings**: recurring weekday meetings, reminded 5 minutes before.
@@ -109,19 +109,11 @@ Click **Send a test notification** under Notifications in Settings. Chrome passe
 - **Focus / Do Not Disturb** hides banners. Turn it off, or add Chrome to the apps your Focus allows.
 - **Check Notification Center** (click the clock in the macOS menu bar). If the test is listed there, notifications are arriving and only the banner is hidden.
 
-The web version also needs the site's permission. Chrome asks for it the first time you send a test. If you blocked it, allow it again from the site settings icon in the address bar. On the web, notifications only appear while the tab is open in the background. While the tab is in front, updates show as messages on the page instead.
-
 ## Editing links and repos
 
-Everything in the repo bar comes from [`bookmarks-data.js`](bookmarks-data.js). A repo's GitHub slug is read from its "Issues" link, and its sprint board from the link labelled "Board".
+Everything in the repo bar comes from [`bookmarks.json`](bookmarks.json): each repo's `id`, `name`, optional `short` name and `clone` path, its `icon` (SVG), and link groups (`github`, `website`, `storybooks`, `others`), each with a `title` and `buttons` of `label`, `href` and optional `versionedHref`/`version`. A repo's GitHub slug is read from its "Issues" link, and its sprint board from the link labelled "Board".
 
-## Web version
-
-The same page runs without installing at https://devadula-nandan.github.io/cds-bookmarks/. It keeps its data in that site's `localStorage` and syncs only while the page is open, so it can't sync in the background or show a toolbar badge. To preview a local change the same way:
-
-```sh
-python3 -m http.server 8000
-```
+To change it without editing the file, use **Settings → Repositories → Edit repositories**. Saving keeps your list in this browser, ahead of the file; **Export JSON** downloads it so you can replace `bookmarks.json`, and **Reset to bookmarks.json** goes back to the file.
 
 ## Releasing
 
@@ -135,20 +127,39 @@ gh release create v2.0.1 dist/dev-dashboard.zip --title "Dev Dashboard 2.0.1" --
 
 Keep the asset named `dev-dashboard.zip` so the download links above always point at the newest build. The `key` in `manifest.json` pins the extension ID, which is what lets an update keep everyone's settings. Don't change it.
 
-## Layout
+## How it fits together
 
-| File | Role |
-| --- | --- |
-| `manifest.json` | MV3 manifest; overrides the new tab page |
-| `background.js` | Service worker: alarms, sync, notifications, toolbar badge |
-| `index.html`, `css/app.css` | The new tab page |
-| `js/app.js` | The page's entry module: wires up events, keeps it rendered and in step with storage |
-| `js/page/` | The page's parts as ES modules: `state` and `pieces` (shared state and view helpers), `top` (header and repo bar), `work`, `today`, `activity`, `settings`, `search` and `bob` |
-| `js/sync.js` | Fetch → diff → activity log → notifications (shared) |
-| `js/github.js`, `js/insights.js` | GitHub API client and prioritization |
-| `js/core.js` | Utilities, storage (`chrome.storage` or `localStorage`), settings, per-day state |
-| `js/ai.js` | Bob: native-messaging client, prompts and context, answer cache |
-| `js/markdown.js` | Renders Bob's answers (Markdown with tables and coloured diffs) and reads their checklists |
-| `js/motion.js`, `js/tooltip.js` | Script-driven motion (folding rows, staggered lists) and the page's one tooltip |
-| `ai-helper/` | Native messaging host that runs Bob Shell, and its installer |
-| `scripts/package.sh` | Builds `dist/dev-dashboard.zip` for a release |
+No build step and no dependencies: plain ES modules that Chrome loads directly. Edit a file, then click the reload icon on the extension's card.
+
+```
+manifest.json        the extension: new tab page, background worker, permissions
+background.js        the background worker: syncs on a timer, notifications, toolbar badge, bug hunts
+index.html           the new tab page's markup
+style.css            all of its styles, light and dark
+bookmarks.json       the repos and their links (also editable in Settings)
+src/                 shared by the worker and the page
+  core.js            small helpers, storage, settings, per-day to-dos and snoozes
+  repos.js           the repo list from bookmarks.json
+  github.js          the GitHub API: one query for the whole dashboard, plus the inbox
+  insights.js        priorities, the header summary, the plain standup
+  sync.js            fetch, compare with last time, record activity, notify; meeting reminders
+  bob.js             talking to Bob Shell, the prompts, saved answers
+  hunt.js            the daily bug hunt
+src/page/            the new tab page only
+  main.js            entry point: loads state, wires events and shortcuts, re-renders on storage changes
+  ui.js              page state and the small helpers every part uses (rows, toasts, focus-safe rendering)
+  header.js          greeting, tool buttons, repo bar and menus, Activity drawer
+  search.js          the search box
+  work.js            the work tabs, snoozing, unfollowing
+  today.js           meetings, bug of the day, to-dos
+  bob.js             the Bob sheet and every Bob button
+  settings.js        the Settings sheet
+  repo-editor.js     Settings → Repositories → Edit repositories
+  markdown.js        renders Bob's answers (Markdown, syntax colours, diffs)
+  icons.js           the line icons
+  theme.js           sets a forced light or dark theme before the page paints
+ai-helper/           the native messaging host that runs Bob Shell, and its installer
+scripts/package.sh   builds dist/dev-dashboard.zip for a release
+```
+
+Data flows one way. The background worker syncs GitHub and writes the result to `chrome.storage.local`. The page reads storage on load (`main.js`), keeps a copy in `state` (`ui.js`), and re-renders whenever storage changes. Clicks are routed by `data-action` attributes to the `…Actions` objects each part exports, and anything the page saves goes back into storage.

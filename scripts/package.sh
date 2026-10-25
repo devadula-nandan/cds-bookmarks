@@ -10,7 +10,7 @@ version=$(sed -n 's/^  "version": "\(.*\)",$/\1/p' manifest.json)
 stage="dist/dev-dashboard"
 rm -rf dist
 mkdir -p "$stage"
-cp -R manifest.json background.js index.html bookmarks-data.js css js icons ai-helper "$stage/"
+cp -R manifest.json background.js index.html style.css bookmarks.json src icons ai-helper "$stage/"
 # Strip the "key" field — not allowed in Chrome Web Store uploads
 node -e "
   const fs = require('fs');

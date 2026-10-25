@@ -6,8 +6,8 @@
     <meta name="color-scheme" content="light dark" />
     <title>New Tab</title>
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
-    <script src="js/theme.js"></script>
-    <link rel="stylesheet" href="css/app.css" />
+    <script src="src/page/theme.js"></script>
+    <link rel="stylesheet" href="style.css" />
   </head>
 
   <body>
@@ -20,7 +20,6 @@
           <h1 class="hello__greeting" id="greeting">&nbsp;</h1>
           <p class="hello__summary" id="summary">&nbsp;</p>
           <p class="hello__ai" id="hello-ai" hidden></p>
-          <div class="bob-pill-host" id="bob-pill" hidden></div>
         </div>
         <div class="tools" id="tools"></div>
       </header>
@@ -56,30 +55,17 @@
     </div>
 
     <div id="repo-menus"></div>
-    <div class="menu snooze-menu" id="snooze-menu" popover aria-label="Snooze" style="position-anchor: --snooze">
+    <div class="menu snooze-menu" id="snooze-menu" popover style="position-anchor: --snooze">
       <button class="snooze-menu__opt" data-action="snooze-for" data-until="tomorrow">Until tomorrow<small>Back first thing in the morning</small></button>
       <button class="snooze-menu__opt" data-action="snooze-for" data-until="change">Until there's new activity<small>A push, comment or review brings it back</small></button>
     </div>
-    <div class="menu sync-pop" id="sync-error" popover aria-label="Sync error" style="position-anchor: --sync"></div>
+    <div class="menu sync-pop" id="sync-error" popover style="position-anchor: --sync"></div>
     <aside class="drawer" id="activity" popover aria-label="Activity"></aside>
     <dialog class="sheet" id="settings" aria-label="Settings"></dialog>
+    <dialog class="sheet sheet--wide" id="repo-editor" aria-label="Edit repositories"></dialog>
     <dialog class="sheet bob" id="ai" aria-label="Bob"></dialog>
     <div class="toasts" id="toasts" aria-live="polite"></div>
-    <div class="tooltip" id="tooltip" popover="manual" role="tooltip"></div>
 
-    <script src="bookmarks-data.js"></script>
-    <script src="js/core.js"></script>
-    <script src="js/icons.js"></script>
-    <script src="js/repos.js"></script>
-    <script src="js/github.js"></script>
-    <script src="js/insights.js"></script>
-    <script src="js/demo.js"></script>
-    <script src="js/sync.js"></script>
-    <script src="js/ai.js"></script>
-    <script src="js/hunt.js"></script>
-    <script src="js/markdown.js"></script>
-    <script src="js/motion.js"></script>
-    <script src="js/tooltip.js"></script>
-    <script type="module" src="js/app.js"></script>
+    <script type="module" src="src/page/main.js"></script>
   </body>
 </html>

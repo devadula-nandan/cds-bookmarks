@@ -27,6 +27,9 @@
   --warning-soft: #fcf4d6;
   --success: #198038;
   --success-soft: #defbe6;
+  /* Diff lines: stronger than the soft tints, so added and removed code stands out on white. */
+  --diff-add: #c6f1d0;
+  --diff-del: #ffd5d7;
   --info: #0f62fe;
   --info-soft: #edf4ff;
   --magic: #8a3ffc;
@@ -73,6 +76,8 @@
     --warning-soft: rgba(241, 194, 27, 0.13);
     --success: #6fdc8c;
     --success-soft: rgba(66, 190, 101, 0.15);
+    --diff-add: rgba(66, 190, 101, 0.15);
+    --diff-del: rgba(250, 77, 86, 0.15);
     --info: #78a9ff;
     --info-soft: rgba(69, 137, 255, 0.16);
     --magic: #a56eff;
@@ -110,6 +115,8 @@
   --warning-soft: rgba(241, 194, 27, 0.13);
   --success: #6fdc8c;
   --success-soft: rgba(66, 190, 101, 0.15);
+  --diff-add: rgba(66, 190, 101, 0.15);
+  --diff-del: rgba(250, 77, 86, 0.15);
   --info: #78a9ff;
   --info-soft: rgba(69, 137, 255, 0.16);
   --magic: #a56eff;
@@ -224,15 +231,6 @@ kbd {
   display: block;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
 .skip {
   position: absolute;
   left: 16px;
@@ -274,16 +272,8 @@ kbd {
 }
 
 /* A press you can feel. */
-:where(.btn, .icon-btn, .pill-btn, .repo, .sync):active:not(:disabled) {
+:where(.btn, .icon-btn, .repo, .sync):active:not(:disabled) {
   transform: scale(0.97);
-}
-
-/* Theme switches crossfade as one picture (see setTheme); per-element transitions would finish out of step. */
-.is-theming,
-.is-theming *,
-.is-theming *::before,
-.is-theming *::after {
-  transition: none !important;
 }
 
 /* ---------- layout ---------- */
@@ -406,26 +396,6 @@ body:has(#sync-error:popover-open) button.sync--error {
   margin: 0;
 }
 
-.pill-btn {
-  height: 28px;
-  margin-right: 8px;
-  padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--warning-dot) 55%, transparent);
-  border-radius: 999px;
-  background: var(--warning-soft);
-  color: var(--text);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.pill-btn:hover {
-  border-color: var(--warning-dot);
-}
-
-.pill-btn__sep {
-  color: var(--text-3);
-}
-
 /* ---------- buttons ---------- */
 
 .icon-btn {
@@ -462,10 +432,6 @@ body:has(#sync-error:popover-open) button.sync--error {
   to {
     transform: rotate(360deg);
   }
-}
-
-.badge-dot.is-entering {
-  animation: dot-in 360ms var(--ease);
 }
 
 .badge-dot {
@@ -1079,10 +1045,6 @@ body:has(#sync-error:popover-open) button.sync--error {
   list-style: none;
 }
 
-.items--flat {
-  padding-top: 8px;
-}
-
 .item {
   position: relative;
   display: grid;
@@ -1232,7 +1194,7 @@ a.item__title::after {
   isolation: isolate;
 }
 
-/* A glow that follows the pointer; --mx/--my are set on pointermove. */
+/* A glow behind a Bob button that follows the pointer (--mx/--my, set in bindBobEffects); also the sweep while a minimised Bob runs. */
 .bob-btn::before {
   content: "";
   position: absolute;
@@ -1249,20 +1211,7 @@ a.item__title::after {
   opacity: 1;
 }
 
-/*
- * Ripple only, no glow, for Bob's search results (a glow would also land on the row picked as you type, under no
- * pointer) and the Bug of the day card (a block of text, not a button). Search results also take Bob's accent on the label.
- */
-.search__item.bob-btn::before,
-.hunt__report.bob-btn::before {
-  content: none;
-}
-
-.search__item.bob-btn.is-active .search__label,
-.search__item.bob-btn:hover .search__label {
-  color: var(--accent);
-}
-
+/* Ripples spread from where the pointer comes in; a press sends a brighter, quicker one. */
 .bob-fx {
   position: absolute;
   inset: 0;
@@ -1272,7 +1221,6 @@ a.item__title::after {
   pointer-events: none;
 }
 
-/* Spreads from where the pointer came in; a press sends a brighter, quicker one. */
 .bob-ripple {
   position: absolute;
   border-radius: 50%;
@@ -1293,11 +1241,43 @@ a.item__title::after {
   }
 }
 
+/*
+ * Ripple only, no glow, for Bob's search results (a glow would also land on the row picked as you type, under no
+ * pointer) and the Bug of the day card (a block of text, not a button). Search results also take Bob's accent on the label.
+ */
+.search__item.bob-btn::before,
+.hunt__report.bob-btn::before {
+  content: none;
+}
+
+.search__item.bob-btn.is-active .search__label,
+.search__item.bob-btn:hover .search__label {
+  color: var(--accent);
+}
+
 /* A minimised Bob still working: a light sweeps across the text button that started it. Icon buttons keep just the spinner dot. */
 .bob-btn[data-bob-status="running"]:not(.icon-btn)::before {
   background: var(--bob-sweep);
   opacity: 1;
   animation: bob-shimmer 1.8s linear infinite;
+}
+
+/* And across the search bar while an Ask Bob (or Find on GitHub) started from it is still working. */
+.search__box:has(.search__icon[data-bob-status="running"]) {
+  position: relative;
+  isolation: isolate;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.search__box:has(.search__icon[data-bob-status="running"])::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--bob-sweep);
+  animation: bob-shimmer 1.8s linear infinite;
+  pointer-events: none;
 }
 
 /* The same sweep on a status line rather than a button: a running bug hunt. */
@@ -1321,38 +1301,6 @@ a.item__title::after {
 /* Something Bob already made (a saved answer, today's plan or standup draft): its ✦ stays in Bob's blue. */
 .bob-made .icon {
   color: var(--accent);
-}
-
-/* A minimised Bob, wherever the button that opened it has gone. */
-.bob-pill-host {
-  margin-top: 8px;
-}
-
-.bob-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
-  background: var(--accent-soft);
-}
-
-.bob-pill:hover {
-  border-color: var(--accent);
-}
-
-.bob-pill .icon {
-  color: var(--accent);
-}
-
-.bob-pill b {
-  color: var(--text-2);
-  font-weight: 400;
-}
-
-.bob-pill[data-bob-status="error"] {
-  border-color: color-mix(in srgb, var(--error) 45%, transparent);
-  background: var(--error-soft);
 }
 
 @keyframes bob-shimmer {
@@ -2222,13 +2170,75 @@ a.item__title::after {
 }
 
 .setting-section h3 {
-  margin: 0 0 12px;
+  margin: 0;
   font-size: 15px;
   font-weight: 500;
 }
 
+.setting-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -4px -8px 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  list-style: none;
+  cursor: pointer;
+}
+
+.setting-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.setting-section summary:hover {
+  background: var(--surface-hover);
+}
+
+.setting-section summary .icon {
+  color: var(--text-3);
+  transition: transform 160ms var(--ease);
+}
+
+.setting-section:not([open]) {
+  padding-bottom: 10px;
+}
+
+.setting-section:not([open]) summary {
+  margin-bottom: -4px;
+}
+
+.setting-section:not([open]) summary .icon {
+  transform: rotate(-90deg);
+}
+
+/* Sections slide open and shut (same approach as the folded agenda). */
+@supports selector(::details-content) {
+  .setting-section {
+    interpolate-size: allow-keywords;
+    transition: padding-bottom 220ms var(--ease);
+  }
+
+  .setting-section summary {
+    transition: margin-bottom 220ms var(--ease), background-color 120ms ease;
+  }
+
+  .setting-section::details-content {
+    height: 0;
+    overflow: clip;
+    opacity: 0;
+    transition: height 220ms var(--ease), opacity 220ms var(--ease), content-visibility 220ms allow-discrete;
+  }
+
+  .setting-section[open]::details-content {
+    height: auto;
+    opacity: 1;
+  }
+}
+
 .status-line {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin: 0 0 12px;
@@ -2450,39 +2460,6 @@ a.item__title::after {
   font-size: 13px;
 }
 
-/* ---------- tooltip ---------- */
-
-/* Placed by script (bindTooltips) with translate; the popover's own centring is undone. */
-.tooltip {
-  position: fixed;
-  inset: 0 auto auto 0;
-  max-width: 280px;
-  margin: 0;
-  padding: 5px 9px;
-  overflow: visible;
-  border: 0;
-  border-radius: 6px;
-  background: var(--text);
-  color: var(--bg);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.4;
-  box-shadow: var(--shadow-lg);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 120ms var(--ease), overlay 120ms allow-discrete, display 120ms allow-discrete;
-}
-
-.tooltip:popover-open {
-  opacity: 1;
-}
-
-@starting-style {
-  .tooltip:popover-open {
-    opacity: 0;
-  }
-}
-
 /* ---------- toasts ---------- */
 
 .toasts {
@@ -2540,33 +2517,6 @@ a.item__title::after {
 .toast__action:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 1px;
-}
-
-.toast.is-leaving {
-  opacity: 0;
-  transform: translateY(6px);
-}
-
-/* New rows: a brief wash of the accent, so what changed since the last sync is easy to spot. */
-@keyframes row-new {
-  from {
-    background: var(--info-soft);
-  }
-}
-
-.item.is-new-row {
-  animation: row-new 1.6s var(--ease);
-}
-
-/* Counts that change give a small bump. */
-@keyframes bump {
-  40% {
-    transform: scale(1.25);
-  }
-}
-
-.is-bumped {
-  animation: bump 280ms var(--ease);
 }
 
 @keyframes rise-in {
@@ -2789,14 +2739,44 @@ a.bob__subtitle:hover {
   min-width: 100%;
 }
 
+/* Added and removed lines keep a tint; the code in them keeps its syntax colours, and the +/− carries the line's colour. */
 .diff-add {
-  background: var(--success-soft);
-  color: var(--success);
+  background: var(--diff-add);
 }
 
 .diff-del {
-  background: var(--error-soft);
+  background: var(--diff-del);
+}
+
+.diff-add .diff-mark {
+  color: var(--success);
+}
+
+.diff-del .diff-mark {
   color: var(--error);
+}
+
+/* Syntax colours (markdown.js highlight): keyword, string, number, comment, tag, function call. */
+.tok-k {
+  color: var(--magic);
+}
+
+.tok-s {
+  color: var(--success);
+}
+
+.tok-n {
+  color: var(--warning);
+}
+
+.tok-c {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+.tok-t,
+.tok-f {
+  color: var(--info);
 }
 
 .diff-hunk {
@@ -2854,10 +2834,13 @@ a.bob__subtitle:hover {
   padding: 12px 14px;
 }
 
+/* A block with its own line height, so each line is exactly as tall as its diff tint: no gaps between lines. */
 .bob__answer pre code {
+  display: block;
   padding: 0;
   background: none;
   font-size: 12.5px;
+  line-height: 20px;
   white-space: pre;
 }
 
@@ -2875,6 +2858,49 @@ a.bob__subtitle:hover {
   padding: 8px 12px;
   border-radius: 12px 12px 4px 12px;
   background: var(--surface-sunken);
+  overflow-wrap: anywhere;
+}
+
+/* Bob Shell's output behind an answer (SHOW_LOGS in bob.js). */
+.bob__log summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  color: var(--text-3);
+  font-size: 12px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.bob__log summary::-webkit-details-marker {
+  display: none;
+}
+
+.bob__log summary:hover {
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+
+.bob__log summary span {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.bob__log pre {
+  max-height: 320px;
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
@@ -2904,17 +2930,6 @@ a.bob__subtitle:hover {
   margin-left: auto;
 }
 
-@keyframes revised {
-  from {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-  }
-}
-
-.input.is-revised {
-  animation: revised 900ms var(--ease);
-}
-
 .bob__edit {
   width: 100%;
   height: auto;
@@ -2934,7 +2949,6 @@ a.bob__subtitle:hover {
   min-width: 0;
 }
 
-.bob__body > .is-entering,
 .bob__body > .notice {
   animation: rise-in 220ms var(--ease);
 }
@@ -2996,6 +3010,12 @@ a.bob__subtitle:hover {
 
 [data-bob-status="error"]::after {
   background: var(--error);
+}
+
+/* A tab carrying the status of a Bob button on it (the tab strip scrolls, so the dot sits inside it). */
+.tab[data-bob-status]::after {
+  top: 4px;
+  right: 0;
 }
 
 /* Row buttons only show on hover; keep the one with Bob's status visible. */
@@ -3123,7 +3143,6 @@ a.bob__subtitle:hover {
   margin: 0;
 }
 
-.bob__sources h4,
 .bob__label {
   margin: 0 0 6px;
   color: var(--text-3);
@@ -3165,6 +3184,30 @@ a.bob__subtitle:hover {
 }
 
 /* Earlier bug hunts: one line each, the title cut short (its tooltip has all of it) and where/when on the right. */
+.hunt-earlier summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.hunt-earlier summary::-webkit-details-marker {
+  display: none;
+}
+
+.hunt-earlier summary:hover {
+  color: var(--text-2);
+}
+
+.hunt-earlier summary .icon {
+  transition: transform 160ms var(--ease);
+}
+
+.hunt-earlier[open] summary .icon {
+  transform: rotate(180deg);
+}
+
 .hunt-list {
   margin: 0 -10px;
   padding: 0;
@@ -3174,8 +3217,9 @@ a.bob__subtitle:hover {
 .hunt-list__item {
   display: flex;
   align-items: center;
+  flex: 1;
   gap: 8px;
-  width: 100%;
+  min-width: 0;
   min-height: 32px;
   padding: 4px 10px;
   border: 0;
@@ -3186,6 +3230,23 @@ a.bob__subtitle:hover {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+}
+
+.hunt-list__row {
+  display: flex;
+  align-items: center;
+}
+
+.hunt-list__delete {
+  flex: none;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+
+.hunt-list__row:hover .hunt-list__delete,
+.hunt-list__delete:focus-visible {
+  opacity: 1;
 }
 
 .hunt-list__item:hover {
@@ -3215,17 +3276,162 @@ a.bob__subtitle:hover {
   font-size: 12px;
 }
 
-.setting-sub {
-  margin: 22px 0 6px;
-  font-size: 14px;
+/* Settings keeps one height, so switching accordion sections doesn't make the centred sheet jump. */
+#settings {
+  height: min(760px, calc(100vh - 48px));
+}
+
+/* ---------- repository editor (Settings → Repositories → Edit) ---------- */
+.sheet--wide {
+  width: min(860px, calc(100vw - 32px));
+  max-height: min(860px, calc(100vh - 48px));
+}
+
+.schema-actions {
+  margin: 12px 0 0;
+}
+
+.schema-repo {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.schema-repo summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--radius);
+  list-style: none;
+  cursor: pointer;
+}
+
+.schema-repo summary::-webkit-details-marker {
+  display: none;
+}
+
+.schema-repo summary:hover {
+  background: var(--surface-hover);
+}
+
+.schema-repo__logo {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+}
+
+.schema-repo__logo svg {
+  width: 20px;
+  height: 20px;
+}
+
+.schema-repo__name {
+  display: flex;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
   font-weight: 500;
 }
 
-.clones {
+.schema-repo__name small {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.schema-repo__body {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 12px;
+  padding: 4px 12px 14px;
+}
+
+.schema-repo__body .hint {
+  margin: 0;
+}
+
+.schema-svg {
+  min-height: 64px;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.schema-group {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.schema-group__head {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.schema-group__head .field {
+  flex: 1;
+}
+
+.schema-group__head .btn {
+  margin-bottom: 4px;
+}
+
+.schema-group > .btn,
+.schema-repo__body > .btn {
+  justify-self: start;
+}
+
+.schema-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 0.6fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.schema-link + .schema-link .field span {
+  display: none;
+}
+
+.schema-link__remove {
+  margin-bottom: 4px;
+  color: var(--text-3);
+}
+
+.schema-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.schema__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border-top: 1px solid var(--border);
+}
+
+.schema__spacer {
+  flex: 1;
+}
+
+@media (max-width: 720px) {
+  .schema-link {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .schema-link + .schema-link .field span {
+    display: block;
+  }
 }
 
 /* ---------- fit to the viewport ----------
@@ -3302,16 +3508,6 @@ a.bob__subtitle:hover {
   }
 
   /* Rows fade out as they slide under the pinned heading. */
-  .work__panel.is-scrolled .section > .group::after {
-    content: "";
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    height: 16px;
-    background: linear-gradient(var(--surface), transparent);
-    pointer-events: none;
-  }
 
   /* Lists without pinned headings (Reviews, My PRs, Issues) fade under the tabs instead. */
   .work__panel:not(:has(.section))::before {
@@ -3326,10 +3522,6 @@ a.bob__subtitle:hover {
     pointer-events: none;
     opacity: 0;
     transition: opacity 150ms ease;
-  }
-
-  .work__panel.is-scrolled:not(:has(.section))::before {
-    opacity: 1;
   }
 
   /* A fade at the bottom edge while there's more to scroll. Sticky with a
@@ -3347,10 +3539,6 @@ a.bob__subtitle:hover {
     pointer-events: none;
     opacity: 0;
     transition: opacity 150ms ease;
-  }
-
-  .work__panel.has-more::after {
-    opacity: 1;
   }
 
   .side {
@@ -3446,7 +3634,8 @@ a.bob__subtitle:hover {
     opacity: 0;
   }
 
-  .todo__remove {
+  .todo__remove,
+  .hunt-list__delete {
     opacity: 0.6;
   }
 }
@@ -3466,4 +3655,40 @@ a.bob__subtitle:hover {
   .chip-icon.is-thinking .icon {
     animation: none !important;
   }
+}
+
+/* ---------- phone widths: keep inputs readable and the tab strip whole ---------- */
+.work__foot > .link:last-child {
+  flex: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .field-row {
+    flex-wrap: wrap;
+  }
+
+  .field-row > .input {
+    flex: 1 1 100%;
+  }
+
+  .tabs {
+    gap: 0;
+    padding: 0 6px;
+  }
+
+  .tab {
+    gap: 4px;
+    padding: 0 7px;
+    font-size: 13px;
+  }
+
+  .schema-repo__name small {
+    display: none;
+  }
+}
+
+/* A file Bob cites by repo path: the name, with the path on hover (markdown.js). */
+.md-path {
+  cursor: help;
 }
