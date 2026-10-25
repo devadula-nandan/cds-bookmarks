@@ -145,7 +145,7 @@ export function renderSettings() {
         <h3>Keyboard</h3>
         <dl class="keys">
           <div><dt><kbd>/</kbd> or <kbd>${/Mac/.test(navigator.platform) ? "⌘" : "Ctrl"}</kbd><kbd>K</kbd></dt><dd>Search</dd></div>
-          <div><dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Switch work tabs</dd></div>
+          <div><dt><kbd>1</kbd>–<kbd>4</kbd></dt><dd>Switch work tabs</dd></div>
           <div><dt><kbd>J</kbd><kbd>K</kbd> or <kbd>↓</kbd><kbd>↑</kbd></dt><dd>Move through your work</dd></div>
           <div><dt><kbd>S</kbd></dt><dd>Snooze the selected item</dd></div>
           <div><dt><kbd>R</kbd></dt><dd>Sync now</dd></div>

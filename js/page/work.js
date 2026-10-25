@@ -185,9 +185,8 @@ function listView(items, render, emptyTitle) {
 function workTabs(d) {
   return [
     { id: "focus", label: "For you", count: null },
-    { id: "reviews", label: "Reviews", count: d?.reviews.total },
-    { id: "prs", label: "My PRs", count: d?.mine.total },
     { id: "issues", label: "Issues", count: d ? issueItems(d).length : null },
+    { id: "prs", label: "Pull requests", count: d ? d.mine.total + d.reviews.total : null },
     { id: "following", label: "Following", count: d ? followingItems(d).filter((i) => i.follow.newReply).length || null : null },
   ];
 }
@@ -276,22 +275,19 @@ export function renderWork() {
     const login = state.settings.login || "@me";
     if (!d) body = state.status.error ? "" : skeleton();
     else if (ui.tab === "focus") ({ body, foot } = focusView(d));
-    else if (ui.tab === "reviews") {
-      const items = [...d.reviews.items].sort((a, b) => Number(ins.isBot(a.author)) - Number(ins.isBot(b.author)) || new Date(a.createdAt) - new Date(b.createdAt));
-      const requested = new Set(items.map((i) => i.id));
+    else if (ui.tab === "prs") {
+      const mine = [...d.mine.items].sort((a, b) => PR_ORDER.indexOf(ins.prState(a)) - PR_ORDER.indexOf(ins.prState(b)));
+      const requested = [...d.reviews.items].sort((a, b) => Number(ins.isBot(a.author)) - Number(ins.isBot(b.author)) || new Date(a.createdAt) - new Date(b.createdAt));
+      const asked = new Set(requested.map((i) => i.id));
       // PRs you've already reviewed, newest commits first, so a re-review stands out.
       const reviewed = (d.reviewedOpen?.items || [])
-        .filter((p) => !requested.has(p.id))
+        .filter((p) => !asked.has(p.id))
         .sort((a, b) => Number(b.lastCommitAt > b.myReview?.at) - Number(a.lastCommitAt > a.myReview?.at) || (b.lastCommitAt || "").localeCompare(a.lastCommitAt || ""));
       body =
-        items.length || reviewed.length
-          ? listSection("requested", "Requested from you", items, reviewRow) + listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, "still open")
-          : emptyState("check", "No reviews waiting on you");
-      foot = `<span>${plural(d.reviewed.total, "PR")} reviewed since yesterday</span><a class="link" href="${esc(searchUrl(`is:pr is:open user-review-requested:${login} ${repoScope()}`))}">Open on GitHub</a>`;
-    } else if (ui.tab === "prs") {
-      const items = [...d.mine.items].sort((a, b) => PR_ORDER.indexOf(ins.prState(a)) - PR_ORDER.indexOf(ins.prState(b)));
-      body = listView(items, prRow, "No open pull requests");
-      foot = `<span>${d.merged.total} merged this week</span><a class="link" href="${esc(searchUrl(`is:pr is:open author:${login} ${repoScope()}`))}">Open on GitHub</a>`;
+        mine.length || requested.length || reviewed.length
+          ? listSection("requested", "Review requested", requested, reviewRow) + listSection("mine", "Yours", mine, prRow) + listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, "still open")
+          : emptyState("check", "No open pull requests");
+      foot = `<span>${d.merged.total} merged this week · ${plural(d.reviewed.total, "PR")} reviewed since yesterday</span><a class="link" href="${esc(searchUrl(`is:pr is:open involves:${login} ${repoScope()}`))}">Open on GitHub</a>`;
     } else if (ui.tab === "following") {
       const items = followingItems(d);
       const fresh = items.filter((i) => i.follow.newReply);

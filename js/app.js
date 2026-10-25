@@ -175,7 +175,7 @@ function bind() {
       document.activeElement?.closest("#work .item")?.querySelector("[data-action=snooze-menu]")?.click();
     } else if (e.key === "r" || e.key === "R") requestSync(true);
     else if (e.key === "a" || e.key === "A") actions.activity();
-    else if (/^[1-5]$/.test(e.key) && connected()) selectTab(["focus", "reviews", "prs", "issues", "following"][+e.key - 1], true);
+    else if (/^[1-4]$/.test(e.key) && connected()) selectTab(["focus", "issues", "prs", "following"][+e.key - 1], true);
   });
 
   $("#settings").addEventListener("click", (e) => {
