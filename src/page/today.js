@@ -13,12 +13,12 @@ import { $, agoText, aiOn, connected, copyText, data, dayLabel, duration, keepFo
 function agenda(meetings, now) {
   const live = meetings.find((m) => now >= m.start && now < m.end);
   const next = live ? null : meetings.find((m) => m.start > now);
-  const nowRow = `<li class="agenda__now"><span class="agenda__dot" title="Now · ${fmtTime(now)}"></span><span class="agenda__line"></span><span class="agenda__when">${next ? `${esc(next.title)} in ${duration(Math.ceil((next.start - now) / 60000))}` : "Done for today"}</span></li>`;
+  const nowRow = `<li class="agenda__now"><span class="agenda__dot" data-tooltip="Now · ${fmtTime(now)}"></span><span class="agenda__line"></span><span class="agenda__when">${next ? `${esc(next.title)} in ${duration(Math.ceil((next.start - now) / 60000))}` : "Done for today"}</span></li>`;
   const rows = meetings.map((m) => {
     const isLive = m === live;
     const when = isLive ? `<span class="agenda__live">${duration(Math.ceil((m.end - now) / 60000))} left</span>` : duration(m.minutes);
     const progress = isLive ? `<span class="agenda__progress" style="--done: ${Math.round(((now - m.start) / (m.end - m.start)) * 100)}%"></span>` : "";
-    const item = `<li class="agenda__item${now >= m.end ? " is-past" : ""}${isLive ? " is-live" : ""}${m === next ? " is-next" : ""}"><span class="agenda__dot" title="${fmtTime(m.start)} – ${fmtTime(m.end)}"></span><span class="agenda__title">${esc(m.title)}</span><span class="agenda__when">${when}</span>${progress}</li>`;
+    const item = `<li class="agenda__item${now >= m.end ? " is-past" : ""}${isLive ? " is-live" : ""}${m === next ? " is-next" : ""}"><span class="agenda__dot" data-tooltip="${fmtTime(m.start)} – ${fmtTime(m.end)}"></span><span class="agenda__title" data-tooltip="${esc(m.title)}">${esc(m.title)}</span><span class="agenda__when">${when}</span>${progress}</li>`;
     return m === next ? nowRow + item : item;
   });
   if (!live && !next) rows.push(nowRow);
@@ -41,7 +41,7 @@ function huntCard() {
   const running = isHunting(hs);
   const clones = huntableRepos(state.settings).length;
   let body;
-  if (running) body = `<p class="hunt__status bob-shimmer"><span class="bob__spinner"></span>Bob is reading ${esc(repoShort(hs.repo))}… <span data-ago="${esc(hs.startedAt)}">${agoText(hs.startedAt)}</span></p>`;
+  if (running) body = `<p class="hunt__status bob-shimmer"><span class="bob__spinner"></span>Bob is reading ${esc(repoShort(hs.repo))}…<span class="hunt__ago" data-ago="${esc(hs.startedAt)}">${agoText(hs.startedAt)}</span></p>`;
   else if (!clones) body = `<p class="hunt__status">Add a local clone to a repo to start.</p><button class="btn btn--ghost btn--sm hunt__action" data-action="repo-editor">Edit repositories</button>`;
   else if (latest) {
     const where = [repoShort(latest.repo), latest.file && `${latest.file.split("/").pop()}${latest.line ? `:${latest.line}` : ""}`, latest.effort, latest.found && latest.confidence && `${latest.confidence} confidence`].filter(Boolean).join(" · ");
@@ -63,7 +63,7 @@ function huntCard() {
 function standupButton() {
   if (!connected()) return "";
   const ready = !!data();
-  if (!aiOn()) return `<button class="btn btn--ghost btn--block" data-action="copy-standup" ${ready ? "" : "disabled"} title="Yesterday, today and blockers from your GitHub activity">${icon("copy", 16)}Copy standup update</button>`;
+  if (!aiOn()) return `<button class="btn btn--ghost btn--block" data-action="copy-standup" ${ready ? "" : "disabled"} data-tooltip="Yesterday, today and blockers from your GitHub activity">${icon("copy", 16)}Copy standup update</button>`;
   const drafted = state.answered.has(todaysAnswer("standup"));
   return `<button class="btn btn--ghost btn--block bob-btn${drafted ? " bob-made" : ""}" data-action="bob-standup" ${ready ? "" : "disabled"}>${icon("sparkle", 16)}${drafted ? "Today's standup draft" : "Write standup with Bob"}</button>`;
 }
@@ -149,8 +149,8 @@ function reportDetails(report, earlierOpen) {
              <ul class="hunt-list">${earlier
                .map(
                  (h) => `<li class="hunt-list__row">
-                   <button class="hunt-list__item bob-btn bob-made" data-action="hunt-open" data-id="${esc(h.id)}" title="${esc(h.title)}">${icon("sparkle", 14)}<span class="hunt-list__title">${esc(h.title)}</span><span class="hunt-list__meta">${esc(repoShort(h.repo))} · ${esc(dayLabel(h.at, true))}</span></button>
-                   <button class="icon-btn icon-btn--sm hunt-list__delete" data-action="hunt-delete" data-id="${esc(h.id)}" title="Delete" aria-label="Delete ${esc(h.title)}">${icon("trash", 14)}</button>
+                   <button class="hunt-list__item bob-btn bob-made" data-action="hunt-open" data-id="${esc(h.id)}" data-tooltip="${esc(h.title)}">${icon("sparkle", 14)}<span class="hunt-list__title">${esc(h.title)}</span><span class="hunt-list__meta">${esc(repoShort(h.repo))} · ${esc(dayLabel(h.at, true))}</span></button>
+                   <button class="icon-btn icon-btn--sm hunt-list__delete" data-action="hunt-delete" data-id="${esc(h.id)}" data-tooltip="Delete" aria-label="Delete ${esc(h.title)}">${icon("trash", 14)}</button>
                  </li>`
                )
                .join("")}</ul></details>`
@@ -167,7 +167,7 @@ export function openReport(report, earlierOpen = false) {
     subtitle: `${repoShort(report.repo)}${report.file ? ` · ${report.file}${report.line ? `:${report.line}` : ""}` : ""}`,
     trigger: `[data-action="hunt-open"][data-id="${CSS.escape(report.id)}"]`,
     prompt: `You found this bug earlier in a local clone of ${report.repo} at ${report.branch}:\n\n${report.markdown}`,
-    opts: { workspace: report.path, maxTurns: 30, timeoutMs: 420000 },
+    opts: { workspace: report.path },
     answer: { text: report.markdown, at: report.at, label: "Reported", log: report.log },
     extra: reportDetails(report, earlierOpen),
     regenerate: false,

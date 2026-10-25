@@ -112,6 +112,7 @@ src/page/         the new tab page only
   repo-editor.js  the repo editor
   markdown.js     renders Bob's answers (Markdown, syntax colours, diffs)
   icons.js        line icons
+  tooltip.js      the page's one tooltip, for every [data-tooltip]
   theme.js        applies a forced light or dark theme before the page paints
 ai-helper/        the native messaging host that runs Bob Shell, and its installer
 scripts/package.sh  builds dist/dev-dashboard.zip

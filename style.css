@@ -1666,7 +1666,7 @@ a.item__title::after {
   background: var(--surface);
 }
 
-/* A bigger target than the dot itself, so its times (the title tooltip) are easy to hover. */
+/* A bigger target than the dot itself, so its tooltip is easy to hit. */
 .agenda__dot::before {
   content: "";
   position: absolute;
@@ -2460,6 +2460,39 @@ a.item__title::after {
   font-size: 13px;
 }
 
+/* ---------- tooltip ---------- */
+
+/* Placed by tooltip.js with translate, beside the pointer or the focused element. */
+.tooltip {
+  position: fixed;
+  inset: 0 auto auto 0;
+  max-width: 280px;
+  margin: 0;
+  padding: 5px 9px;
+  overflow: visible;
+  border: 0;
+  border-radius: 6px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms var(--ease), overlay 120ms allow-discrete, display 120ms allow-discrete;
+}
+
+.tooltip:popover-open {
+  opacity: 1;
+}
+
+@starting-style {
+  .tooltip:popover-open {
+    opacity: 0;
+  }
+}
+
 /* ---------- toasts ---------- */
 
 .toasts {
@@ -3082,6 +3115,12 @@ a.bob__subtitle:hover {
   padding: 2px 8px;
   color: var(--text-2);
   font-size: 13px;
+}
+
+/* How long the hunt has been running, at the end of the line. */
+.hunt__ago {
+  margin-left: auto;
+  color: var(--text-3);
 }
 
 .hunt__error {

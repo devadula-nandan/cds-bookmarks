@@ -56,12 +56,12 @@ export async function bobStatus() {
 }
 
 /**
- * Asks Bob. `workspace` runs it in a local clone; `maxTurns` and `timeoutMs` give it room to explore.
+ * Asks Bob, with no turn or time limit (`signal` cancels). `workspace` runs it in a local clone.
  * Returns `{ text, log }`, where `log` is Bob Shell's whole transcript.
  */
-export async function askBob(prompt, settings, { signal, workspace, maxTurns, timeoutMs } = {}) {
+export async function askBob(prompt, settings, { signal, workspace } = {}) {
   if (!settings.bobKey) throw new BobError("Add your Bob API key in Settings → Bob.", "nokey");
-  const reply = await call({ type: "ask", prompt, key: settings.bobKey, workspace, maxTurns, timeoutMs }, signal);
+  const reply = await call({ type: "ask", prompt, key: settings.bobKey, workspace }, signal);
   return { text: reply.text, log: reply.log };
 }
 

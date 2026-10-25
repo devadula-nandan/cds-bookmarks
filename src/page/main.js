@@ -9,6 +9,7 @@ import { bindActivity, headerActions, maybeSync, renderActivity, renderMasthead,
 import { icon } from "./icons.js";
 import { bindEditor, editorActions } from "./repo-editor.js";
 import { bindSearch, focusSearch } from "./search.js";
+import { bindTooltips } from "./tooltip.js";
 import { applyTheme, bindSettings, checkBob, connect, onSettingsChange, openSettings, renderSettings, settingsActions } from "./settings.js";
 import { renderToday, toggleTodo, todayActions, addTodos } from "./today.js";
 import { $, $$, agoText, connected, state, toast } from "./ui.js";
@@ -187,6 +188,7 @@ async function start() {
   bindEditor();
   bindBobSheet();
   bindBobEffects();
+  bindTooltips();
 
   renderAll();
   document.body.classList.add("is-ready");

@@ -7,12 +7,11 @@ import { loadSettings, parseTime, repoShort, storage, todayKey, uid } from "./co
 import { enabledRepos } from "./repos.js";
 import { record } from "./sync.js";
 
-// A hunt still "running" after this long was cut off (browser closed, worker stopped).
-const STALE_MS = 25 * 60000;
 
 export const huntableRepos = (settings) => enabledRepos(settings).filter((r) => r.clone);
 
-export const isHunting = (huntState) => !!huntState?.running && Date.now() - Date.parse(huntState.startedAt || 0) < STALE_MS;
+/** A hunt beats every 20 seconds; one marked running with no beat for 2 minutes was cut off (browser closed, worker stopped). */
+export const isHunting = (huntState) => !!huntState?.running && Date.now() - Date.parse(huntState.beat || huntState.startedAt || 0) < 120000;
 
 function prompt(slug, branch, head, previous) {
   return `You're hunting for one real bug in ${slug}, checked out locally at ${branch} (${String(head).slice(0, 7)}). Read and search the code; don't change anything.
@@ -78,9 +77,15 @@ export async function hunt() {
 
   const day = todayKey();
   // lastDay is set up front, so a failed hunt isn't retried every minute; "Hunt again" retries by hand.
-  await storage.set({ huntState: { running: true, startedAt: new Date().toISOString(), repo: repo.slug, lastDay: day } });
-  // An extension API call every 20s keeps the worker from being stopped as idle mid-hunt.
-  const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 20000);
+  const running = { running: true, startedAt: new Date().toISOString(), repo: repo.slug, lastDay: day };
+  await storage.set({ huntState: running });
+  // A heartbeat every 20 seconds: it keeps the worker from being stopped as idle mid-hunt, and tells the page the hunt is alive.
+  const heartbeat = setInterval(() => storage.set({ huntState: { ...running, beat: new Date().toISOString() } }), 20000);
+  // Stops the heartbeat before the result is written, so a late beat can't mark a finished hunt as running again.
+  const finish = (huntState, extra = {}) => {
+    clearInterval(heartbeat);
+    return storage.set({ huntState, ...extra });
+  };
   try {
     // Hunt the latest main in a worktree of its own; if that fails (offline, say), hunt the clone as it is.
     const git = await huntCheckout(repo.clone, repo.slug).catch(() => gitInfo(repo.clone).then((info) => ({ ...info, path: repo.clone })));
@@ -89,7 +94,7 @@ export async function hunt() {
       .slice(0, 15)
       .map((h) => `- ${h.file}${h.line ? `:${h.line}` : ""} — ${h.title}`)
       .join("\n");
-    const { text, log } = await askBob(prompt(repo.slug, git.branch, git.head, previous), settings, { workspace: git.path, maxTurns: 60, timeoutMs: 15 * 60000 });
+    const { text, log } = await askBob(prompt(repo.slug, git.branch, git.head, previous), settings, { workspace: git.path });
     const { markdown, meta } = splitReport(text);
     const found = !!meta?.title && meta.found !== false;
     const report = {
@@ -111,7 +116,7 @@ export async function hunt() {
       markdown,
       log,
     };
-    await storage.set({ bugHunts: [report, ...bugHunts].slice(0, 30), huntState: { running: false, lastDay: day, at: report.at, repo: repo.slug } });
+    await finish({ running: false, lastDay: day, at: report.at, repo: repo.slug }, { bugHunts: [report, ...bugHunts].slice(0, 30) });
     await record(
       [
         {
@@ -128,9 +133,7 @@ export async function hunt() {
     return { ok: true };
   } catch (err) {
     console.error("Bug hunt failed", err);
-    await storage.set({ huntState: { running: false, lastDay: day, at: new Date().toISOString(), repo: repo.slug, error: err.message || String(err) } });
+    await finish({ running: false, lastDay: day, at: new Date().toISOString(), repo: repo.slug, error: err.message || String(err) });
     return { ok: false, error: err.message };
-  } finally {
-    clearInterval(keepAlive);
   }
 }

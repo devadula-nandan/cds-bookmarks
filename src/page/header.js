@@ -32,16 +32,16 @@ export function renderTools() {
   const count = unread();
   let status = "";
   if (connected() && st.syncing) status = `<span class="sync">Syncing…</span>`;
-  else if (connected() && st.error) status = `<button class="sync sync--error" popovertarget="sync-error" style="anchor-name: --sync" title="See what went wrong">${icon("alert", 14)}Sync failed</button>`;
-  else if (connected() && st.at) status = `<span class="sync" title="Last synced ${esc(new Date(st.at).toLocaleString())}">Updated <span data-ago="${esc(st.at)}">${agoText(st.at)}</span></span>`;
+  else if (connected() && st.error) status = `<button class="sync sync--error" popovertarget="sync-error" style="anchor-name: --sync" data-tooltip="See what went wrong">${icon("alert", 14)}Sync failed</button>`;
+  else if (connected() && st.at) status = `<span class="sync" data-tooltip="Last synced ${esc(new Date(st.at).toLocaleString())}">Updated <span data-ago="${esc(st.at)}">${agoText(st.at)}</span></span>`;
 
   $("#search-input").placeholder = aiOn() ? "Search your PRs, issues and links, or ask Bob" : "Search your PRs, issues and links";
   $("#tools").innerHTML = `
     ${status}
-    ${connected() ? `<button class="icon-btn ${st.syncing ? "is-spinning" : ""}" data-action="sync" title="Sync now (R)" aria-label="Sync now">${icon("refresh", 18)}</button>` : ""}
-    <button class="icon-btn" popovertarget="activity" title="Activity (A)" aria-label="Activity${count ? `, ${count} new` : ""}">${icon("bell", 18)}${count ? `<span class="badge-dot"></span>` : ""}</button>
-    ${aiOn() ? `<button class="icon-btn bob-btn" data-action="bob-slack" title="Draft a Slack reply with Bob" aria-label="Draft a Slack reply with Bob">${icon("slack", 18)}</button>` : ""}
-    <button class="icon-btn" data-action="settings" title="Settings" aria-label="Settings">${icon("gear", 18)}</button>`;
+    ${connected() ? `<button class="icon-btn ${st.syncing ? "is-spinning" : ""}" data-action="sync" data-tooltip="Sync now (R)" aria-label="Sync now">${icon("refresh", 18)}</button>` : ""}
+    <button class="icon-btn" popovertarget="activity" data-tooltip="Activity (A)" aria-label="Activity${count ? `, ${count} new` : ""}">${icon("bell", 18)}${count ? `<span class="badge-dot"></span>` : ""}</button>
+    ${aiOn() ? `<button class="icon-btn bob-btn" data-action="bob-slack" data-tooltip="Draft a Slack reply with Bob" aria-label="Draft a Slack reply with Bob">${icon("slack", 18)}</button>` : ""}
+    <button class="icon-btn" data-action="settings" data-tooltip="Settings" aria-label="Settings">${icon("gear", 18)}</button>`;
   // The error popup lives outside #tools, so re-rendering the header doesn't close it.
   setHtml($("#sync-error"), st.error ? syncNotice(true) : "");
 }
@@ -94,7 +94,7 @@ function repoMenu(repo) {
       ? `<div class="menu__versioned" data-versioned="${esc(l.versionedHref)}">
            <a class="menu__link" href="${esc(l.href)}">${esc(prettyLabel(l.label))}</a>
            <input class="menu__version" value="${esc(l.version || "")}" placeholder="version" aria-label="${esc(l.label)} version">
-           <button class="icon-btn icon-btn--sm" data-action="open-version" title="Open this version" aria-label="Open this version">${icon("arrowRight", 14)}</button>
+           <button class="icon-btn icon-btn--sm" data-action="open-version" data-tooltip="Open this version" aria-label="Open this version">${icon("arrowRight", 14)}</button>
          </div>`
       : `<a class="menu__link" href="${esc(l.href)}">${esc(prettyLabel(l.label))}</a>`;
   return `
@@ -105,7 +105,7 @@ function repoMenu(repo) {
         ${repo.slug ? `<a class="menu__slug mono" href="https://github.com/${esc(repo.slug)}">${esc(repoShort(repo.slug))}</a>` : ""}
       </div>
     </header>
-    ${main ? `<a class="menu__status" href="${esc(main.url)}" title="${esc(main.message || "")}"><span class="dot dot--${tone || "neutral"}"></span><span><b>${esc(main.branch)}</b> ${{ error: "failing", warning: "running", success: "passing" }[tone] || "status unknown"}</span><span class="menu__status-meta mono">${esc(main.sha)} · ${timeAgo(main.committedAt)}</span></a>` : ""}
+    ${main ? `<a class="menu__status" href="${esc(main.url)}" data-tooltip="${esc(main.message || "")}"><span class="dot dot--${tone || "neutral"}"></span><span><b>${esc(main.branch)}</b> ${{ error: "failing", warning: "running", success: "passing" }[tone] || "status unknown"}</span><span class="menu__status-meta mono">${esc(main.sha)} · ${timeAgo(main.committedAt)}</span></a>` : ""}
     ${health?.release ? `<a class="menu__status" href="${esc(health.release.url)}">${icon("tag", 14)}<span><b>${esc(health.release.tagName)}</b>${health.release.isPrerelease ? " pre-release" : ""}</span><span class="menu__status-meta">${timeAgo(health.release.publishedAt)}</span></a>` : ""}
     ${code ? `<a class="menu__status" href="${esc(code)}">${icon("code", 14)}<span><b>Open in VS Code</b></span><span class="menu__status-meta mono">${esc(repo.clone)}</span></a>` : ""}
     ${repo.groups.map((g) => `<div class="menu__group"><p class="menu__label">${esc(g.title)}</p>${g.links.map(link).join("")}</div>`).join("")}`;
@@ -118,7 +118,7 @@ export function renderRepos() {
   $("#repos").innerHTML = list
     .map((r) => {
       const tone = mainTone(data()?.repos?.[r.slug]?.main);
-      const dot = tone === "error" || tone === "warning" ? `<span class="dot dot--${tone}" title="main ${tone === "error" ? "is failing" : "checks running"}"></span>` : "";
+      const dot = tone === "error" || tone === "warning" ? `<span class="dot dot--${tone}" data-tooltip="main ${tone === "error" ? "is failing" : "checks running"}"></span>` : "";
       return `<button class="repo" popovertarget="menu-${esc(r.id)}" style="anchor-name: --repo-${esc(r.id)}"><span class="repo__logo">${r.logo}</span><span>${esc(r.short)}</span>${dot}${icon("chevronDown", 14)}</button>`;
     })
     .join("");

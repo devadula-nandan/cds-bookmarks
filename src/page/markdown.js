@@ -12,7 +12,7 @@ function inline(text) {
   s = esc(s)
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => keep(`<a href="${url}" target="_blank" rel="noopener">`) + label + keep("</a>"))
     // A link to a file path in the repo (Bob citing code): the label, with the path on hover.
-    .replace(/\[([^\]]+)\]\(([^\s)]+)\)/g, (_, label, path) => keep(`<span class="md-path" title="${path}">`) + label + keep("</span>"))
+    .replace(/\[([^\]]+)\]\(([^\s)]+)\)/g, (_, label, path) => keep(`<span class="md-path" data-tooltip="${path}">`) + label + keep("</span>"))
     .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, pre, url) => pre + keep(`<a href="${url}" target="_blank" rel="noopener">${url.replace(/^https:\/\/(www\.)?github\.com\//, "")}</a>`))
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^\w])__([^_]+)__(?!\w)/g, "$1<strong>$2</strong>")

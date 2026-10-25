@@ -48,7 +48,7 @@ let timer = 0;
 /**
  * Starts a session. `spec` says what to ask and how to show it:
  *   title, subtitle, url        the sheet's heading
- *   prompt, opts                what Bob gets (opts: workspace, maxTurns, timeoutMs)
+ *   prompt, opts                what Bob gets (opts.workspace: run in that local clone)
  *   key                         where the answer is saved, so asking again is instant
  *   trigger, fallback           selectors for the button that shows this session's status (fallback: its tab)
  *   format                      "edit", "reply" or "query": the answer is a draft to edit and revise
@@ -237,7 +237,7 @@ function render() {
           <h2>${esc(spec.title)}</h2>
           ${spec.subtitle ? (spec.url ? `<a class="bob__subtitle" href="${esc(spec.url)}" target="_blank">${esc(spec.subtitle)}</a>` : `<p class="bob__subtitle">${esc(spec.subtitle)}</p>`) : ""}
         </div>
-        <button class="icon-btn" data-action="bob-hide" aria-label="${loading ? "Minimise" : "Close"}" title="${loading ? "Minimise. Bob keeps working" : "Close"}">${icon(loading ? "minus" : "x", 18)}</button>
+        <button class="icon-btn" data-action="bob-hide" aria-label="${loading ? "Minimise" : "Close"}" data-tooltip="${loading ? "Minimise. Bob keeps working" : "Close"}">${icon(loading ? "minus" : "x", 18)}</button>
       </header>
       <div class="sheet__body bob__body">${input}${thread}${waiting}${failure}</div>
       ${tools ? `<footer class="bob__foot">${tools}</footer>` : ""}`;
@@ -387,7 +387,7 @@ function bobTriage() {
     fallback: "#tab-issues",
     key: todaysAnswer("triage"),
     prompt: triagePrompt(state.settings, repoList()),
-    opts: { workspace: clone, maxTurns: 80, timeoutMs: 15 * 60000 },
+    opts: { workspace: clone },
   });
 }
 

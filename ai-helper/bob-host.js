@@ -9,7 +9,7 @@
  *
  * Protocol: 4-byte little-endian length + UTF-8 JSON, both directions.
  *   { type: "ping" }                                   → { ok, version, home }
- *   { type: "ask", prompt, key?, workspace?, maxTurns?, timeoutMs? }
+ *   { type: "ask", prompt, key?, workspace? }          (no turn or time limit; Cancel stops it)
  *                                                      → { ok, text, log } | { ok: false, error, log }
  *   { type: "git-info", path }                         → { ok, branch, head }
  *   { type: "hunt-checkout", path, slug }              → { ok, path, branch, head }
@@ -22,8 +22,6 @@ const path = require("node:path");
 
 const BOB = process.env.DD_BOB || "bob";
 const WORKSPACE = path.join(os.homedir(), ".dev-dashboard", "bob-workspace");
-const TIMEOUT_MS = 420000;
-const MAX_TIMEOUT_MS = 20 * 60000;
 const MAX_REPLY = 600 * 1024; // Chrome caps host → browser messages at 1 MB; the reply and its log share it.
 const MAX_LOG = 300 * 1024;
 
@@ -187,7 +185,7 @@ async function gitInfo({ path: p }) {
   }
 }
 
-function ask({ prompt, key, workspace, maxTurns, timeoutMs }) {
+function ask({ prompt, key, workspace }) {
   if (!prompt) return Promise.resolve({ ok: false, error: "Empty prompt." });
   let dir = WORKSPACE;
   try {
@@ -196,9 +194,7 @@ function ask({ prompt, key, workspace, maxTurns, timeoutMs }) {
   } catch (err) {
     return Promise.resolve({ ok: false, error: err.message });
   }
-  const turns = Math.min(Math.max(Number(maxTurns) || 30, 1), 80);
-  const limit = Math.min(Math.max(Number(timeoutMs) || TIMEOUT_MS, 10000), MAX_TIMEOUT_MS);
-  const args = ["run", "--format", "stream-json", "--max-turns", String(turns), "--log-level", "error", "--trust", "--workspace", dir, prompt];
+  const args = ["run", "--format", "stream-json", "--log-level", "error", "--trust", "--workspace", dir, prompt];
 
   const env = { ...process.env, PATH: userPath(), BOB_LOG_LEVEL: "error" };
   if (key) env.BOB_API_KEY = key;
@@ -209,16 +205,13 @@ function ask({ prompt, key, workspace, maxTurns, timeoutMs }) {
     children.add(child);
     let stdout = "";
     let stderr = "";
-    const timer = setTimeout(() => child.kill("SIGTERM"), limit);
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr = (stderr + d).slice(-MAX_LOG)));
     child.on("error", (err) => {
-      clearTimeout(timer);
       children.delete(child);
       resolve({ ok: false, error: `Couldn't start Bob Shell: ${err.message}` });
     });
     child.on("close", (code, signal) => {
-      clearTimeout(timer);
       children.delete(child);
       let result = null;
       const errors = [];
@@ -241,7 +234,7 @@ function ask({ prompt, key, workspace, maxTurns, timeoutMs }) {
       if (text) return resolve({ ok: true, text: text.slice(0, MAX_REPLY), log });
       const plain = stdout.replace(/^\s*\{.*\}\s*$/gm, "").trim();
       const reason =
-        signal === "SIGTERM" ? `Bob didn't answer within ${Math.round(limit / 1000)}s.` : errors[0] || stderr.trim().split("\n").slice(-3).join(" ") || plain.slice(-400) || `Bob exited with code ${code}.`;
+        signal === "SIGTERM" ? "Bob was stopped." : errors[0] || stderr.trim().split("\n").slice(-3).join(" ") || plain.slice(-400) || `Bob exited with code ${code}.`;
       resolve({ ok: false, error: redact(reason, key).slice(0, 600), log });
     });
   });

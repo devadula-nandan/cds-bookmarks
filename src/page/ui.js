@@ -84,7 +84,7 @@ export const agoText = (at) => (timeAgo(at) === "now" ? "just now" : `${timeAgo(
 
 export const iconChip = (name, tone = "neutral") => `<span class="chip-icon tone-${tone}">${icon(name, 16)}</span>`;
 
-export const timeEl = (at) => (at ? `<time class="item__time" data-at="${esc(at)}" title="${esc(new Date(at).toLocaleString())}">${timeAgo(at)}</time>` : "");
+export const timeEl = (at) => (at ? `<time class="item__time" data-at="${esc(at)}" data-tooltip="${esc(new Date(at).toLocaleString())}">${timeAgo(at)}</time>` : "");
 
 /** "Carbon #123". */
 export const ref = (item) => `${esc(repoLabel(item.repo))} <span class="mono">#${item.number}</span>`;
@@ -100,10 +100,10 @@ export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, un
     const { label, verb } = MODES[modeFor(bob.item, bob.kind)];
     // Bob already answered this version of the item: the ✦ turns blue.
     const ready = state.answered.has(answerKey(bob));
-    buttons += `<button class="icon-btn icon-btn--sm bob-btn${ready ? " bob-made" : ""}" data-action="bob-item" data-key="${esc(key)}" title="${esc(ready ? `${label} · answer ready` : verb)}" aria-label="${esc(verb)}">${icon("sparkle", 16)}</button>`;
+    buttons += `<button class="icon-btn icon-btn--sm bob-btn${ready ? " bob-made" : ""}" data-action="bob-item" data-key="${esc(key)}" data-tooltip="${esc(ready ? `${label} · answer ready` : verb)}" aria-label="${esc(verb)}">${icon("sparkle", 16)}</button>`;
   }
-  if (snooze) buttons += `<button class="icon-btn icon-btn--sm" data-action="snooze-menu" data-key="${esc(snooze)}" popovertarget="snooze-menu" title="Snooze" aria-label="Snooze ${esc(title)}">${icon("snooze", 16)}</button>`;
-  if (unfollow) buttons += `<button class="icon-btn icon-btn--sm" data-action="unfollow" data-id="${esc(unfollow)}" title="Hide until there's a new reply" aria-label="Hide ${esc(title)}">${icon("x", 16)}</button>`;
+  if (snooze) buttons += `<button class="icon-btn icon-btn--sm" data-action="snooze-menu" data-key="${esc(snooze)}" popovertarget="snooze-menu" data-tooltip="Snooze" aria-label="Snooze ${esc(title)}">${icon("snooze", 16)}</button>`;
+  if (unfollow) buttons += `<button class="icon-btn icon-btn--sm" data-action="unfollow" data-id="${esc(unfollow)}" data-tooltip="Hide until there's a new reply" aria-label="Hide ${esc(title)}">${icon("x", 16)}</button>`;
   return `
     <li class="item">
       ${iconChip(iconName, tone)}

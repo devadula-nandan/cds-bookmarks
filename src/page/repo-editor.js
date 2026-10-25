@@ -39,7 +39,7 @@ function linkRow(path, link, j) {
       ${field(`${p}.href`, "URL", link.href, { mono: true, placeholder: "https://…" })}
       ${field(`${p}.versionedHref`, "Versioned URL", link.versionedHref, { mono: true, placeholder: "Optional, uses <v>" })}
       ${field(`${p}.version`, "Version", link.version, { placeholder: "Optional" })}
-      <button class="icon-btn icon-btn--sm editor-link__remove" data-action="editor-remove" data-path="${p}" aria-label="Remove ${esc(link.label || "link")}" title="Remove link">${icon("trash", 14)}</button>
+      <button class="icon-btn icon-btn--sm editor-link__remove" data-action="editor-remove" data-path="${p}" aria-label="Remove ${esc(link.label || "link")}" data-tooltip="Remove link">${icon("trash", 14)}</button>
     </div>`;
 }
 
@@ -65,9 +65,9 @@ function repoBlock(entry, i) {
       <summary>
         <span class="editor-repo__logo" aria-hidden="true">${entry.icon || ""}</span>
         <span class="editor-repo__name">${esc(entry.name || "Untitled repo")}<small class="mono">${esc(entry.id || "")}</small></span>
-        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index="${i}" data-by="-1" aria-label="Move up" title="Move up" ${i ? "" : "disabled"}>${icon("arrowUp", 14)}</button>
-        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index="${i}" data-by="1" aria-label="Move down" title="Move down" ${i < draft.length - 1 ? "" : "disabled"}>${icon("arrowDown", 14)}</button>
-        <button class="icon-btn icon-btn--sm" data-action="editor-remove" data-path="${i}" aria-label="Remove ${esc(entry.name || "repo")}" title="Remove repo">${icon("trash", 14)}</button>
+        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index="${i}" data-by="-1" aria-label="Move up" data-tooltip="Move up" ${i ? "" : "disabled"}>${icon("arrowUp", 14)}</button>
+        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index="${i}" data-by="1" aria-label="Move down" data-tooltip="Move down" ${i < draft.length - 1 ? "" : "disabled"}>${icon("arrowDown", 14)}</button>
+        <button class="icon-btn icon-btn--sm" data-action="editor-remove" data-path="${i}" aria-label="Remove ${esc(entry.name || "repo")}" data-tooltip="Remove repo">${icon("trash", 14)}</button>
       </summary>
       <div class="editor-repo__body">
         <div class="fields">
