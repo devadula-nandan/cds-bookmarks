@@ -3,7 +3,7 @@
 
 import { repoShort, storage } from "./core.js";
 
-const GROUPS = { github: "GitHub", website: "Website", storybooks: "Storybooks", others: "Playgrounds" };
+const GROUPS = ["github", "website", "storybooks", "others"];
 
 /** Every repo, filled in place by loadRepos(). */
 export const repos = [];
@@ -21,9 +21,7 @@ function build(entry) {
     // The GitHub repo comes from its issues or pulls link; the sprint board from a link labelled "Board".
     slug: links.map((b) => b.href?.match(/github\.com\/([^/]+\/[^/?#]+)\/(issues|pulls)/)?.[1]).find(Boolean) || null,
     board: links.find((b) => /board/i.test(b.label))?.href || null,
-    groups: Object.keys(GROUPS)
-      .filter((key) => entry[key]?.buttons?.length)
-      .map((key) => ({ title: key === "website" || key === "storybooks" ? entry[key].title : GROUPS[key], links: entry[key].buttons })),
+    groups: GROUPS.filter((key) => entry[key]?.buttons?.length).map((key) => ({ title: entry[key].title, links: entry[key].buttons })),
   };
 }
 
@@ -36,7 +34,7 @@ export async function fileRepos() {
   }
 }
 
-export async function loadRepos() {
+async function loadRepos() {
   const { repoData } = await storage.get("repoData");
   raw = Array.isArray(repoData) ? repoData : await fileRepos();
   repos.splice(0, repos.length, ...raw.map(build));

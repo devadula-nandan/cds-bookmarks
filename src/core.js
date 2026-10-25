@@ -122,13 +122,14 @@ export async function saveSettings(patch) {
 const DAY = "day:";
 export const dayKey = (date = new Date()) => DAY + todayKey(date);
 
-export async function loadDay(date = new Date()) {
-  const key = dayKey(date);
+export async function loadDay() {
+  const key = dayKey();
+  const { [key]: today } = await storage.get(key);
+  if (today) return today;
+  // A new day: carry over yesterday's unfinished to-dos, and forget days older than two weeks.
   const all = await storage.get(null);
-  if (all[key]) return { todos: [], snoozed: {}, ...all[key] };
   const days = Object.keys(all).filter((k) => k.startsWith(DAY)).sort();
   const previous = days.filter((k) => k < key).pop();
-  // Forget days older than two weeks.
   const cutoff = dayKey(new Date(Date.now() - 14 * 86400000));
   const stale = days.filter((k) => k < cutoff);
   if (stale.length) await storage.remove(stale);

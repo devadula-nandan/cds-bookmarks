@@ -2,8 +2,30 @@
 // the button that started one shows its status, a toast says when it's done, and clicking either opens
 // it in the sheet. Answers that need no waiting (saved ones, bug reports) open straight away.
 
-import * as prompts from "../bob.js";
-import { BobError, MODES, answerKey, askBob, cleanQuery, modeFor, planDay, planKey, saveAnswer, savedAnswer, todaysAnswer } from "../bob.js";
+import {
+  BobError,
+  MODES,
+  TEST_PROMPT,
+  answerKey,
+  askBob,
+  askPrompt,
+  catchUpPrompt,
+  cleanQuery,
+  findPrompt,
+  followUpPrompt,
+  itemPrompt,
+  modeFor,
+  planDay,
+  planKey,
+  planPrompt,
+  revisePrompt,
+  saveAnswer,
+  savedAnswer,
+  slackPrompt,
+  standupPrompt,
+  todaysAnswer,
+  triagePrompt,
+} from "../bob.js";
 import { esc, itemRef, plural, uid } from "../core.js";
 import { enabledRepos, repoBySlug } from "../repos.js";
 import { todaysMeetings } from "../sync.js";
@@ -75,7 +97,7 @@ function drop(s) {
 }
 
 /** Closing the sheet, however it happens: the ✕ or minimise button, Escape, or a click on the backdrop. */
-export function hideSheet() {
+function hideSheet() {
   if (shown) leave(shown);
   shown = null;
   if (sheet().open) sheet().close();
@@ -91,7 +113,7 @@ async function run(s, question) {
   if (question) s.turns.push({ role: "user", text: question });
   paint(s);
   try {
-    const prompt = !question ? s.prompt : draft ? prompts.revisePrompt(s.prompt, draftText(s), question) : prompts.followUpPrompt(s.prompt, s.turns.slice(0, -1), question);
+    const prompt = !question ? s.prompt : draft ? revisePrompt(s.prompt, draftText(s), question) : followUpPrompt(s.prompt, s.turns.slice(0, -1), question);
     const { text, log } = await askBob(prompt, state.settings, { ...s.spec.opts, signal: controller.signal });
     const at = new Date().toISOString();
     if (draft && question) {
@@ -301,7 +323,7 @@ export function submitBobForm(form, value) {
 
 const repoList = () => enabledRepos(state.settings);
 
-export function bobItem(key) {
+function bobItem(key) {
   const target = bobTargets.get(key);
   const subject = target.item || target.task;
   openBob({
@@ -310,13 +332,13 @@ export function bobItem(key) {
     url: subject.url,
     trigger: `[data-action="bob-item"][data-key="${CSS.escape(key)}"]`,
     key: answerKey(target),
-    prompt: prompts.itemPrompt(target),
+    prompt: itemPrompt(target),
   });
 }
 
-export const bobAsk = (q) => openBob({ title: "Ask Bob", subtitle: q, trigger: "#search .search__icon", prompt: prompts.askPrompt(q, state.settings, repoList()) });
+export const bobAsk = (q) => openBob({ title: "Ask Bob", subtitle: q, trigger: "#search .search__icon", prompt: askPrompt(q, state.settings, repoList()) });
 
-export const bobFind = (q) => openBob({ title: "Find on GitHub", subtitle: q, format: "query", trigger: "#search .search__icon", prompt: prompts.findPrompt(q, state.settings, repoList()) });
+export const bobFind = (q) => openBob({ title: "Find on GitHub", subtitle: q, format: "query", trigger: "#search .search__icon", prompt: findPrompt(q, state.settings, repoList()) });
 
 export function bobSlack() {
   openBob({
@@ -325,7 +347,7 @@ export function bobSlack() {
     trigger: '[data-action="bob-slack"]',
     format: "reply",
     input: { label: "Slack thread", placeholder: "Paste the whole thread here, oldest message first…", hint: "Bob looks up related issues, PRs, docs and code, and lists its sources.", submit: "Draft reply" },
-    makePrompt: (thread) => prompts.slackPrompt(thread, state.settings),
+    makePrompt: (thread) => slackPrompt(thread, state.settings),
   });
 }
 
@@ -338,12 +360,12 @@ export function bobPlan() {
     subtitle: date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }),
     trigger: '[data-action="bob-plan"]',
     key: planKey(),
-    prompt: prompts.planPrompt(state.settings, repoList(), todaysMeetings(state.settings, date), state.day.todos),
+    prompt: planPrompt(state.settings, repoList(), todaysMeetings(state.settings, date), state.day.todos),
   });
 }
 
 export const bobStandup = () =>
-  openBob({ title: "Standup update", subtitle: "Edit it, then copy it into Slack", format: "edit", trigger: '[data-action="bob-standup"]', key: todaysAnswer("standup"), prompt: prompts.standupPrompt(state.settings, repoList(), state.day.todos) });
+  openBob({ title: "Standup update", subtitle: "Edit it, then copy it into Slack", format: "edit", trigger: '[data-action="bob-standup"]', key: todaysAnswer("standup"), prompt: standupPrompt(state.settings, repoList(), state.day.todos) });
 
 export function bobCatchUp() {
   // What arrived since Activity was last opened; at least the last day, or the last 30 updates.
@@ -352,10 +374,10 @@ export function bobCatchUp() {
   if (entries.length < 3) entries = all.filter((a) => Date.now() - Date.parse(a.createdAt) < 86400000);
   if (entries.length < 3) entries = all.slice(0, 30);
   $("#activity").hidePopover();
-  openBob({ title: "Catch me up", subtitle: plural(entries.length, "update"), trigger: '[data-action="bob-catchup"]', prompt: prompts.catchUpPrompt(entries) });
+  openBob({ title: "Catch me up", subtitle: plural(entries.length, "update"), trigger: '[data-action="bob-catchup"]', prompt: catchUpPrompt(entries) });
 }
 
-export function bobTriage() {
+function bobTriage() {
   // Most triage is in carbon, so Bob works in its clone when there is one.
   const clone = repoBySlug("carbon-design-system/carbon")?.clone;
   openBob({
@@ -364,12 +386,12 @@ export function bobTriage() {
     trigger: '[data-action="bob-triage"]',
     fallback: "#tab-issues",
     key: todaysAnswer("triage"),
-    prompt: prompts.triagePrompt(state.settings, repoList()),
+    prompt: triagePrompt(state.settings, repoList()),
     opts: { workspace: clone, maxTurns: 80, timeoutMs: 15 * 60000 },
   });
 }
 
-export const bobTest = () => openBob({ title: "Test prompt", subtitle: "Checks that Bob Shell can answer", trigger: '[data-action="bob-test"]', prompt: prompts.TEST_PROMPT });
+const bobTest = () => openBob({ title: "Test prompt", subtitle: "Checks that Bob Shell can answer", trigger: '[data-action="bob-test"]', prompt: TEST_PROMPT });
 
 export const bobActions = {
   "bob-item": (el) => bobItem(el.dataset.key),

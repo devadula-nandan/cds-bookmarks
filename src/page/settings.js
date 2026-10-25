@@ -83,7 +83,7 @@ function reposSection(s) {
     "Repositories",
     `<p class="hint">Turned-off repos are hidden from the bar, search and your work list.</p>
      ${repos.map((r) => toggle({ attrs: `data-repo-toggle="${esc(r.id)}"`, checked: !s.disabledRepos.includes(r.id), disabled: !r.slug, label: esc(r.name), hint: `<span class="mono">${esc(r.slug || "no GitHub repo found")}</span>` })).join("")}
-     <p class="field-row schema-actions">
+     <p class="field-row editor-actions">
        <button class="btn btn--sm" data-action="repo-editor">${icon("edit", 14)}Edit repositories</button>
        <button class="btn btn--ghost btn--sm" data-action="repo-export">Export JSON</button>
      </p>`

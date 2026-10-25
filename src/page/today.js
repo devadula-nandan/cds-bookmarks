@@ -127,7 +127,7 @@ async function huntNow() {
 }
 
 /** Details under a hunt report: confidence, a VS Code link, related issues and earlier hunts. */
-function reportDetails(report) {
+function reportDetails(report, earlierOpen) {
   const chips = [report.severity && `${report.severity} severity`, report.effort, report.confidence && `${report.confidence} confidence`].filter(Boolean);
   const code = report.file && vscodeUrl(report.path, report.file, report.line);
   const earlier = state.bugHunts.filter((h) => h.id !== report.id).slice(0, 8);
@@ -145,7 +145,7 @@ function reportDetails(report) {
       }
       ${
         earlier.length
-          ? `<details class="hunt-earlier"><summary class="bob__label">Earlier hunts <span>${earlier.length}</span>${icon("chevronDown", 14)}</summary>
+          ? `<details class="hunt-earlier" ${earlierOpen ? "open" : ""}><summary class="bob__label">Earlier hunts <span>${earlier.length}</span>${icon("chevronDown", 14)}</summary>
              <ul class="hunt-list">${earlier
                .map(
                  (h) => `<li class="hunt-list__row">
@@ -169,7 +169,7 @@ export function openReport(report, earlierOpen = false) {
     prompt: `You found this bug earlier in a local clone of ${report.repo} at ${report.branch}:\n\n${report.markdown}`,
     opts: { workspace: report.path, maxTurns: 30, timeoutMs: 420000 },
     answer: { text: report.markdown, at: report.at, label: "Reported", log: report.log },
-    extra: reportDetails(report).replace('class="hunt-earlier"', `class="hunt-earlier" ${earlierOpen ? "open" : ""}`),
+    extra: reportDetails(report, earlierOpen),
     regenerate: false,
   });
 }

@@ -5,14 +5,14 @@
  * Chrome starts this process when the new tab page asks Bob something. Each
  * request runs `bob run` once, unrestricted: Bob's default agent mode with
  * MCP servers and subagents. By default that's in an empty workspace; when the
- * page names a local clone (bug hunts, code questions), Bob works in that clone.
+ * page names a local clone (bug hunts, triage), Bob works in that clone.
  *
  * Protocol: 4-byte little-endian length + UTF-8 JSON, both directions.
  *   { type: "ping" }                                   → { ok, version, home }
  *   { type: "ask", prompt, key?, workspace?, maxTurns?, timeoutMs? }
  *                                                      → { ok, text, log } | { ok: false, error, log }
- *   { type: "git-info", path }                         → { ok, branch, head, committed }
- *   { type: "hunt-checkout", path, slug }              → { ok, path, branch, head, committed }
+ *   { type: "git-info", path }                         → { ok, branch, head }
+ *   { type: "hunt-checkout", path, slug }              → { ok, path, branch, head }
  * Closing the port (Cancel in the page) ends stdin, which stops Bob.
  */
 const { spawn, execFile, execFileSync } = require("node:child_process");
@@ -57,7 +57,7 @@ function ping() {
   });
 }
 
-/** `last_message` is a string, or a list of content parts in some Bob versions. */
+/** A message's content: a string, or a list of content parts in some Bob versions. */
 function messageText(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return content.map((p) => (typeof p === "string" ? p : p?.text || "")).join("");
@@ -171,8 +171,7 @@ async function huntCheckout({ path: p, slug }) {
       await gitStrict(dir, ["worktree", "prune"]);
       await gitStrict(dir, ["worktree", "add", "--quiet", "--detach", target, head], 300000);
     }
-    const committed = await git(target, ["log", "-1", "--format=%cI"]);
-    return { ok: true, path: target.replace(os.homedir(), "~"), branch: `${remote}/main`, head, committed };
+    return { ok: true, path: target.replace(os.homedir(), "~"), branch: `${remote}/main`, head };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -181,8 +180,8 @@ async function huntCheckout({ path: p, slug }) {
 async function gitInfo({ path: p }) {
   try {
     const dir = cloneDir(p);
-    const [branch, head, committed] = await Promise.all([git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]), git(dir, ["rev-parse", "HEAD"]), git(dir, ["log", "-1", "--format=%cI"])]);
-    return { ok: true, branch, head, committed };
+    const [branch, head] = await Promise.all([git(dir, ["rev-parse", "--abbrev-ref", "HEAD"]), git(dir, ["rev-parse", "HEAD"])]);
+    return { ok: true, branch, head };
   } catch (err) {
     return { ok: false, error: err.message };
   }
@@ -199,8 +198,7 @@ function ask({ prompt, key, workspace, maxTurns, timeoutMs }) {
   }
   const turns = Math.min(Math.max(Number(maxTurns) || 30, 1), 80);
   const limit = Math.min(Math.max(Number(timeoutMs) || TIMEOUT_MS, 10000), MAX_TIMEOUT_MS);
-  const args = ["run", "--format", "stream-json", "--max-turns", String(turns), "--log-level", "error", "--trust", "--workspace", dir];
-  args.push(prompt);
+  const args = ["run", "--format", "stream-json", "--max-turns", String(turns), "--log-level", "error", "--trust", "--workspace", dir, prompt];
 
   const env = { ...process.env, PATH: userPath(), BOB_LOG_LEVEL: "error" };
   if (key) env.BOB_API_KEY = key;
@@ -239,8 +237,8 @@ function ask({ prompt, key, workspace, maxTurns, timeoutMs }) {
       // Bob Shell's whole output, for the page's log toggle. The tail is kept when it's too long.
       const full = redact(readableLog(stdout, stderr), key);
       const log = full.length > MAX_LOG ? `… (earlier output cut)\n${full.slice(-MAX_LOG)}` : full;
-      const text = result ? (result.last_message ? messageText(result.last_message) : reply).trim() : "";
-      if (text) return resolve({ ok: true, text: text.slice(0, MAX_REPLY), log, cost: result.stats?.session_costs ?? null });
+      const text = result ? reply.trim() : "";
+      if (text) return resolve({ ok: true, text: text.slice(0, MAX_REPLY), log });
       const plain = stdout.replace(/^\s*\{.*\}\s*$/gm, "").trim();
       const reason =
         signal === "SIGTERM" ? `Bob didn't answer within ${Math.round(limit / 1000)}s.` : errors[0] || stderr.trim().split("\n").slice(-3).join(" ") || plain.slice(-400) || `Bob exited with code ${code}.`;

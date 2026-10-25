@@ -297,10 +297,19 @@ export async function unsnooze(key) {
   await storage.set({ snoozedUntilChange: state.untilChange });
 }
 
+// The snooze button whose menu is open: the menu is anchored to it.
+let snoozeButton = null;
+
+/** While a row's snooze menu is open, its buttons stay visible (the menu is anchored to one of them). */
+export function bindWork() {
+  $("#snooze-menu").addEventListener("toggle", (e) => snoozeButton?.closest(".item")?.classList.toggle("is-active", e.newState === "open"));
+}
+
 export const workActions = {
   // The button opens the menu (popovertarget); pin the menu to it and remember which row it's for.
   "snooze-menu": (el) => {
-    $$("[style*='--snooze']").forEach((b) => b.style.removeProperty("anchor-name"));
+    snoozeButton?.style.removeProperty("anchor-name");
+    snoozeButton = el;
     el.style.anchorName = "--snooze";
     $("#snooze-menu").dataset.key = el.dataset.key;
   },

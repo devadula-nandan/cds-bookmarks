@@ -40,7 +40,7 @@ export async function record(events, settings) {
   const { activity = [] } = await storage.get("activity");
   const known = new Set(activity.map((a) => a.key));
   const at = new Date().toISOString();
-  const fresh = events.filter((e) => !known.has(e.key)).map((e) => ({ id: uid(), createdAt: at, ...e }));
+  const fresh = events.filter((e) => !known.has(e.key)).map((e) => ({ createdAt: at, ...e }));
   if (!fresh.length) return;
   await storage.set({ activity: [...fresh, ...activity].slice(0, 100) });
   const loud = fresh.filter((e) => settings.notifications && settings.notifyOn[EVENT_TYPES[e.type]?.setting] !== false);

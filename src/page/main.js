@@ -12,7 +12,7 @@ import { bindSearch, focusSearch } from "./search.js";
 import { applyTheme, bindSettings, checkBob, connect, onSettingsChange, openSettings, renderSettings, settingsActions } from "./settings.js";
 import { renderToday, toggleTodo, todayActions, addTodos } from "./today.js";
 import { $, $$, agoText, connected, state, toast } from "./ui.js";
-import { moveInList, renderWork, selectTab, workActions } from "./work.js";
+import { bindWork, moveInList, renderWork, selectTab, workActions } from "./work.js";
 
 /** Every `data-action` on the page, by name. */
 const actions = { ...headerActions, ...workActions, ...todayActions, ...settingsActions, ...bobActions, ...editorActions };
@@ -181,6 +181,7 @@ async function start() {
   // Repo menus live apart from their buttons, so mark the button whose menu is open (its chevron turns).
   $("#repo-menus").addEventListener("toggle", (e) => $(`[popovertarget="${e.target.id}"]`)?.classList.toggle("is-open", e.newState === "open"), true);
   bindSearch();
+  bindWork();
   bindActivity();
   bindSettings();
   bindEditor();

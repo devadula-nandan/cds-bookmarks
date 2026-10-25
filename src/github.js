@@ -5,7 +5,7 @@ import { isBot } from "./insights.js";
 
 const API = "https://api.github.com";
 
-export class GitHubError extends Error {
+class GitHubError extends Error {
   constructor(message, status, sso = null) {
     super(message);
     this.status = status;

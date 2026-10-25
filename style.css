@@ -1666,7 +1666,7 @@ a.item__title::after {
   background: var(--surface);
 }
 
-/* A bigger target than the dot itself, so its tooltip (the page's shared one) is easy to hit. */
+/* A bigger target than the dot itself, so its times (the title tooltip) are easy to hover. */
 .agenda__dot::before {
   content: "";
   position: absolute;
@@ -3287,17 +3287,17 @@ a.bob__subtitle:hover {
   max-height: min(860px, calc(100vh - 48px));
 }
 
-.schema-actions {
+.editor-actions {
   margin: 12px 0 0;
 }
 
-.schema-repo {
+.editor-repo {
   margin-bottom: 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
 
-.schema-repo summary {
+.editor-repo summary {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -3307,15 +3307,15 @@ a.bob__subtitle:hover {
   cursor: pointer;
 }
 
-.schema-repo summary::-webkit-details-marker {
+.editor-repo summary::-webkit-details-marker {
   display: none;
 }
 
-.schema-repo summary:hover {
+.editor-repo summary:hover {
   background: var(--surface-hover);
 }
 
-.schema-repo__logo {
+.editor-repo__logo {
   display: grid;
   flex: none;
   place-items: center;
@@ -3323,12 +3323,12 @@ a.bob__subtitle:hover {
   height: 24px;
 }
 
-.schema-repo__logo svg {
+.editor-repo__logo svg {
   width: 20px;
   height: 20px;
 }
 
-.schema-repo__name {
+.editor-repo__name {
   display: flex;
   flex: 1;
   align-items: baseline;
@@ -3337,28 +3337,28 @@ a.bob__subtitle:hover {
   font-weight: 500;
 }
 
-.schema-repo__name small {
+.editor-repo__name small {
   color: var(--text-3);
   font-weight: 400;
 }
 
-.schema-repo__body {
+.editor-repo__body {
   display: grid;
   gap: 12px;
   padding: 4px 12px 14px;
 }
 
-.schema-repo__body .hint {
+.editor-repo__body .hint {
   margin: 0;
 }
 
-.schema-svg {
+.editor-svg {
   min-height: 64px;
   font-size: 12px;
   resize: vertical;
 }
 
-.schema-group {
+.editor-group {
   display: grid;
   gap: 8px;
   margin: 0;
@@ -3367,49 +3367,49 @@ a.bob__subtitle:hover {
   border-radius: var(--radius-sm);
 }
 
-.schema-group__head {
+.editor-group__head {
   display: flex;
   align-items: end;
   gap: 8px;
 }
 
-.schema-group__head .field {
+.editor-group__head .field {
   flex: 1;
 }
 
-.schema-group__head .btn {
+.editor-group__head .btn {
   margin-bottom: 4px;
 }
 
-.schema-group > .btn,
-.schema-repo__body > .btn {
+.editor-group > .btn,
+.editor-repo__body > .btn {
   justify-self: start;
 }
 
-.schema-link {
+.editor-link {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1.4fr) minmax(0, 0.6fr) auto;
   align-items: end;
   gap: 8px;
 }
 
-.schema-link + .schema-link .field span {
+.editor-link + .editor-link .field span {
   display: none;
 }
 
-.schema-link__remove {
+.editor-link__remove {
   margin-bottom: 4px;
   color: var(--text-3);
 }
 
-.schema-add {
+.editor-add {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin: 0;
 }
 
-.schema__foot {
+.editor__foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3418,18 +3418,18 @@ a.bob__subtitle:hover {
   border-top: 1px solid var(--border);
 }
 
-.schema__spacer {
+.editor__spacer {
   flex: 1;
 }
 
 @media (max-width: 720px) {
-  .schema-link {
+  .editor-link {
     grid-template-columns: minmax(0, 1fr) auto;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
   }
 
-  .schema-link + .schema-link .field span {
+  .editor-link + .editor-link .field span {
     display: block;
   }
 }
@@ -3683,7 +3683,7 @@ a.bob__subtitle:hover {
     font-size: 13px;
   }
 
-  .schema-repo__name small {
+  .editor-repo__name small {
     display: none;
   }
 }

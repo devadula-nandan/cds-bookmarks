@@ -11,7 +11,7 @@ const GROUPS = [
   ["github", "GitHub"],
   ["website", "Website"],
   ["storybooks", "Storybooks"],
-  ["others", "Others"],
+  ["others", "Playgrounds"],
 ];
 // Optional fields: left out of the JSON when blank.
 const OPTIONAL = new Set(["short", "clone", "versionedHref", "version"]);
@@ -20,7 +20,7 @@ let draft = [];
 // Repos unfolded in the editor, kept across re-renders (by entry, so moving one keeps it open).
 const unfolded = new WeakSet();
 
-export async function openEditor() {
+async function openEditor() {
   draft = rawRepos();
   render();
   const dialog = $("#repo-editor");
@@ -34,12 +34,12 @@ function field(path, label, value, { mono = false, placeholder = "" } = {}) {
 function linkRow(path, link, j) {
   const p = `${path}.buttons.${j}`;
   return `
-    <div class="schema-link">
+    <div class="editor-link">
       ${field(`${p}.label`, "Label", link.label)}
       ${field(`${p}.href`, "URL", link.href, { mono: true, placeholder: "https://…" })}
       ${field(`${p}.versionedHref`, "Versioned URL", link.versionedHref, { mono: true, placeholder: "Optional, uses <v>" })}
       ${field(`${p}.version`, "Version", link.version, { placeholder: "Optional" })}
-      <button class="icon-btn icon-btn--sm schema-link__remove" data-action="editor-remove" data-path="${p}" aria-label="Remove ${esc(link.label || "link")}" title="Remove link">${icon("trash", 14)}</button>
+      <button class="icon-btn icon-btn--sm editor-link__remove" data-action="editor-remove" data-path="${p}" aria-label="Remove ${esc(link.label || "link")}" title="Remove link">${icon("trash", 14)}</button>
     </div>`;
 }
 
@@ -48,8 +48,8 @@ function groupBlock(entry, i, key, fallback) {
   if (!group) return "";
   const path = `${i}.${key}`;
   return `
-    <fieldset class="schema-group">
-      <div class="schema-group__head">
+    <fieldset class="editor-group">
+      <div class="editor-group__head">
         ${field(`${path}.title`, `${fallback} group title`, group.title)}
         <button class="btn btn--ghost btn--sm" data-action="editor-remove" data-path="${path}">Remove group</button>
       </div>
@@ -61,25 +61,25 @@ function groupBlock(entry, i, key, fallback) {
 function repoBlock(entry, i) {
   const missing = GROUPS.filter(([key]) => !entry[key]);
   return `
-    <details class="schema-repo" data-index="${i}" ${unfolded.has(entry) ? "open" : ""}>
+    <details class="editor-repo" data-index="${i}" ${unfolded.has(entry) ? "open" : ""}>
       <summary>
-        <span class="schema-repo__logo" aria-hidden="true">${entry.icon || ""}</span>
-        <span class="schema-repo__name">${esc(entry.name || "Untitled repo")}<small class="mono">${esc(entry.id || "")}</small></span>
+        <span class="editor-repo__logo" aria-hidden="true">${entry.icon || ""}</span>
+        <span class="editor-repo__name">${esc(entry.name || "Untitled repo")}<small class="mono">${esc(entry.id || "")}</small></span>
         <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index="${i}" data-by="-1" aria-label="Move up" title="Move up" ${i ? "" : "disabled"}>${icon("arrowUp", 14)}</button>
         <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index="${i}" data-by="1" aria-label="Move down" title="Move down" ${i < draft.length - 1 ? "" : "disabled"}>${icon("arrowDown", 14)}</button>
         <button class="icon-btn icon-btn--sm" data-action="editor-remove" data-path="${i}" aria-label="Remove ${esc(entry.name || "repo")}" title="Remove repo">${icon("trash", 14)}</button>
       </summary>
-      <div class="schema-repo__body">
+      <div class="editor-repo__body">
         <div class="fields">
           ${field(`${i}.id`, "ID", entry.id, { mono: true, placeholder: "cds" })}
           ${field(`${i}.name`, "Name", entry.name, { placeholder: "Carbon Design System" })}
           ${field(`${i}.short`, "Short name", entry.short, { placeholder: "Optional, for tight spots" })}
           ${field(`${i}.clone`, "Local clone", entry.clone, { mono: true, placeholder: "Optional, like ~/Source/carbon" })}
         </div>
-        <label class="field"><span>Logo (SVG)</span><textarea class="input mono schema-svg" rows="3" data-path="${i}.icon" spellcheck="false">${esc(entry.icon || "")}</textarea></label>
+        <label class="field"><span>Logo (SVG)</span><textarea class="input mono editor-svg" rows="3" data-path="${i}.icon" spellcheck="false">${esc(entry.icon || "")}</textarea></label>
         <p class="hint">The GitHub repo comes from a GitHub link to its issues or pulls, and the sprint board from a link labelled “Board”.</p>
         ${GROUPS.map(([key, title]) => groupBlock(entry, i, key, title)).join("")}
-        ${missing.length ? `<p class="schema-add">${missing.map(([key, title]) => `<button class="btn btn--ghost btn--sm" data-action="editor-add-group" data-index="${i}" data-key="${key}">${icon("plus", 14)}${title} group</button>`).join("")}</p>` : ""}
+        ${missing.length ? `<p class="editor-add">${missing.map(([key, title]) => `<button class="btn btn--ghost btn--sm" data-action="editor-add-group" data-index="${i}" data-key="${key}">${icon("plus", 14)}${title} group</button>`).join("")}</p>` : ""}
       </div>
     </details>`;
 }
@@ -98,10 +98,10 @@ function render() {
       ${draft.map(repoBlock).join("")}
       <button class="btn btn--sm" data-action="editor-add-repo">${icon("plus", 14)}Add repository</button>
     </div>
-    <footer class="schema__foot">
-      <label class="btn btn--ghost btn--sm">Import JSON<input type="file" accept="application/json,.json" data-schema-import hidden></label>
+    <footer class="editor__foot">
+      <label class="btn btn--ghost btn--sm">Import JSON<input type="file" accept="application/json,.json" data-editor-import hidden></label>
       <button class="btn btn--ghost btn--sm" data-action="editor-reset">Reset to bookmarks.json</button>
-      <span class="schema__spacer"></span>
+      <span class="editor__spacer"></span>
       <button class="btn btn--sm" data-action="repo-export">Export JSON</button>
       <button class="btn btn--primary btn--sm" data-action="editor-save">Save</button>
     </footer>`;
@@ -129,14 +129,14 @@ export function bindEditor() {
   el.addEventListener(
     "toggle",
     (e) => {
-      if (!e.target.matches(".schema-repo")) return;
+      if (!e.target.matches(".editor-repo")) return;
       const entry = draft[e.target.dataset.index];
       if (entry) e.target.open ? unfolded.add(entry) : unfolded.delete(entry);
     },
     true
   );
   el.addEventListener("change", async (e) => {
-    if (!e.target.matches("[data-schema-import]")) return;
+    if (!e.target.matches("[data-editor-import]")) return;
     const file = e.target.files?.[0];
     if (!file) return;
     try {
@@ -152,7 +152,7 @@ export function bindEditor() {
 }
 
 /** Downloads `list` as bookmarks.json. */
-export function exportJson(list = rawRepos()) {
+function exportJson(list = rawRepos()) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(list, null, 2) + "\n"], { type: "application/json" }));
   const a = Object.assign(document.createElement("a"), { href: url, download: "bookmarks.json" });
   a.click();
