@@ -9,6 +9,7 @@ import { icon } from "./icons.js";
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+export const PRIVACY_URL = "https://github.com/devadula-nandan/cds-bookmarks/blob/main/PRIVACY.md";
 export const CLASSIC_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo,notifications,read:org&description=Dev%20Dashboard";
 
 /** Everything the page shows. main.js loads it from storage and keeps it current as storage changes. */

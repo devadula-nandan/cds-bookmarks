@@ -6,7 +6,7 @@ import { repoBySlug } from "../repos.js";
 import { syncNotice } from "./header.js";
 import { icon } from "./icons.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, issueItems, keepFocus, listSection, ref, repoScope, row, saveView, searchUrl, setHtml, skeleton, state, toast, view } from "./ui.js";
+import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, issueItems, keepFocus, listSection, ref, repoScope, row, saveView, searchUrl, setHtml, skeleton, state, toast, view } from "./ui.js";
 
 // ---------- rows ----------
 
@@ -216,7 +216,7 @@ function connectView() {
         <input class="input" type="password" name="token" placeholder="ghp_…" autocomplete="off" aria-label="GitHub token" data-focus="connect-token" required>
         <button class="btn btn--primary" type="submit">Connect</button>
       </form>
-      <p class="connect__note">The token stays in this browser and is only sent to api.github.com.</p>
+      <p class="connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to api.github.com. <a href="${PRIVACY_URL}">Privacy policy</a></p>
     </div>`;
 }
 

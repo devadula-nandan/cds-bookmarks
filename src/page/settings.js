@@ -57,7 +57,7 @@ function bobSection(s) {
   return section(
     "bob",
     "Bob",
-    `${toggle({ attrs: 'data-setting="ai"', checked: s.ai, label: "Bob actions", hint: "Review briefs, CI explanations, day plans, standups and answers from IBM Bob, when you ask" })}
+    `${toggle({ attrs: 'data-setting="ai"', checked: s.ai, label: "Bob actions", hint: "Review briefs, CI explanations, day plans, standups and answers from IBM Bob, when you ask. Only when you click a Bob action, your question and the item's link are sent to IBM through Bob Shell on this computer" })}
      ${
        s.ai
          ? `<p class="status-line">${helper}<button class="btn btn--ghost btn--sm" data-action="bob-check">Check again</button><button class="btn btn--ghost btn--sm" data-action="bob-test" ${s.bobKey && st.ok ? "" : "disabled"}>Send a test prompt</button></p>
