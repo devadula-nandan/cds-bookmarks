@@ -5,7 +5,8 @@
 set -eu
 
 NAME="com.devdashboard.bob"
-EXTENSION_ID="ogpphggbmdgamakbhoikiejheaihopbo" # pinned by the `key` in manifest.json
+EXTENSION_ID="ogpphggbmdgamakbhoikiejheaihopbo" # unpacked, pinned by the `key` in manifest.json
+STORE_ID="kkfeeieiijlklgllbahnppmefcfcahkm"     # Chrome Web Store
 HERE=$(cd "$(dirname "$0")" && pwd)
 HOST_DIR="$HOME/.dev-dashboard"
 LAUNCHER="$HOST_DIR/bob-host"
@@ -76,7 +77,7 @@ MANIFEST=$(cat <<EOF
   "description": "Lets Dev Dashboard ask Bob Shell",
   "path": "$LAUNCHER",
   "type": "stdio",
-  "allowed_origins": ["chrome-extension://$EXTENSION_ID/"]
+  "allowed_origins": ["chrome-extension://$EXTENSION_ID/", "chrome-extension://$STORE_ID/"]
 }
 EOF
 )

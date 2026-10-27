@@ -21,7 +21,7 @@ Shortcuts: `J`/`K` move through your work, `S` snoozes, `R` syncs, `A` opens Act
 3. Open a new tab and choose **Keep it** if Chrome asks.
 4. Create a [classic GitHub token](https://github.com/settings/tokens/new?scopes=repo,notifications,read:org&description=Dev%20Dashboard) with `repo`, `notifications` and `read:org`, authorize it for the `carbon-design-system` org's SSO, and paste it into the new tab.
 
-The token stays in the extension's storage and is only sent to `api.github.com`.
+The token stays in the extension's storage and is only sent to `api.github.com`. See the [privacy policy](PRIVACY.md).
 
 To update, replace the folder's files with a newer release and click the reload icon on the extension's card. Don't remove the extension: that erases your token, settings and to-dos. To track `main` instead, load a clone of this repo and `git pull` to update.
 
@@ -29,7 +29,7 @@ To update, replace the folder's files with a newer release and click the reload 
 
 Bob actions run [Bob Shell](https://bob.ibm.com/docs/shell) 2.0+ on your computer through a small helper.
 
-1. Install Bob Shell, then from the extension folder run `sh ai-helper/install.sh` (`--uninstall` removes it).
+1. Install Bob Shell, then from the extension folder run `sh ai-helper/install.sh` (`--uninstall` removes it). If you installed from the Chrome Web Store, run it from a clone of this repo or an unzipped release.
 2. In **Settings → Bob**, turn on **Bob actions** and paste an **Inference** API key from [bob.ibm.com](https://bob.ibm.com).
 
 | Where | What Bob does |
