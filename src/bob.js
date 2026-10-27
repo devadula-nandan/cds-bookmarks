@@ -210,6 +210,23 @@ Reply with only the query on one line.
 Request: ${request}`;
 }
 
+/** Fills the repo's GitHub bug report form for a bug-of-the-day report. The reply is JSON: field id → value. */
+export function issueFormPrompt(report) {
+  return `Fill in ${report.repo}'s GitHub bug report form for the bug below. You're in a clone of it: read the form at .github/ISSUE_TEMPLATE/BUG_REPORT.yaml (or fetch it with gh if it isn't there).
+Reply with only one JSON object mapping each field's id to its value, and nothing else:
+- Dropdowns: exactly one of that field's options, character for character (YAML folds long options onto one line with single spaces). For multi-select dropdowns, join several options with ", ".
+- The package version: the "version" in that package's package.json here.
+- Browser: the browsers the bug affects (all of them if it isn't browser-specific).
+- The reproduction link: a public Storybook or StackBlitz URL where the bug shows, such as the component's story on the repo's deployed Storybook.
+- Steps to reproduce: a short numbered Markdown list.
+- Severity: from how much the bug blocks a user.
+- Project name: "Carbon Design System".
+- Leave out the title and description (they're filled in already), checkboxes, and anything you can't fill.
+
+The bug:
+${report.markdown}`;
+}
+
 export const TEST_PROMPT = "Reply with one short sentence confirming you can read this, and name the model you are if you know it.";
 
 /** A follow-up: the first question, the conversation so far, and the new question. */

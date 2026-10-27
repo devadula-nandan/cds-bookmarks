@@ -1,6 +1,6 @@
 // The Today card: today's meetings on a timeline, the bug of the day, to-dos and the standup button.
 
-import { todaysAnswer } from "../bob.js";
+import { askBob, issueFormPrompt, todaysAnswer } from "../bob.js";
 import { esc, fmtTime, parseTime, plural, repoShort, storage, todayKey, uid, updateDay } from "../core.js";
 import { huntableRepos, isHunting } from "../hunt.js";
 import { standup } from "../insights.js";
@@ -126,7 +126,24 @@ async function huntNow() {
   else toast(res?.error || "Couldn't start the bug hunt.", res?.skipped ? "neutral" : "error");
 }
 
-/** Details under a hunt report: confidence, a VS Code link, related issues and earlier hunts. */
+/**
+ * A new GitHub issue for a bug report: the repo's Bug report form with the title, description and the
+ * form's other fields (`report.issue`, filled in by Bob) set. GitHub rejects URLs much over 8,000
+ * characters, so a long description is trimmed to fit.
+ */
+function issueUrl(report) {
+  const where = `Found in \`${report.file}${report.line ? `:${report.line}` : ""}\` at ${report.branch} (${String(report.head || "").slice(0, 7)}).`;
+  // The report's own "## title" line is the issue title.
+  const full = `${where}\n\n${report.markdown.replace(/^##[^\n]*\n+/, "")}`;
+  // carbon-charts' form calls the field "what-happened"; the other Carbon repos call it "description".
+  const field = report.repo.endsWith("/carbon-charts") ? "what-happened" : "description";
+  const url = (text) => `https://github.com/${report.repo}/issues/new?${new URLSearchParams({ ...report.issue, template: "BUG_REPORT.yaml", title: `[Bug]: ${report.title}`, [field]: text })}`;
+  let body = full;
+  while (url(body).length > 7000) body = `${full.slice(0, Math.floor(body.length * 0.85))}\n\n…`;
+  return url(body);
+}
+
+/** Details under a hunt report: confidence, links to the code and a new GitHub issue, related issues and earlier hunts. */
 function reportDetails(report, earlierOpen) {
   const chips = [report.severity && `${report.severity} severity`, report.effort, report.confidence && `${report.confidence} confidence`].filter(Boolean);
   const code = report.file && vscodeUrl(report.path, report.file, report.line);
@@ -134,7 +151,10 @@ function reportDetails(report, earlierOpen) {
   return `
     <div class="bob__report-meta">
       ${chips.length ? `<p class="bob__chips">${chips.map((c) => `<span class="chip">${esc(c)}</span>`).join("")}</p>` : ""}
-      ${code ? `<p class="bob__label"><a class="link link--bob" href="${esc(code)}">${icon("code", 14)}Open ${esc(report.file.split("/").pop())}${report.line ? `:${report.line}` : ""} in VS Code</a></p>` : ""}
+      <p class="bob__label bob__links-row">
+        ${code ? `<a class="link link--bob" href="${esc(code)}">${icon("code", 14)}Open ${esc(report.file.split("/").pop())}${report.line ? `:${report.line}` : ""} in VS Code</a>` : ""}
+        ${report.found ? `<button class="link link--bob" data-action="hunt-issue" data-id="${esc(report.id)}" data-tooltip="Opens the repo's Bug report form with this report filled in">${icon("github", 14)}Open a GitHub issue</button>` : ""}
+      </p>
       <p class="bob__label">Checked ${esc(repoShort(report.repo))} at <span class="mono">${esc(report.branch)} ${esc(String(report.head || "").slice(0, 7))}</span> in <span class="mono">${esc(report.path)}</span></p>
       ${
         report.related?.length
@@ -180,6 +200,24 @@ export const todayActions = {
   "hunt-run": huntNow,
   // From the Earlier hunts list, the next report keeps that list open.
   "hunt-open": (el) => openReport(state.bugHunts.find((h) => h.id === el.dataset.id), !!el.closest(".hunt-earlier")),
+  // The first time, Bob fills in the form's fields from the repo's template; they're saved on the report.
+  "hunt-issue": async (el) => {
+    const report = state.bugHunts.find((h) => h.id === el.dataset.id);
+    if (!report.issue) {
+      el.disabled = true;
+      el.lastChild.textContent = "Bob is filling in the form…";
+      try {
+        const { text } = await askBob(issueFormPrompt(report), state.settings, { workspace: report.path });
+        report.issue = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+        await storage.set({ bugHunts: state.bugHunts });
+      } catch (err) {
+        toast(`Couldn't fill in the issue form (${err.message}). Opening it with the title and description only.`, "error");
+      }
+      el.disabled = false;
+      el.lastChild.textContent = "Open a GitHub issue";
+    }
+    chrome.tabs.create({ url: issueUrl(report) });
+  },
   "hunt-delete": async (el) => {
     el.closest("li").remove();
     state.bugHunts = state.bugHunts.filter((h) => h.id !== el.dataset.id);

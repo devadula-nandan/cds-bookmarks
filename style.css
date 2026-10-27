@@ -2493,6 +2493,13 @@ a.item__title::after {
   }
 }
 
+/* A bug report's links (VS Code, new GitHub issue) side by side. */
+.bob__links-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+}
+
 /* ---------- toasts ---------- */
 
 .toasts {
