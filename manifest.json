@@ -3,7 +3,7 @@
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAve0OY6aVMTBt8EZZ3WCZb/TDPdVQSILQWRM/mbou2eZg22VXNfFt1Hpvs3tkBnKb3peA17MSnBM2hF3lyc+5pEjK/0SaPvwst6o4ZLoXVPQa7uRDLq1y1WIYGSAvgzHM4FdCgYiClkf+ydicADt7vCh3UudKAtOg8UhgI6HvoM4cRhkLsFvYVopkbdtLyUeaesmwDMeyXGwrCFLG7R+tc9oFGWGFLvD168fZHoNLzbTZPcmOyUzqJt5rCO20zu3L4uWngzpnOjLfdJIDiWi+Ogi3K0vAeQzikyDuzY9wras/7lW3IhUPr4A6NSm87XM6z44UvSBS4+i+DI81NjBOAwIDAQAB",
   "name": "Dev Dashboard",
   "short_name": "Dev Dashboard",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Your reviews, PRs, CI status and Carbon links on every new tab.",
   "minimum_chrome_version": "125",
   "chrome_url_overrides": {
