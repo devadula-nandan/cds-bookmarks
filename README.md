@@ -16,6 +16,10 @@ Shortcuts: `J`/`K` move through your work, `S` snoozes, `R` syncs, `A` opens Act
 
 ## Install
 
+Install [Dev Dashboard from the Chrome Web Store](https://chromewebstore.google.com/detail/kkfeeieiijlklgllbahnppmefcfcahkm). It updates itself. Then open a new tab and do steps 3 and 4 below.
+
+Or load it unpacked:
+
 1. Download `dev-dashboard.zip` from the [latest release](https://github.com/devadula-nandan/cds-bookmarks/releases/latest), unzip it and keep the `dev-dashboard` folder somewhere permanent.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose that folder.
 3. Open a new tab and choose **Keep it** if Chrome asks.
@@ -23,7 +27,7 @@ Shortcuts: `J`/`K` move through your work, `S` snoozes, `R` syncs, `A` opens Act
 
 The token stays in the extension's storage and is only sent to `api.github.com`. See the [privacy policy](PRIVACY.md).
 
-To update, replace the folder's files with a newer release and click the reload icon on the extension's card. Don't remove the extension: that erases your token, settings and to-dos. To track `main` instead, load a clone of this repo and `git pull` to update.
+To update an unpacked install, replace the folder's files with a newer release and click the reload icon on the extension's card. Don't remove the extension: that erases your token, settings and to-dos. To track `main` instead, load a clone of this repo and `git pull` to update.
 
 ## Bob
 
