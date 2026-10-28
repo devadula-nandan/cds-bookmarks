@@ -1,10 +1,29 @@
 name: chrome-web-store-publish
 
+# Run workflow: bumps the version in manifest.json, uploads to the Chrome Web
+# Store, then pushes the "Release x.y.z" commit, the vx.y.z tag and a GitHub
+# release with the zip. A failed upload pushes nothing, so no version is lost.
+# Pushing a v* tag yourself skips the bump and publishes the manifest as is.
 on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ZIP: dist/dev-dashboard.zip
 
 jobs:
   publish:
@@ -12,14 +31,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Bump version
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          node -e "
+            const fs = require('fs');
+            const text = fs.readFileSync('manifest.json', 'utf8');
+            const [major, minor, patch] = JSON.parse(text).version.split('.').map(Number);
+            const next = {
+              major: [major + 1, 0, 0],
+              minor: [major, minor + 1, 0],
+              patch: [major, minor, patch + 1],
+            }['${{ inputs.bump }}'].join('.');
+            fs.writeFileSync('manifest.json', text.replace(/(\"version\": \")[^\"]+/, '\$1' + next));
+          "
+
+      - name: Read version
+        id: version
+        run: echo "version=$(node -p "require('./manifest.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Build extension zip
         run: sh scripts/package.sh
 
       - name: Upload to Chrome Web Store
         uses: mnao305/chrome-extension-upload@v5.0.0
         with:
-          file-path: dist/dev-dashboard.zip
+          file-path: ${{ env.ZIP }}
           extension-id: ${{ secrets.CHROME_EXTENSION_ID }}
           client-id: ${{ secrets.CHROME_CLIENT_ID }}
           client-secret: ${{ secrets.CHROME_CLIENT_SECRET }}
           refresh-token: ${{ secrets.CHROME_REFRESH_TOKEN }}
+
+      - name: Push release commit and tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "Release ${{ steps.version.outputs.version }}"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "HEAD:${{ github.ref_name }}" "v${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v${{ steps.version.outputs.version }}" "$ZIP" --generate-notes

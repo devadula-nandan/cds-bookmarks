@@ -122,8 +122,17 @@ Data flows one way: the background worker syncs GitHub into `chrome.storage.loca
 
 ## Releasing
 
-1. Bump `version` in `manifest.json`.
-2. Push a `v*` tag (for example `v2.0.1`). The `chrome-web-store-publish` workflow builds the zip with `scripts/package.sh` and uploads it to the Chrome Web Store.
-3. For the GitHub release download, run `./scripts/package.sh` and attach `dist/dev-dashboard.zip` to the release, keeping that file name.
+In GitHub, open **Actions → chrome-web-store-publish → Run workflow**, pick
+`patch`, `minor` or `major`, and run it. The workflow bumps `version` in
+`manifest.json`, uploads the zip to the Chrome Web Store and submits it for
+review. Once the upload works, it pushes a `Release x.y.z` commit and a
+`vx.y.z` tag, and makes a GitHub release with `dev-dashboard.zip` attached. If the
+upload fails (for example while the last version is still in review),
+nothing is pushed.
+
+From the terminal: `gh workflow run chrome-web-store-publish -f bump=patch`.
+
+Pushing a `v*` tag yourself also publishes, without bumping, so bump
+`version` first (for example to `2.0.2`).
 
 Don't change `key` in `manifest.json`: it pins the extension ID, which keeps everyone's settings across updates and lets the Bob helper recognize the extension.
