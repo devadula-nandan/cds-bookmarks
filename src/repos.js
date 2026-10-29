@@ -12,14 +12,18 @@ let raw = [];
 /** One bookmarks.json entry → what the rest of the app uses. */
 function build(entry) {
   const links = entry.github?.buttons || [];
+  // The GitHub repo comes from its issues or pulls link, on github.com or a GitHub Enterprise host.
+  const [, host = null, slug = null] = links.map((b) => b.href?.match(/^https:\/\/([^/]+)\/([^/]+\/[^/?#]+)\/(issues|pulls)/)).find(Boolean) || [];
   return {
     id: entry.id,
     name: entry.name,
     short: entry.short || entry.name,
     logo: entry.icon,
     clone: entry.clone || null,
-    // The GitHub repo comes from its issues or pulls link; the sprint board from a link labelled "Board".
-    slug: links.map((b) => b.href?.match(/github\.com\/([^/]+\/[^/?#]+)\/(issues|pulls)/)?.[1]).find(Boolean) || null,
+    host,
+    slug,
+    url: slug && `https://${host}/${slug}`,
+    // The sprint board is the link labelled "Board".
     board: links.find((b) => /board/i.test(b.label))?.href || null,
     groups: GROUPS.filter((key) => entry[key]?.buttons?.length).map((key) => ({ title: entry[key].title, links: entry[key].buttons })),
   };
@@ -52,6 +56,12 @@ export const rawRepos = () => structuredClone(raw);
 export const enabledRepos = (settings) => repos.filter((r) => r.slug && !settings.disabledRepos.includes(r.id));
 
 export const repoBySlug = (slug) => repos.find((r) => r.slug?.toLowerCase() === String(slug).toLowerCase());
+
+/** The GitHub hosts the enabled repos are on, github.com first. */
+export const repoHosts = (settings) => [...new Set(enabledRepos(settings).map((r) => r.host))].sort((a, b) => (b === "github.com") - (a === "github.com"));
+
+/** "owner/name", or "github.ibm.com/owner/name" off github.com, for prompts. */
+export const repoName = (r) => (r.host === "github.com" ? r.slug : `${r.host}/${r.slug}`);
 
 /** "Carbon" for "carbon-design-system/carbon". */
 export const repoLabel = (slug) => repoBySlug(slug)?.short || repoShort(slug);

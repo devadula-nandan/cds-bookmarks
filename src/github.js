@@ -1,9 +1,8 @@
 // Talking to GitHub: one GraphQL query for the whole dashboard, plus the notifications inbox.
+// Every call names its host: github.com or a GitHub Enterprise Server such as github.ibm.com.
 
-import { previousWorkday, todayKey } from "./core.js";
+import { apiUrl, previousWorkday, todayKey } from "./core.js";
 import { isBot } from "./insights.js";
-
-const API = "https://api.github.com";
 
 class GitHubError extends Error {
   constructor(message, status, sso = null) {
@@ -14,33 +13,34 @@ class GitHubError extends Error {
   }
 }
 
-async function request(path, token, init = {}) {
+async function request(host, path, token, init = {}) {
+  const url = apiUrl(host, path);
   let res;
   try {
-    res = await fetch(API + path, {
+    res = await fetch(url, {
       ...init,
       headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     });
   } catch {
-    throw new GitHubError("Couldn't reach api.github.com. Check your network, VPN or proxy.", 0);
+    throw new GitHubError(`Couldn't reach ${new URL(url).host}. Check your network, VPN or proxy.`, 0);
   }
   const header = res.headers.get("X-GitHub-SSO") || "";
-  const sso = header.match(/url=(\S+)/)?.[1] || (header.includes("required") ? "https://github.com/settings/tokens" : null);
-  if (res.status === 401) throw new GitHubError("GitHub rejected the token (401). It may be expired, revoked, or for a different GitHub host.", 401);
-  if (!res.ok) throw new GitHubError(`GitHub request failed (${res.status})`, res.status, sso);
+  const sso = header.match(/url=(\S+)/)?.[1] || (header.includes("required") ? `https://${host}/settings/tokens` : null);
+  if (res.status === 401) throw new GitHubError(`${host} rejected the token (401). It may be expired, revoked, or for a different GitHub host.`, 401);
+  if (!res.ok) throw new GitHubError(`${host} request failed (${res.status})`, res.status, sso);
   return { json: await res.json(), sso, scopes: res.headers.get("X-OAuth-Scopes") };
 }
 
 /** Returns `{ data, errors, sso, scopes }`; `scopes` is null for fine-grained tokens. */
-async function graphql(token, query, variables = {}) {
-  const { json, sso, scopes } = await request("/graphql", token, { method: "POST", body: JSON.stringify({ query, variables }) });
+async function graphql(host, token, query, variables = {}) {
+  const { json, sso, scopes } = await request(host, "/graphql", token, { method: "POST", body: JSON.stringify({ query, variables }) });
   const errors = [...new Set((json.errors || []).map((e) => e.message))];
   if (errors.length && !json.data) throw new GitHubError(errors[0], 200, sso);
   return { data: json.data, errors, sso, scopes };
 }
 
-export async function fetchViewer(token) {
-  const { data, scopes } = await graphql(token, "query { viewer { login name } }");
+export async function fetchViewer(host, token) {
+  const { data, scopes } = await graphql(host, token, "query { viewer { login name } }");
   return { ...data.viewer, scopes };
 }
 
@@ -178,7 +178,7 @@ function following(commented, eyed, watching) {
   });
 }
 
-export async function fetchDashboard({ token, login, repos, includeTeamReviews, watching = {} }) {
+export async function fetchDashboard({ host, token, login, repos, includeTeamReviews, watching = {} }) {
   const scope = repos.map((r) => `repo:${r.slug}`).join(" ");
   const daysAgo = (n) => todayKey(new Date(Date.now() - n * 86400000));
   const queries = {
@@ -195,9 +195,9 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
     reviewedOpen: `is:pr is:open reviewed-by:${login} -author:${login} ${scope}`,
   };
 
-  const { data, errors, sso, scopes } = await graphql(token, dashboardQuery(repos), { ...queries, watched: Object.keys(watching).slice(0, 60), login });
+  const { data, errors, sso, scopes } = await graphql(host, token, dashboardQuery(repos), { ...queries, watched: Object.keys(watching).slice(0, 60), login });
   const failed = Object.keys(queries).filter((k) => !data[k]);
-  if (failed.length === Object.keys(queries).length) throw new GitHubError(errors[0] || "GitHub returned no data for your searches.", 200, sso);
+  if (failed.length === Object.keys(queries).length) throw new GitHubError(errors[0] || `${host} returned no data for your searches.`, 200, sso);
 
   const health = {};
   repos.forEach((r, i) => {
@@ -244,9 +244,9 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
 // ---------- the notifications inbox ----------
 
 /** GitHub's own notifications for these repos. Needs a classic token with the `notifications` or `repo` scope. */
-export async function fetchInbox(token, repos) {
+export async function fetchInbox(host, token, repos) {
   const slugs = new Set(repos.map((r) => r.slug.toLowerCase()));
-  const { json } = await request("/notifications?per_page=50", token);
+  const { json } = await request(host, "/notifications?per_page=50", token);
   return json
     .filter((t) => slugs.has(t.repository.full_name.toLowerCase()))
     .map((t) => ({
@@ -259,7 +259,7 @@ export async function fetchInbox(token, repos) {
       url: t.subject.url
         ? t.subject.type === "Release"
           ? `${t.repository.html_url}/releases`
-          : t.subject.url.replace("https://api.github.com/repos/", "https://github.com/").replace(/\/pulls\/(\d+)/, "/pull/$1").replace("/commits/", "/commit/")
+          : t.subject.url.replace(t.repository.url, t.repository.html_url).replace(/\/pulls\/(\d+)/, "/pull/$1").replace("/commits/", "/commit/")
         : `${t.repository.html_url}/notifications`,
     }));
 }

@@ -151,12 +151,13 @@ function git(dir, args) {
  * never touched. Fetches from the remote that points at `slug` (often
  * "upstream" in a fork), else "upstream", else "origin".
  */
-async function huntCheckout({ path: p, slug }) {
+async function huntCheckout({ path: p, slug, host = "github.com" }) {
   try {
     const dir = cloneDir(p);
     const lines = (await gitStrict(dir, ["remote", "-v"])).split("\n");
     const names = [...new Set(lines.map((l) => l.split(/\s+/)[0]).filter(Boolean))];
-    const match = lines.find((l) => new RegExp(`github\\.com[:/]${String(slug).replace(/[.]/g, "\\.")}(\\.git)?\\s`, "i").test(l));
+    const escape = (s) => String(s).replace(/[.]/g, "\\.");
+    const match = lines.find((l) => new RegExp(`${escape(host)}[:/]${escape(slug)}(\\.git)?\\s`, "i").test(l));
     const remote = match ? match.split(/\s+/)[0] : names.includes("upstream") ? "upstream" : "origin";
     await gitStrict(dir, ["fetch", "--quiet", remote, "main"], 180000);
     const head = await gitStrict(dir, ["rev-parse", "FETCH_HEAD"]);

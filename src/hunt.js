@@ -88,7 +88,7 @@ export async function hunt() {
   };
   try {
     // Hunt the latest main in a worktree of its own; if that fails (offline, say), hunt the clone as it is.
-    const git = await huntCheckout(repo.clone, repo.slug).catch(() => gitInfo(repo.clone).then((info) => ({ ...info, path: repo.clone })));
+    const git = await huntCheckout(repo.clone, repo.slug, repo.host).catch(() => gitInfo(repo.clone).then((info) => ({ ...info, path: repo.clone })));
     const previous = bugHunts
       .filter((h) => h.repo === repo.slug && h.found)
       .slice(0, 15)

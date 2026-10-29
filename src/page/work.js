@@ -1,12 +1,12 @@
 // The work panel: the For you / Issues / Pull requests / Following tabs, snoozing, and unfollowing.
 
-import { ageDays, esc, plural, storage, updateDay } from "../core.js";
+import { ageDays, esc, plural, storage, tokenUrl, updateDay } from "../core.js";
 import { bucket, isBot, isSnoozed, prState } from "../insights.js";
 import { repoBySlug } from "../repos.js";
 import { syncNotice } from "./header.js";
 import { icon } from "./icons.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, issueItems, keepFocus, listSection, ref, repoScope, row, saveView, searchUrl, setHtml, skeleton, state, toast, view } from "./ui.js";
+import { $, $$, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, hosts, issueItems, keepFocus, listSection, ref, repoScope, row, saveView, searchLinks, searchUrl, setHtml, skeleton, state, toast, view } from "./ui.js";
 
 // ---------- rows ----------
 
@@ -156,19 +156,19 @@ function forYouTab() {
   return { body, foot };
 }
 
-function issuesTab(d, login) {
+function issuesTab(d) {
   const triage = `is:issue is:open label:"status: needs triage 🕵️‍♀️" ${repoScope()}`;
   const bob = aiOn() && d.triage.items.length ? `<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-triage">${icon("sparkle", 14)}Triage with Bob</button>` : "";
   const items = issueItems(d);
   return {
     body: items.length ? `<ul class="items">${items.map(issueRow).join("")}</ul>` : emptyState("check", "Nothing assigned and no new mentions"),
-    foot: `<span class="work__foot-group"><a class="link" href="${esc(searchUrl(triage))}">${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a>${bob}</span><a class="link" href="${esc(searchUrl(`is:open assignee:${login} ${repoScope()}`))}">Open on GitHub</a>`,
+    foot: `<span class="work__foot-group"><a class="link" href="${esc(searchUrl(triage))}">${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a>${bob}</span>${searchLinks((login, h) => `is:open assignee:${login} ${repoScope(h)}`)}`,
   };
 }
 
 const PR_ORDER = ["ciFailed", "conflict", "changes", "ready", "waiting", "ciRunning", "draft"];
 
-function pullRequestsTab(d, login) {
+function pullRequestsTab(d) {
   const requested = [...d.reviews.items].sort((a, b) => isBot(a.author) - isBot(b.author) || a.createdAt.localeCompare(b.createdAt));
   const mine = [...d.mine.items].sort((a, b) => PR_ORDER.indexOf(prState(a)) - PR_ORDER.indexOf(prState(b)));
   // PRs I've already reviewed that are still open; ones with new commits first.
@@ -180,18 +180,18 @@ function pullRequestsTab(d, login) {
       requested.length || mine.length || reviewed.length
         ? listSection("requested", "Review requested", requested, reviewRow) + listSection("mine", "Yours", mine, myPrRow) + listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, "still open")
         : emptyState("check", "No open pull requests"),
-    foot: `<span>${d.merged.total} merged this week · ${plural(d.reviewed.total, "PR")} reviewed since yesterday</span><a class="link" href="${esc(searchUrl(`is:pr is:open involves:${login} ${repoScope()}`))}">Open on GitHub</a>`,
+    foot: `<span>${d.merged.total} merged this week · ${plural(d.reviewed.total, "PR")} reviewed since yesterday</span>${searchLinks((login, h) => `is:pr is:open involves:${login} ${repoScope(h)}`)}`,
   };
 }
 
-function followingTab(d, login) {
+function followingTab(d) {
   const items = followingItems(d);
   const fresh = items.filter((i) => i.follow.newReply);
   return {
     body: items.length
       ? listSection("replies", "New replies", fresh, followingRow) + listSection("following", fresh.length ? "Following" : "All threads", items.filter((i) => !i.follow.newReply), followingRow)
       : emptyState("eyes", "Not following anything yet", "Issues and PRs you comment on or react to with 👀 show up here."),
-    foot: `<span>👀 threads are picked up when they next get activity</span><a class="link" href="${esc(searchUrl(`is:open commenter:${login} ${repoScope()}`))}">Open on GitHub</a>`,
+    foot: `<span>👀 threads are picked up when they next get activity</span>${searchLinks((login, h) => `is:open commenter:${login} ${repoScope(h)}`)}`,
   };
 }
 
@@ -203,20 +203,21 @@ const TABS = [
 ];
 
 function connectView() {
+  const host = hosts()[0] || "github.com";
   return `
     <div class="connect">
       <span class="connect__mark">${icon("github", 28)}</span>
-      <h2>Connect GitHub</h2>
+      <h2>Connect ${host === "github.com" ? "GitHub" : esc(host)}</h2>
       <p class="connect__lead">See review requests, your PRs, CI status, mentions and main-branch health for your Carbon repos — on every new tab.</p>
       <ol class="connect__steps">
-        <li>Create a <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.</li>
-        <li>Paste it below. Your username is detected automatically.</li>
+        <li>Create a <a href="${esc(tokenUrl(host))}">classic token</a> on ${esc(host)} with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.</li>
+        <li>Paste it below. Your username is detected automatically.${hosts().length > 1 ? " Connect your other GitHub hosts in Settings." : ""}</li>
       </ol>
-      <form class="connect__form" data-form="connect">
+      <form class="connect__form" data-form="connect" data-host="${esc(host)}">
         <input class="input" type="password" name="token" placeholder="ghp_…" autocomplete="off" aria-label="GitHub token" data-focus="connect-token" required>
         <button class="btn btn--primary" type="submit">Connect</button>
       </form>
-      <p class="connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to api.github.com. <a href="${PRIVACY_URL}">Privacy policy</a></p>
+      <p class="connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to ${host === "github.com" ? "api.github.com" : esc(host)}. <a href="${PRIVACY_URL}">Privacy policy</a></p>
     </div>`;
 }
 
@@ -227,8 +228,7 @@ export function renderWork() {
   const d = data();
   if (!TABS.some((t) => t.id === view.tab)) view.tab = "focus";
   const tab = TABS.find((t) => t.id === view.tab);
-  const login = state.settings.login || "@me";
-  const { body, foot } = d ? tab.render(d, login) : { body: state.status.error ? "" : skeleton(), foot: "" };
+  const { body, foot } = d ? tab.render(d) : { body: state.status.error ? "" : skeleton(), foot: "" };
   // A sync re-renders the list: keep the reader's place.
   const scroll = $(".work__panel", el)?.scrollTop || 0;
   keepFocus(el, () =>

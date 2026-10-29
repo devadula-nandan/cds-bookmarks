@@ -1,13 +1,13 @@
 // The Settings sheet. Sections fold like an accordion: opening one closes the others.
 
 import { bobStatus } from "../bob.js";
-import { NOTIFY_LABELS, esc, plural, saveSettings, storage, uid } from "../core.js";
+import { NOTIFY_LABELS, connectedHosts, esc, loadSettings, plural, saveSettings, storage, tokenUrl, uid } from "../core.js";
 import { fetchViewer } from "../github.js";
-import { repos } from "../repos.js";
+import { repoHosts, repos } from "../repos.js";
 import { requestSync } from "./header.js";
 import { icon } from "./icons.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, state, toast, toggle } from "./ui.js";
+import { $, $$, state, toast, toggle } from "./ui.js";
 
 const sheet = () => $("#settings");
 let openSection = "github";
@@ -17,24 +17,34 @@ const section = (id, title, body) =>
 
 const select = (setting, value, options) => `<select class="input input--select" data-setting="${setting}">${options.map(([v, text]) => `<option value="${v}" ${+value === v ? "selected" : ""}>${text}</option>`).join("")}</select>`;
 
-function githubSection(s) {
-  const rate = state.cache?.data?.rateLimit;
+/** One host's token: github.com, or a GitHub Enterprise host such as github.ibm.com. */
+function accountRow(host, s) {
+  const a = s.accounts[host];
+  const on = !!a?.token;
+  const rate = state.cache?.byHost?.[host]?.rateLimit;
+  const count = repos.filter((r) => r.host === host && !s.disabledRepos.includes(r.id)).length;
   const tokenInfo =
-    s.tokenScopes === null
+    a?.scopes === null
       ? "Fine-grained token — the GitHub inbox won't work and org policy may block it. A classic token is recommended."
-      : s.tokenScopes !== undefined && s.token
-        ? `Classic token · scopes: <code>${esc(s.tokenScopes || "none")}</code>`
-        : `Use a <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.`;
+      : on && a.scopes !== undefined
+        ? `Classic token · scopes: <code>${esc(a.scopes || "none")}</code>`
+        : `Use a <a href="${esc(tokenUrl(host))}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.`;
+  return `<p class="status-line"><span class="dot dot--${on ? "success" : "neutral"}"></span><span><b>${esc(host)}</b> · ${on ? `Connected${a.login ? ` as <b>${esc(a.login)}</b>` : ""}` : "Not connected"} · ${plural(count, "repo")}</span></p>
+     <form class="field-row" data-form="connect" data-host="${esc(host)}">
+       <input class="input" type="password" name="token" placeholder="${on ? "Paste a new token to replace it" : "ghp_…"}" autocomplete="off" aria-label="${esc(host)} token">
+       <button class="btn btn--primary" type="submit">${on ? "Replace" : "Connect"}</button>
+       ${on ? `<button class="btn btn--danger" type="button" data-action="disconnect" data-host="${esc(host)}">Disconnect</button>` : ""}
+     </form>
+     <p class="hint">${tokenInfo}${rate ? ` · API budget: ${rate.remaining}/${rate.limit} this hour.` : ""}</p>`;
+}
+
+function githubSection(s) {
+  const hosts = [...new Set([...repoHosts(s), ...connectedHosts(s)])];
   return section(
     "github",
     "GitHub",
-    `<p class="status-line"><span class="dot dot--${s.token ? "success" : "neutral"}"></span>${s.token ? `Connected${s.login ? ` as <b>${esc(s.login)}</b>` : ""}` : "Not connected"}</p>
-     <form class="field-row" data-form="connect">
-       <input class="input" type="password" name="token" placeholder="${s.token ? "Paste a new token to replace it" : "ghp_…"}" autocomplete="off" aria-label="GitHub token">
-       <button class="btn btn--primary" type="submit">${s.token ? "Replace" : "Connect"}</button>
-       ${s.token ? `<button class="btn btn--danger" type="button" data-action="disconnect">Disconnect</button>` : ""}
-     </form>
-     <p class="hint">${tokenInfo}${rate ? ` · API budget: ${rate.remaining}/${rate.limit} this hour.` : ""}</p>
+    `${(hosts.length ? hosts : ["github.com"]).map((h) => accountRow(h, s)).join("")}
+     <p class="hint">Hosts come from your repos' Issues and Pulls links. To add GitHub Enterprise, add a repo whose links are on its host (like <code>https://github.ibm.com/org/repo/issues</code>) under Repositories.</p>
      <div class="fields">
        <label class="field"><span>Check GitHub every</span>${select("pollMinutes", s.pollMinutes, [1, 2, 3, 5, 10, 15].map((m) => [m, `${m} min`]))}</label>
        <label class="field"><span>Reviews are overdue after</span>${select("staleReviewDays", s.staleReviewDays, [1, 2, 3, 5].map((d) => [d, plural(d, "day")]))}</label>
@@ -181,15 +191,22 @@ export async function checkBob() {
 
 export async function connect(token, form) {
   token = token.trim();
+  const host = form.dataset.host || "github.com";
   if (!token) return;
+  // api.github.com is in the manifest; an Enterprise host is asked for now, while the click still counts.
+  const allowed = host === "github.com" ? true : chrome.permissions.request({ origins: [`https://${host}/*`] });
   form.querySelector("[type=submit]").disabled = true;
   try {
-    const viewer = await fetchViewer(token);
-    // A different account starts fresh.
-    await storage.remove(["cache", "snapshot", "status", "activity", "activitySeenAt", "activityClearedAt"]);
-    Object.assign(state, { cache: null, status: {}, activity: [], seenAt: null, clearedAt: null });
-    state.settings = await saveSettings({ token, login: viewer.login, tokenScopes: viewer.scopes });
-    toast(`Connected as ${viewer.login}`, "success");
+    if (!(await allowed)) throw new Error(`Chrome needs your permission to reach ${host}.`);
+    const viewer = await fetchViewer(host, token);
+    const { accounts } = await loadSettings();
+    // A different account on this host starts fresh.
+    if (accounts[host]?.login && accounts[host].login !== viewer.login) {
+      await storage.remove(["cache", "snapshot", "status", "activity", "activitySeenAt", "activityClearedAt"]);
+      Object.assign(state, { cache: null, status: {}, activity: [], seenAt: null, clearedAt: null });
+    }
+    state.settings = await saveSettings({ accounts: { ...accounts, [host]: { token, login: viewer.login, scopes: viewer.scopes } } });
+    toast(`Connected to ${host} as ${viewer.login}`, "success");
     sheet().close();
     renderAll();
     requestSync();
@@ -263,9 +280,15 @@ export const settingsActions = {
   },
   disconnect: async (el) => {
     if (!confirmed(el, "Click again to disconnect")) return;
-    await storage.remove(["cache", "snapshot", "status", "activity"]);
-    Object.assign(state, { cache: null, status: {}, activity: [] });
-    state.settings = await saveSettings({ token: "", login: "", tokenScopes: undefined });
+    const host = el.dataset.host;
+    const { [host]: _, ...accounts } = (await loadSettings()).accounts;
+    state.settings = await saveSettings({ accounts });
+    if (host !== "github.com") chrome.permissions.remove({ origins: [`https://${host}/*`] }).catch(() => {});
+    if (connectedHosts(state.settings).length) requestSync();
+    else {
+      await storage.remove(["cache", "snapshot", "status", "activity"]);
+      Object.assign(state, { cache: null, status: {}, activity: [] });
+    }
     renderAll();
     renderSettings();
   },

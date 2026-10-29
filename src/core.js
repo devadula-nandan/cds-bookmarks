@@ -12,6 +12,12 @@ export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().to
 
 export const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 
+/** The API for a GitHub host: api.github.com, or /api/v3 and /api/graphql on GitHub Enterprise Server. */
+export const apiUrl = (host, path) => (host === "github.com" ? `https://api.github.com${path}` : `https://${host}/api/${path === "/graphql" ? "graphql" : `v3${path}`}`);
+
+/** A new classic token with the scopes the dashboard needs, on that host. */
+export const tokenUrl = (host = "github.com") => `https://${host}/settings/tokens/new?scopes=repo,notifications,read:org&description=Dev%20Dashboard`;
+
 /** "carbon" for "carbon-design-system/carbon". */
 export const repoShort = (slug) => String(slug || "").split("/").pop();
 
@@ -81,8 +87,8 @@ const OFF_BY_DEFAULT = ["ciPassed", "release", "githubInbox"];
 
 export function defaultSettings() {
   return {
-    token: "",
-    login: "",
+    // One GitHub account per host: { "github.com": { token, login, scopes }, "github.ibm.com": { … } }.
+    accounts: {},
     theme: "system",
     pollMinutes: 3,
     includeTeamReviews: false,
@@ -102,7 +108,20 @@ export function defaultSettings() {
 /** Saved settings filled in with defaults for anything missing. */
 export function normalizeSettings(saved = {}) {
   const base = defaultSettings();
-  return { ...base, ...saved, notifyOn: { ...base.notifyOn, ...saved.notifyOn } };
+  // Before GitHub Enterprise support there was one github.com token.
+  const { token, login, tokenScopes, ...rest } = saved;
+  const accounts = saved.accounts || (token ? { "github.com": { token, login, scopes: tokenScopes } } : {});
+  return { ...base, ...rest, accounts, notifyOn: { ...base.notifyOn, ...saved.notifyOn } };
+}
+
+/** Hosts with a token, e.g. ["github.com", "github.ibm.com"]. */
+export const connectedHosts = (settings) => Object.keys(settings.accounts).filter((h) => settings.accounts[h]?.token);
+
+/** "nandan" or "nandan on github.com, ndevadula on github.ibm.com". */
+export function logins(settings) {
+  const hosts = connectedHosts(settings).filter((h) => settings.accounts[h].login);
+  if (hosts.length === 1) return settings.accounts[hosts[0]].login;
+  return hosts.map((h) => `${settings.accounts[h].login} on ${h}`).join(", ");
 }
 
 export async function loadSettings() {
