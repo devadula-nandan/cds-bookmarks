@@ -264,6 +264,26 @@ Reply with only the query on one line.
 Request: ${request}`;
 }
 
+/**
+ * A bug report without its reproduction steps, which the issue form has a field of its own for: a
+ * "Steps to reproduce" section, or a paragraph starting "To reproduce" and what follows it, up to the
+ * next bold section label ("**Suggested fix:**") or heading.
+ */
+export function withoutSteps(markdown) {
+  let skipping = false;
+  return Lexer.lex(String(markdown || ""))
+    .filter((t) => {
+      const text = t.type === "paragraph" || t.type === "heading" ? t.text.trim() : "";
+      if (/^(\*\*)?\s*(steps to reproduce|to reproduce|how to reproduce|reproduction)\b/i.test(text)) skipping = true;
+      else if (skipping && (t.type === "heading" || /^\*\*[^*]+\*\*/.test(text))) skipping = false;
+      return !skipping;
+    })
+    .map((t) => t.raw)
+    .join("")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** Fills the repo's GitHub bug report form for a bug-of-the-day report. The reply is JSON: field id → value. */
 export function issueFormPrompt(report) {
   return `Fill in ${report.repo}'s GitHub bug report form for the bug below. You're in a clone of it: read the form at .github/ISSUE_TEMPLATE/BUG_REPORT.yaml (or fetch it with gh if it isn't there).
@@ -272,7 +292,7 @@ Reply with only one JSON object mapping each field's id to its value, and nothin
 - The package version: the "version" in that package's package.json here.
 - Browser: the browsers the bug affects (all of them if it isn't browser-specific).
 - The reproduction link: a public Storybook or StackBlitz URL where the bug shows, such as the component's story on the repo's deployed Storybook.
-- Steps to reproduce: a short numbered Markdown list.
+- Steps to reproduce: only the steps, as a short numbered Markdown list (open the story or page, set the controls, do this, see that), with no explanation; the description has that.
 - Severity: from how much the bug blocks a user.
 - Project name: "Carbon Design System".
 - Leave out the title and description (they're filled in already), checkboxes, and anything you can't fill.

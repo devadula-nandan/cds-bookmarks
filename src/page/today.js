@@ -1,6 +1,6 @@
 // The Today card: today's meetings on a timeline, the bug of the day, to-dos and the standup button.
 
-import { askBob, issueFormPrompt, jsonReply, todaysAnswer } from "../bob.js";
+import { askBob, issueFormPrompt, jsonReply, todaysAnswer, withoutSteps } from "../bob.js";
 import { fmtTime, parseTime, plural, repoShort, storage, todayKey, uid, updateDay } from "../core.js";
 import { huntableRepos, isHunting } from "../hunt.js";
 import { standup } from "../insights.js";
@@ -127,13 +127,14 @@ async function huntNow() {
 /**
  * A new GitHub issue for a bug report: the repo's Bug report form with the title, description and the
  * form's other text fields (`report.issue`, filled in by Bob) set. GitHub can't prefill dropdowns, so
- * Bob's picks for those (`report.issue.pick`) are shown under the report instead. GitHub rejects URLs
- * much over 8,000 characters, so a long description is trimmed to fit.
+ * Bob's picks for those (`report.issue.pick`) are shown under the report instead. The steps to reproduce
+ * go in the form's own field, so the description leaves them out. GitHub rejects URLs much over 8,000
+ * characters, so a long description is trimmed to fit.
  */
 function issueUrl(report) {
-  const { pick, ...fields } = report.issue || {};
-  // The report as is, without any "---" rules around it. Reports from before "Suggested fix" said "Fix".
-  let full = report.markdown.replace(/^(\s*---\s*\n)+|(\n\s*---\s*)+$/g, "").trim().replace(/\*\*Fix(:?)\*\*/, "**Suggested fix$1**");
+  const { pick, form, ...fields } = report.issue || {};
+  // The report without its steps or any "---" rules around it. Reports from before "Suggested fix" said "Fix".
+  let full = withoutSteps(report.markdown.replace(/^(\s*---\s*\n)+|(\n\s*---\s*)+$/g, "")).replace(/\*\*Fix(:?)\*\*/, "**Suggested fix$1**");
   // A hunt of the remote's main swaps the "Where" line for a link to the commit, which GitHub shows as a
   // snippet of the code; a hunt of a local clone keeps it, as that commit may not be on GitHub.
   if (report.branch?.endsWith("/main") && report.file) {
@@ -152,6 +153,9 @@ function issuePicks(report) {
   const pick = Object.entries(report.issue?.pick || {});
   return pick.length ? html`<p class="bob__label">In the GitHub form, pick: ${pick.map(([label, value], i) => html`${i ? " · " : ""}${label} <strong>${value}</strong>`)}</p>` : nothing;
 }
+
+/** Bumped when the issue form prompt changes, so reports filled in before are filled in again. 3: just the steps to reproduce. */
+const FORM_VERSION = 3;
 
 /** Reports Bob is filling in the GitHub issue form for, by id. */
 const filling = new Set();
@@ -227,16 +231,17 @@ export const todayActions = {
   "hunt-run": huntNow,
   "hunt-open": (el) => openReport(state.bugHunts.find((h) => h.id === el.dataset.id)),
   // The first time, Bob fills in the form's fields from the repo's template; they're saved on the report.
-  // Forms filled before dropdown picks were kept are filled again.
+  // Forms filled by an older version of the prompt (`form` below FORM_VERSION) are filled again.
   "hunt-issue": async (el) => {
     const report = state.bugHunts.find((h) => h.id === el.dataset.id);
-    if (!report.issue?.pick) {
+    if (!(report.issue?.form >= FORM_VERSION)) {
       filling.add(report.id);
       renderBob();
       try {
         const { text } = await askBob(issueFormPrompt(report), state.settings, { workspace: report.path });
-        report.issue = jsonReply(text);
-        if (!report.issue) throw new Error("Bob's reply had no JSON in it");
+        const issue = jsonReply(text);
+        if (!issue) throw new Error("Bob's reply had no JSON in it");
+        report.issue = { ...issue, form: FORM_VERSION };
         await saveHunts();
       } catch (err) {
         toast(`Couldn't fill in the issue form (${err.message}). Opening it with the title and description only.`, "error");

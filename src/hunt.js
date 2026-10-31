@@ -25,7 +25,7 @@ ${previous || "- none yet"}
 
 Read the surrounding code and its callers to make sure it's really a bug. If you find nothing you're confident about, say so. Then search GitHub with gh for an existing issue about it.
 
-Report in GitHub Markdown: a "## title" line, then **Where** (the file path and line in backticks, not a link), **What's wrong** (quote the lines as they are in the file, in a code fence named for its language, with enough around them to be valid code on their own — such as the opening tag of a JSX attribute), **Why it's a bug** (what a user would see, how to reproduce), **Suggested fix** (a minimal \`\`\`diff), and **Confidence** (high, medium or low, with one line of reasoning).
+Report in GitHub Markdown: a "## title" line, then **Where** (the file path and line in backticks, not a link), **What's wrong** (quote the lines as they are in the file, in a code fence named for its language, with enough around them to be valid code on their own — such as the opening tag of a JSX attribute), **Why it's a bug** (what a user would see, and why it's wrong), **Steps to reproduce** (only the steps, as a short numbered list: open the story or page, set the controls, do this, see that; no explanation), **Suggested fix** (a minimal \`\`\`diff), and **Confidence** (high, medium or low, with one line of reasoning).
 Finish with this JSON block and nothing after it:
 \`\`\`json
 {"found": true, "title": "…", "file": "path/from/repo/root", "line": 123, "severity": "low|medium|high", "effort": "e.g. 15 min", "confidence": "high|medium|low", "related": [{"ref": "carbon#123", "title": "…", "url": "…", "state": "open|closed"}]}
