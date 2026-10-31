@@ -7,10 +7,12 @@ import {
   MODES,
   TEST_PROMPT,
   answerKey,
+  answerPrefix,
   askBob,
   askPrompt,
   catchUpPrompt,
   cleanQuery,
+  earlierAnswer,
   findPrompt,
   followUpPrompt,
   itemPrompt,
@@ -50,6 +52,7 @@ let timer = 0;
  *   title, subtitle, url        the sheet's heading
  *   prompt, opts                what Bob gets (opts.workspace: run in that local clone)
  *   key                         where the answer is saved, so asking again is instant
+ *   keyPrefix                   what keys for earlier versions of the same item start with: one is shown, marked out of date
  *   trigger, fallback           selectors for the button that shows this session's status (fallback: its tab)
  *   format                      "edit", "reply" or "query": the answer is a draft to edit and revise
  *   input                       ask for text first (the Slack thread); spec.makePrompt(text) builds the prompt
@@ -66,9 +69,11 @@ export async function openBob(spec, { fresh = false } = {}) {
     return show(s);
   }
   if (spec.input && !spec.text) return show(s);
-  const saved = !fresh && (await savedAnswer(spec.key));
+  const exact = !fresh && (await savedAnswer(spec.key));
+  // An answer about an earlier commit beats starting over: it's shown marked out of date, with Regenerate.
+  const saved = exact || (!fresh && spec.keyPrefix && (await earlierAnswer(spec.keyPrefix)));
   if (saved) {
-    s.turns.push({ role: "bob", text: saved.text, log: saved.log, at: saved.at, label: "Saved answer" });
+    s.turns.push({ role: "bob", text: saved.text, log: saved.log, at: saved.at, label: exact ? "Saved answer" : "Answered", outdated: !exact });
     return show(s);
   }
   // Started from inside the sheet (Try again): stay in view.
@@ -177,7 +182,8 @@ export function openFromTrigger(el) {
 const logToggle = (log) => (SHOW_LOGS && log ? `<details class="bob__log"><summary>${icon("code", 14)}Bob Shell log <span>${plural(log.split("\n").length, "line")}</span></summary><pre>${esc(log)}</pre></details>` : "");
 
 function answerHtml(s, turn) {
-  if (turn !== firstAnswer(s) || !isDraft(s)) return `<div class="bob__answer">${markdown(turn.text)}</div>`;
+  const outdated = turn.outdated ? `<p class="bob__revised">${icon("refresh", 14)}<span>Written before the latest changes. Regenerate for an up-to-date answer.</span></p>` : "";
+  if (turn !== firstAnswer(s) || !isDraft(s)) return `${outdated}<div class="bob__answer">${markdown(turn.text)}</div>`;
   const last = s.revisions.at(-1);
   const undo = last ? `<p class="bob__revised">${icon("sparkle", 14)}<span>Revised: “${esc(last.ask)}”</span><button class="btn btn--ghost btn--sm" data-action="bob-undo">Undo</button></p>` : "";
   if (s.spec.format === "query")
@@ -332,6 +338,7 @@ function bobItem(key) {
     url: subject.url,
     trigger: `[data-action="bob-item"][data-key="${CSS.escape(key)}"]`,
     key: answerKey(target),
+    keyPrefix: target.item ? answerPrefix(target) : null,
     prompt: itemPrompt(target),
   });
 }

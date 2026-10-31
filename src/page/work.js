@@ -1,12 +1,14 @@
-// The work panel: the For you / Issues / Pull requests / Following tabs, snoozing, and unfollowing.
+// The work panel: the For you / Issues / Pull requests / Following tabs, snoozing, unfollowing, and the
+// one-click fixes on rows (ready to merge, re-run CI, step off a stale review, close a stale PR).
 
 import { ageDays, esc, plural, storage, updateDay } from "../core.js";
-import { bucket, isBot, isSnoozed, prState } from "../insights.js";
+import { addLabels, enableAutoMerge, removeReviewer, requestReviewers, rerunFailedJobs, setPrState } from "../github.js";
+import { STALE_DAYS, ageText, askedAt, bucket, checkHint, isBot, isSnoozed, prState, reviewSize, weekStats } from "../insights.js";
 import { repoBySlug } from "../repos.js";
-import { syncNotice } from "./header.js";
+import { requestSync, syncNotice, tokenNotice } from "./header.js";
 import { icon } from "./icons.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, issueItems, keepFocus, listSection, ref, repoScope, row, saveView, searchUrl, setHtml, skeleton, state, toast, view } from "./ui.js";
+import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, foldSection, issueItems, keepFocus, listSection, openFolds, ref, repoScope, row, saveView, searchUrl, setHtml, skeleton, state, toast, view, visibleTasks } from "./ui.js";
 
 // ---------- rows ----------
 
@@ -22,7 +24,47 @@ const TASK_LOOK = {
   nudge: ["clock", "neutral"],
   reply: ["message", "info"],
   recheck: ["refresh", "warning"],
+  staleReview: ["clock", "neutral"],
+  stalePr: ["clock", "neutral"],
 };
+
+/** The failing checks, linked to their logs: "avt and test", or "avt, test and 3 more". */
+function checkLinks(checks) {
+  const link = (c) => (c.url ? `<a class="item__link" href="${esc(c.url)}" data-tooltip="Open the ${esc(c.name)} log">${esc(c.name)}</a>` : esc(c.name));
+  if (checks.length > 2) return `${checks.slice(0, 2).map(link).join(", ")} and ${checks.length - 2} more`;
+  return checks.map(link).join(" and ");
+}
+
+/** "CI failing: avt · fill in the PR template". */
+function ciMeta(pr) {
+  if (!pr.failingChecks?.length) return "CI failing";
+  const hint = pr.failingChecks.map((c) => checkHint(c.name)).find(Boolean);
+  return `CI failing: ${checkLinks(pr.failingChecks)}${hint ? ` · <span class="t-warning">${esc(hint)}</span>` : ""}`;
+}
+
+/** Ready to merge: adds the repo's ready label and turns on auto-merge, whichever of the two apply. */
+function readyCta(pr) {
+  const label = repoBySlug(pr.repo)?.readyLabel;
+  const addsLabel = label && !pr.labels.includes(label);
+  const merges = pr.canAutoMerge && !pr.autoMerge;
+  if (!addsLabel && !merges) return null;
+  const what = [addsLabel && `adds “${label}”`, merges && "turns on auto-merge, so GitHub merges it once checks pass"].filter(Boolean).join(" and ");
+  return { label: "Ready to merge", iconName: "merge", action: "pr-ready", id: pr.id, tooltip: what[0].toUpperCase() + what.slice(1), primary: true };
+}
+
+const rerunCta = (pr) => (pr.failingChecks?.some((c) => c.runId) ? { label: "Re-run", iconName: "refresh", action: "pr-rerun", id: pr.id, tooltip: `Re-run the failed jobs (${pr.failingChecks.map((c) => c.name).join(", ")})` } : null);
+
+const unrequestCta = (pr) => ({ label: "Remove me", action: "pr-unrequest", id: pr.id, tooltip: "Remove yourself as a reviewer (you can undo)" });
+
+const closeCta = (pr) => ({ label: "Close", action: "pr-close", id: pr.id, tooltip: "Close this PR (you can undo)" });
+
+function taskCta(t) {
+  if (t.kind === "ready") return readyCta(t.item);
+  if (t.kind === "ciFailed") return rerunCta(t.item);
+  if (t.kind === "staleReview") return unrequestCta(t.item);
+  if (t.kind === "stalePr") return closeCta(t.item);
+  return null;
+}
 
 function taskRow(t) {
   if (t.kind === "main")
@@ -32,23 +74,25 @@ function taskRow(t) {
       title: `main is failing on ${repoBySlug(t.repo)?.short || t.repo}`,
       iconName: "alert",
       tone: "error",
-      meta: `<span class="mono">${esc(t.ref.split("@")[1])}</span> · ${esc(t.title)}`,
+      meta: `<span class="mono">${esc(t.ref.split("@")[1])}</span> · ${t.checks?.length ? `${checkLinks(t.checks)} · ` : ""}${esc(t.title)}`,
       at: t.at,
       snooze: t.key,
       bob: { kind: "main", task: t },
     });
   const [iconName, tone] = TASK_LOOK[t.kind];
   const quiet = (t.kind === "review" && isBot(t.item.author)) || (t.kind === "ciFailed" && t.item.draft);
+  const reason = t.kind === "ciFailed" ? `${ciMeta(t.item)}${t.item.draft ? " · draft" : ""}` : esc(t.reason);
   return row({
     key: t.key,
     url: t.url,
     title: t.title,
     iconName,
     tone: quiet ? "neutral" : tone,
-    meta: `${ref(t.item)} · ${esc(t.reason)}${t.detail ? ` · <span class="t-warning">${esc(t.detail)}</span>` : ""}`,
+    meta: `${ref(t.item)} · ${reason}${t.detail && t.kind !== "ciFailed" ? ` · <span class="t-warning">${esc(t.detail)}</span>` : ""}`,
     at: t.item.updatedAt,
     snooze: t.key,
     bob: { item: t.item, kind: t.kind, task: t },
+    cta: taskCta(t),
   });
 }
 
@@ -57,6 +101,10 @@ const PR_LOOK = {
   ciFailed: ["x", "error", "CI failing"],
   changes: ["message", "warning", "Changes requested"],
   ready: ["merge", "success", "Ready to merge"],
+  autoMerge: ["merge", "info", "Auto-merge on · merges once checks pass"],
+  queued: ["merge", "info", "In the merge queue"],
+  design: ["eye", "neutral", "Approved · waiting on design review"],
+  oneMore: ["check", "neutral", "Needs one more approval"],
   ciRunning: ["clock", "neutral", "CI running"],
   draft: ["draft", "neutral", "Draft"],
   waiting: ["pr", "neutral", "Waiting for review"],
@@ -64,24 +112,42 @@ const PR_LOOK = {
 
 function myPrRow(pr) {
   const st = prState(pr);
-  const [iconName, tone, text] = PR_LOOK[st];
-  const by = st === "changes" && pr.changeRequests.length ? ` by ${esc(pr.changeRequests.join(", "))}` : "";
-  return row({ key: pr.id, url: pr.url, title: pr.title, iconName, tone, meta: `${ref(pr)} · ${text}${by}${pr.draft && st !== "draft" ? " · draft" : ""}`, at: pr.updatedAt, bob: { item: pr } });
-}
-
-function reviewRow(pr) {
-  const days = ageDays(pr.createdAt);
-  const stale = !isBot(pr.author) && days >= state.settings.staleReviewDays;
-  const size = pr.additions != null ? ` · <span class="mono"><span class="t-add">+${pr.additions}</span> <span class="t-del">−${pr.deletions}</span></span>` : "";
+  const [iconName, tone] = PR_LOOK[st];
+  let text = esc(PR_LOOK[st][2]);
+  if (st === "ciFailed") text = ciMeta(pr);
+  if (st === "changes" && pr.changeRequests.length) text += ` by ${esc(pr.changeRequests.join(", "))}`;
+  if (st === "queued" && pr.queue.position) text += ` · #${pr.queue.position}`;
+  if (st === "oneMore") text = `${pr.approvals.length} of ${pr.approvalsNeeded} approvals · ${esc(pr.approvals.join(", "))}`;
+  const stale = ageDays(pr.updatedAt) >= STALE_DAYS;
   return row({
     key: pr.id,
     url: pr.url,
     title: pr.title,
-    iconName: "eye",
-    tone: isBot(pr.author) ? "neutral" : stale ? "warning" : "info",
-    meta: `${ref(pr)} · ${esc(pr.author)}${stale ? ` · <span class="t-warning">waiting ${Math.floor(days)}d</span>` : ""}${size}`,
-    at: pr.createdAt,
+    iconName: stale ? "clock" : iconName,
+    tone: stale ? "neutral" : tone,
+    meta: `${ref(pr)} · ${stale ? `No activity for ${ageText(ageDays(pr.updatedAt))} · ` : ""}${text}${pr.draft && st !== "draft" ? " · draft" : ""}`,
+    at: pr.updatedAt,
+    bob: { item: pr },
+    cta: stale ? closeCta(pr) : st === "ready" ? readyCta(pr) : st === "ciFailed" ? rerunCta(pr) : null,
+  });
+}
+
+function reviewRow(pr) {
+  const days = ageDays(askedAt(pr));
+  const stale = days >= STALE_DAYS;
+  const overdue = !stale && !isBot(pr.author) && days >= state.settings.staleReviewDays;
+  const size = pr.additions != null ? ` · <span data-tooltip="${plural(pr.files || 0, "file")} changed">${reviewSize(pr)} <span class="mono"><span class="t-add">+${pr.additions}</span> <span class="t-del">−${pr.deletions}</span></span></span>` : "";
+  const age = stale ? ` · requested ${ageText(days)} ago` : overdue ? ` · <span class="t-warning">waiting ${Math.floor(days)}d</span>` : "";
+  return row({
+    key: pr.id,
+    url: pr.url,
+    title: pr.title,
+    iconName: stale ? "clock" : "eye",
+    tone: isBot(pr.author) || stale ? "neutral" : overdue ? "warning" : "info",
+    meta: `${ref(pr)} · ${esc(pr.author)}${age}${size}`,
+    at: askedAt(pr),
     bob: { item: pr, kind: "review" },
+    cta: stale ? unrequestCta(pr) : null,
   });
 }
 
@@ -145,12 +211,18 @@ function followingItems(d) {
 function forYouTab() {
   const all = allTasks();
   const tasks = all.filter((t) => !isSnoozed(t, state.day.snoozed, state.untilChange));
-  const groups = { now: [], next: [], later: [] };
+  const groups = { now: [], next: [], later: [], stale: [] };
   tasks.forEach((t) => groups[bucket(t)].push(t));
+  // Dependency bumps wait together, folded, so a handful of them doesn't bury the rest of Later.
+  let deps = groups.later.filter((t) => t.kind === "review" && isBot(t.item.author));
+  if (deps.length > 1) groups.later = groups.later.filter((t) => !deps.includes(t));
+  else deps = [];
+  const active = groups.now.length + groups.next.length + groups.later.length + deps.length;
   const onlyLater = !groups.now.length && !groups.next.length;
-  const body = tasks.length
-    ? listSection("now", "Now", groups.now, taskRow) + listSection("next", "Next", groups.next, taskRow) + listSection("later", onlyLater ? "When you have time" : "Later", groups.later, taskRow, onlyLater ? "" : "Can wait")
-    : emptyState("check", "You're all caught up", "Nothing needs you right now.");
+  const folded = foldSection("deps", "Dependency updates", deps, taskRow, "from bots") + foldSection("stale", "Stale", groups.stale, taskRow, `quiet for ${STALE_DAYS}+ days: close, step off, or pick back up`);
+  const body = active
+    ? listSection("now", "Now", groups.now, taskRow) + listSection("next", "Next", groups.next, taskRow) + listSection("later", onlyLater ? "When you have time" : "Later", groups.later, taskRow, onlyLater ? "" : "Can wait") + folded
+    : emptyState("check", "You're all caught up", "Nothing needs you right now.") + folded;
   const snoozed = all.length - tasks.length;
   const foot = snoozed ? `<span>${plural(snoozed, "item")} snoozed</span><button class="btn btn--ghost btn--sm" data-action="unsnooze">Restore</button>` : "";
   return { body, foot };
@@ -166,11 +238,17 @@ function issuesTab(d, login) {
   };
 }
 
-const PR_ORDER = ["ciFailed", "conflict", "changes", "ready", "waiting", "ciRunning", "draft"];
+const PR_ORDER = ["ciFailed", "conflict", "changes", "ready", "oneMore", "design", "waiting", "ciRunning", "autoMerge", "queued", "draft"];
+
+/** "5h", "1.5d". */
+const hours = (h) => (h < 24 ? `${Math.max(1, Math.round(h))}h` : `${(h / 24).toFixed(1).replace(/\.0$/, "")}d`);
 
 function pullRequestsTab(d, login) {
-  const requested = [...d.reviews.items].sort((a, b) => isBot(a.author) - isBot(b.author) || a.createdAt.localeCompare(b.createdAt));
-  const mine = [...d.mine.items].sort((a, b) => PR_ORDER.indexOf(prState(a)) - PR_ORDER.indexOf(prState(b)));
+  // People before bots, stale requests last, and otherwise the longest waiting first.
+  const stale = (p) => ageDays(askedAt(p)) >= STALE_DAYS;
+  const requested = [...d.reviews.items].sort((a, b) => stale(a) - stale(b) || isBot(a.author) - isBot(b.author) || askedAt(a).localeCompare(askedAt(b)));
+  const quiet = (p) => ageDays(p.updatedAt) >= STALE_DAYS;
+  const mine = [...d.mine.items].sort((a, b) => quiet(a) - quiet(b) || PR_ORDER.indexOf(prState(a)) - PR_ORDER.indexOf(prState(b)));
   // PRs I've already reviewed that are still open; ones with new commits first.
   const asked = new Set(requested.map((i) => i.id));
   const fresh = (p) => p.lastCommitAt > p.myReview?.at;
@@ -180,8 +258,15 @@ function pullRequestsTab(d, login) {
       requested.length || mine.length || reviewed.length
         ? listSection("requested", "Review requested", requested, reviewRow) + listSection("mine", "Yours", mine, myPrRow) + listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, "still open")
         : emptyState("check", "No open pull requests"),
-    foot: `<span>${d.merged.total} merged this week · ${plural(d.reviewed.total, "PR")} reviewed since yesterday</span><a class="link" href="${esc(searchUrl(`is:pr is:open involves:${login} ${repoScope()}`))}">Open on GitHub</a>`,
+    foot: `${weekLine(d)}<a class="link" href="${esc(searchUrl(`is:pr is:open involves:${login} ${repoScope()}`))}">Open on GitHub</a>`,
   };
+}
+
+/** "This week: 3 merged · 7 reviewed · first reviews in ~1.5d". */
+function weekLine(d) {
+  const w = weekStats(d);
+  const wait = w.firstReviewHours != null ? ` · <span data-tooltip="Median time from ready for review to the first review, on your PRs merged this week">first reviews in ~${hours(w.firstReviewHours)}</span>` : "";
+  return `<span>This week: ${w.merged} merged · ${plural(w.reviewed, "PR")} reviewed${wait}</span>`;
 }
 
 function followingTab(d, login) {
@@ -196,7 +281,7 @@ function followingTab(d, login) {
 }
 
 const TABS = [
-  { id: "focus", label: "For you", render: forYouTab },
+  { id: "focus", label: "For you", render: forYouTab, count: () => visibleTasks().filter((t) => bucket(t) === "now").length || null },
   { id: "issues", label: "Issues", render: issuesTab, count: (d) => issueItems(d).length },
   { id: "prs", label: "Pull requests", render: pullRequestsTab, count: (d) => d.mine.total + d.reviews.total },
   { id: "following", label: "Following", render: followingTab, count: (d) => followingItems(d).filter((i) => i.follow.newReply).length || null },
@@ -240,7 +325,7 @@ export function renderWork() {
           return `<button class="tab" role="tab" id="tab-${t.id}" data-tab="${t.id}" data-focus="tab-${t.id}" aria-selected="${t === tab}" tabindex="${t === tab ? 0 : -1}">${t.label}${count != null ? `<span class="tab__count">${count}</span>` : ""}</button>`;
         }).join("")}
       </div>
-      <div class="work__panel" role="tabpanel" aria-labelledby="tab-${tab.id}">${syncNotice()}${body}</div>
+      <div class="work__panel" role="tabpanel" aria-labelledby="tab-${tab.id}">${syncNotice()}${tokenNotice()}${body}</div>
       ${foot ? `<footer class="work__foot">${foot}</footer>` : ""}`
     )
   );
@@ -300,12 +385,74 @@ export async function unsnooze(key) {
 // The snooze button whose menu is open: the menu is anchored to it.
 let snoozeButton = null;
 
-/** While a row's snooze menu is open, its buttons stay visible (the menu is anchored to one of them). */
+/** While a row's snooze menu is open, its buttons stay visible (the menu is anchored to one of them). Folded groups remember being open. */
 export function bindWork() {
   $("#snooze-menu").addEventListener("toggle", (e) => snoozeButton?.closest(".item")?.classList.toggle("is-active", e.newState === "open"));
+  $("#work").addEventListener("toggle", (e) => e.target.dataset?.fold && (e.target.open ? openFolds.add(e.target.dataset.fold) : openFolds.delete(e.target.dataset.fold)), true);
 }
 
+// ---------- one-click fixes ----------
+
+const findPr = (id) => {
+  const d = data();
+  return [...d.mine.items, ...d.reviews.items].find((p) => p.id === id);
+};
+
+/**
+ * One GitHub change from a row's button: the button shows it's working, a toast says how it went (with
+ * Undo where there is one), and a sync brings the row up to date.
+ */
+async function change(el, busy, run, done, undo = null) {
+  const html = el.innerHTML;
+  el.disabled = true;
+  el.textContent = busy;
+  try {
+    await run();
+    el.textContent = "Done";
+    toast(done, "success", undo && { label: "Undo", run: () => undo().then(() => requestSync(), (err) => toast(err.message, "error")) });
+    requestSync();
+  } catch (err) {
+    el.disabled = false;
+    el.innerHTML = html;
+    toast(err.message, "error");
+  }
+}
+
+const fixActions = {
+  "pr-ready": (el) => {
+    const pr = findPr(el.dataset.id);
+    const label = repoBySlug(pr.repo)?.readyLabel;
+    const token = state.settings.token;
+    const merges = pr.canAutoMerge && !pr.autoMerge;
+    change(
+      el,
+      "Marking…",
+      async () => {
+        if (label && !pr.labels.includes(label)) await addLabels(token, pr.repo, pr.number, [label]);
+        if (merges) await enableAutoMerge(token, pr.id, data().repos[pr.repo]?.mergeMethod);
+      },
+      merges ? `Auto-merge is on for #${pr.number}. GitHub merges it once checks pass.` : `Marked #${pr.number} ready to merge`
+    );
+  },
+  "pr-rerun": (el) => {
+    const pr = findPr(el.dataset.id);
+    const runs = [...new Set(pr.failingChecks.map((c) => c.runId).filter(Boolean))];
+    change(el, "Starting…", () => Promise.all(runs.map((id) => rerunFailedJobs(state.settings.token, pr.repo, id))), `Re-running ${pr.failingChecks.map((c) => c.name).join(", ")} on #${pr.number}`);
+  },
+  "pr-unrequest": (el) => {
+    const pr = findPr(el.dataset.id);
+    const { token, login } = state.settings;
+    change(el, "Removing…", () => removeReviewer(token, pr.repo, pr.number, login), `You're no longer a reviewer on #${pr.number}`, () => requestReviewers(token, pr.repo, pr.number, [login]));
+  },
+  "pr-close": (el) => {
+    const pr = findPr(el.dataset.id);
+    const token = state.settings.token;
+    change(el, "Closing…", () => setPrState(token, pr.repo, pr.number, "closed"), `Closed #${pr.number}`, () => setPrState(token, pr.repo, pr.number, "open"));
+  },
+};
+
 export const workActions = {
+  ...fixActions,
   // The button opens the menu (popovertarget); pin the menu to it and remember which row it's for.
   "snooze-menu": (el) => {
     snoozeButton?.style.removeProperty("anchor-name");

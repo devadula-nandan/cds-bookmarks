@@ -881,6 +881,17 @@ body:has(#sync-error:popover-open) button.sync--error {
   text-decoration: none;
 }
 
+.menu__failing {
+  margin: 0;
+  padding: 0 8px 6px 24px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.menu__failing a {
+  color: var(--error);
+}
+
 .menu__status:hover {
   background: var(--surface-sunken);
 }
@@ -1177,6 +1188,56 @@ a.item__title::after {
 
 .item.is-active {
   background: var(--surface-hover);
+}
+
+/* A row's one-click fix (Ready to merge, Re-run, Remove me, Close) stays in view, left of the time. */
+.item:has(> .item__cta) {
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+}
+
+.item__cta {
+  position: relative;
+  z-index: 1;
+  height: 26px;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* Links inside a row's meta (a failing check's log) sit above the row's own link. */
+.item__link {
+  position: relative;
+  z-index: 1;
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.item__link:hover {
+  color: var(--text);
+  text-decoration-style: solid;
+}
+
+/* Folded groups (Dependency updates, Stale): the heading opens them. */
+.section--fold > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.section--fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.section--fold > summary:hover {
+  color: var(--text-2);
+}
+
+.section--fold > summary .icon {
+  margin-left: auto;
+  transition: transform 160ms var(--ease);
+}
+
+.section--fold[open] > summary .icon {
+  transform: rotate(180deg);
 }
 
 /* Bob actions hover to the accent, icon-only or with text. Comes after .btn--ghost so it wins the tie. */
@@ -3159,6 +3220,16 @@ a.bob__subtitle:hover {
 
 .hunt__report.is-empty .hunt__title {
   color: var(--text-2);
+}
+
+.hunt__report.is-incomplete .hunt__title {
+  color: var(--warning);
+}
+
+.hunt-verdict[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .hunt__meta {

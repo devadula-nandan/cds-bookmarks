@@ -19,6 +19,7 @@ const select = (setting, value, options) => `<select class="input input--select"
 
 function githubSection(s) {
   const rate = state.cache?.data?.rateLimit;
+  const expires = state.cache?.data?.tokenExpires;
   const tokenInfo =
     s.tokenScopes === null
       ? "Fine-grained token — the GitHub inbox won't work and org policy may block it. A classic token is recommended."
@@ -34,7 +35,7 @@ function githubSection(s) {
        <button class="btn btn--primary" type="submit">${s.token ? "Replace" : "Connect"}</button>
        ${s.token ? `<button class="btn btn--danger" type="button" data-action="disconnect">Disconnect</button>` : ""}
      </form>
-     <p class="hint">${tokenInfo}${rate ? ` · API budget: ${rate.remaining}/${rate.limit} this hour.` : ""}</p>
+     <p class="hint">${tokenInfo}${expires ? ` · Expires ${esc(new Date(expires).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }))}.` : ""}${rate ? ` · API budget: ${rate.remaining}/${rate.limit} this hour.` : ""}</p>
      <div class="fields">
        <label class="field"><span>Check GitHub every</span>${select("pollMinutes", s.pollMinutes, [1, 2, 3, 5, 10, 15].map((m) => [m, `${m} min`]))}</label>
        <label class="field"><span>Reviews are overdue after</span>${select("staleReviewDays", s.staleReviewDays, [1, 2, 3, 5].map((d) => [d, plural(d, "day")]))}</label>
@@ -129,6 +130,8 @@ const KEYS = [
   ["<kbd>1</kbd>–<kbd>4</kbd>", "Switch work tabs"],
   ["<kbd>J</kbd><kbd>K</kbd> or <kbd>↓</kbd><kbd>↑</kbd>", "Move through your work"],
   ["<kbd>S</kbd>", "Snooze the selected item"],
+  ["<kbd>B</kbd>", "Ask Bob about the selected item"],
+  ["<kbd>E</kbd>", "Run the selected item's button, such as Ready to merge or Re-run"],
   ["<kbd>R</kbd>", "Sync now"],
   ["<kbd>A</kbd>", "Activity"],
   ["<kbd>?</kbd>", "This list"],

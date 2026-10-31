@@ -3,7 +3,7 @@
 
 import { fmtTime, itemRef as ref, loadSettings, parseTime, repoShort, saveSettings, storage, todayKey, uid } from "./core.js";
 import { fetchDashboard, fetchInbox, fetchViewer } from "./github.js";
-import { hasConflict } from "./insights.js";
+import { checkNames, hasConflict, prState } from "./insights.js";
 import { enabledRepos } from "./repos.js";
 
 /** Every kind of activity: its icon and tone in the Activity drawer, and the notification setting it obeys. */
@@ -25,9 +25,11 @@ export const EVENT_TYPES = {
   reply: { icon: "message", tone: "info", setting: "replies" },
   recheck: { icon: "refresh", tone: "warning", setting: "recheck" },
   bugHunt: { icon: "bug", tone: "warning", setting: "bugHunt" },
+  dequeued: { icon: "alert", tone: "error", setting: "mergeQueue" },
+  token: { icon: "alert", tone: "warning", setting: null },
 };
 
-const URGENT = ["ciFailed", "mainBroken", "changes", "conflict", "bugHunt"];
+const URGENT = ["ciFailed", "mainBroken", "changes", "conflict", "bugHunt", "dequeued", "token"];
 
 /** Desktop notifications. The id carries the URL, so a click still works after the worker was suspended. */
 export async function notify(events) {
@@ -43,6 +45,7 @@ export async function record(events, settings) {
   const fresh = events.filter((e) => !known.has(e.key)).map((e) => ({ createdAt: at, ...e }));
   if (!fresh.length) return;
   await storage.set({ activity: [...fresh, ...activity].slice(0, 100) });
+  // Events without a setting of their own (an expiring token) always notify.
   const loud = fresh.filter((e) => settings.notifications && settings.notifyOn[EVENT_TYPES[e.type]?.setting] !== false);
   if (loud.length > 4) await notify([{ type: "inbox", title: `${loud.length} updates on GitHub`, body: "Open a new tab to catch up." }]);
   else await notify(loud);
@@ -59,7 +62,7 @@ function snapshot(data, inbox) {
     mentions: ids(data.mentions),
     assigned: ids(data.assigned),
     merged: ids(data.merged),
-    mine: Object.fromEntries(data.mine.items.map((p) => [p.id, { ci: p.ci, decision: p.reviewDecision, conflict: hasConflict(p) }])),
+    mine: Object.fromEntries(data.mine.items.map((p) => [p.id, { ci: p.ci, decision: p.reviewDecision, conflict: hasConflict(p), approvals: p.approvals.length, queued: !!p.queue }])),
     main: byRepo((r) => r.main?.state || null),
     release: byRepo((r) => r.release?.tagName || null),
     inbox: inbox && Object.fromEntries(inbox.map((t) => [t.id, t.updatedAt])),
@@ -79,10 +82,16 @@ function changes(prev, data, inbox) {
   for (const pr of data.mine.items) {
     const before = prev.mine[pr.id];
     if (!before) continue;
-    if (pr.ci !== before.ci && red(pr.ci)) add("ciFailed", `ci:${pr.id}:${stamp}`, `CI failed on ${ref(pr)}`, pr.title, `${pr.url}/checks`, pr.repo);
+    if (pr.ci !== before.ci && red(pr.ci))
+      add("ciFailed", `ci:${pr.id}:${stamp}`, pr.failingChecks.length ? `${checkNames(pr.failingChecks)} failed on ${ref(pr)}` : `CI failed on ${ref(pr)}`, pr.title, pr.failingChecks[0]?.url || `${pr.url}/checks`, pr.repo);
     if (pr.ci !== before.ci && pr.ci === "SUCCESS" && before.ci) add("ciPassed", `ci:${pr.id}:${stamp}`, `CI passed on ${ref(pr)}`, pr.title, pr.url, pr.repo);
-    if (pr.reviewDecision !== before.decision && pr.reviewDecision === "APPROVED")
-      add("approved", `dec:${pr.id}:${stamp}`, `${ref(pr)} approved`, `${pr.approvals.join(", ") || "A reviewer"} · ${pr.title}`, pr.url, pr.repo);
+    // Each new approval, counted against the repo's rule ("1 of 2 approvals" until it's ready to merge).
+    if (pr.approvals.length > (before.approvals ?? pr.approvals.length)) {
+      const enough = pr.approvals.length >= pr.approvalsNeeded;
+      add("approved", `appr:${pr.id}:${pr.approvals.length}`, `${pr.approvals.at(-1)} approved ${ref(pr)}`, `${enough ? (prState(pr) === "design" ? "Waiting on design review" : "Ready to merge") : `${pr.approvals.length} of ${pr.approvalsNeeded} approvals`} · ${pr.title}`, pr.url, pr.repo);
+    }
+    // Still open but out of the queue: a check failed in the merge group, or someone took it out.
+    if (before.queued && !pr.queue) add("dequeued", `dequeued:${pr.id}:${stamp}`, `${ref(pr)} left the merge queue`, pr.title, `${pr.url}/checks`, pr.repo);
     if (pr.reviewDecision !== before.decision && pr.reviewDecision === "CHANGES_REQUESTED")
       add("changes", `dec:${pr.id}:${stamp}`, `Changes requested on ${ref(pr)}`, `${pr.changeRequests.join(", ") || "A reviewer"} · ${pr.title}`, pr.url, pr.repo);
     if (hasConflict(pr) && !before.conflict) add("conflict", `conflict:${pr.id}:${stamp}`, `Merge conflict on ${ref(pr)}`, pr.title, pr.url, pr.repo);
@@ -94,7 +103,8 @@ function changes(prev, data, inbox) {
 
   for (const [slug, { main, release }] of Object.entries(data.repos)) {
     const before = prev.main[slug];
-    if (before !== undefined && red(main?.state) && !red(before)) add("mainBroken", `main:${slug}:${main.sha}`, `main is failing on ${repoShort(slug)}`, main.message, main.url, slug);
+    if (before !== undefined && red(main?.state) && !red(before))
+      add("mainBroken", `main:${slug}:${main.sha}`, `main is failing on ${repoShort(slug)}`, main.failing?.length ? `${checkNames(main.failing)} · ${main.message}` : main.message, main.failing?.[0]?.url || main.url, slug);
     if (red(before) && main?.state === "SUCCESS") add("mainFixed", `mainfix:${slug}:${main.sha}`, `main is green again on ${repoShort(slug)}`, main.message, main.url, slug);
     const tag = release?.tagName;
     if (tag && prev.release[slug] && prev.release[slug] !== tag)
@@ -119,6 +129,14 @@ function changes(prev, data, inbox) {
         add("inbox", `inbox:${t.id}:${t.updatedAt}`, `${repoShort(t.repo)}: ${t.title}`, `GitHub · ${t.reason.replace(/_/g, " ")}`, t.url, t.repo);
 
   return events;
+}
+
+/** A week before the token expires, one warning a day; syncing stops working the day it does. */
+function tokenWarning(expires) {
+  const days = expires ? (Date.parse(expires) - Date.now()) / 86400000 : Infinity;
+  if (days > 7) return [];
+  const when = days < 1 ? "today" : `in ${Math.ceil(days)} day${Math.ceil(days) === 1 ? "" : "s"}`;
+  return [{ type: "token", key: `token:${todayKey()}`, title: `Your GitHub token expires ${when}`, body: "Create a new one and paste it in Settings → GitHub.", url: "https://github.com/settings/tokens" }];
 }
 
 /**
@@ -168,7 +186,7 @@ export async function sync() {
     await storage.set({ cache: { data }, snapshot: next, watching: updateWatching(watching, data.eyesSeen) });
     await setStatus({ syncing: false, at: new Date().toISOString(), error: null, errorSso: null, inboxError });
     if (data.scopes !== settings.tokenScopes) await saveSettings({ tokenScopes: data.scopes });
-    await record(events, await loadSettings());
+    await record([...events, ...tokenWarning(data.tokenExpires)], await loadSettings());
     return { ok: true };
   } catch (err) {
     console.error("Sync failed", err);

@@ -57,11 +57,13 @@ export async function bobStatus() {
 
 /**
  * Asks Bob, with no turn or time limit (`signal` cancels). `workspace` runs it in a local clone.
+ * Bob can't edit files unless `edit` is set: it reads issues, PRs and threads other people wrote, and
+ * most answers are briefs and drafts. `maxCost` stops it at that much Bob usage (the daily hunt).
  * Returns `{ text, log }`, where `log` is Bob Shell's whole transcript.
  */
-export async function askBob(prompt, settings, { signal, workspace } = {}) {
+export async function askBob(prompt, settings, { signal, workspace, edit = false, maxCost } = {}) {
   if (!settings.bobKey) throw new BobError("Add your Bob API key in Settings → Bob.", "nokey");
-  const reply = await call({ type: "ask", prompt, key: settings.bobKey, workspace }, signal);
+  const reply = await call({ type: "ask", prompt, key: settings.bobKey, workspace, readOnly: !edit, maxCost }, signal);
   return { text: reply.text, log: reply.log };
 }
 
@@ -77,6 +79,15 @@ export const ANSWERS = "aiCache";
 
 export async function savedAnswer(key) {
   return key ? (await storage.get(ANSWERS))[ANSWERS]?.[key] || null : null;
+}
+
+/** The newest answer saved under `prefix`: one about an earlier version of the same item. */
+export async function earlierAnswer(prefix) {
+  const all = (await storage.get(ANSWERS))[ANSWERS] || {};
+  return Object.entries(all)
+    .filter(([k]) => k.startsWith(prefix))
+    .map(([, v]) => v)
+    .sort((a, b) => b.at.localeCompare(a.at))[0] || null;
 }
 
 export async function saveAnswer(key, entry) {
@@ -103,7 +114,7 @@ export const MODES = {
   changes: { label: "Requested changes", verb: "Turn review feedback into a checklist", ask: 'Reviewers requested changes on my pull request. Turn their unresolved feedback into a "- [ ] " checklist, one task per request with the file:line and reviewer, then list comments that need a reply.' },
   conflict: { label: "Resolve the conflict", verb: "Help me resolve the conflict", ask: "My pull request has a merge conflict. Tell me which files likely conflict and give the commands to rebase onto the latest base branch and push safely." },
   ready: { label: "Merge message", verb: "Write the squash-merge message", ask: "My pull request is approved and green. Write the squash-merge commit message in Conventional Commits format, in a single code block." },
-  nudge: { label: "Nudge reviewers", verb: "Draft a nudge for reviewers", ask: "Nobody has reviewed my pull request yet. Draft a short, friendly Slack message asking for a review, and suggest who might review it." },
+  nudge: { label: "Nudge reviewers", verb: "Draft a nudge for reviewers", ask: "My pull request needs another review. Draft a short, friendly Slack message asking for one, and suggest who might review it." },
   mention: { label: "What they need", verb: "What do they need from me?", ask: "Someone mentioned me here. Tell me what they need, the context, and a short reply I could post." },
   issue: { label: "Issue plan", verb: "Summarize and plan this issue", ask: 'This issue is on my plate. Summarize it, give a "- [ ] " plan of 3–6 steps, and list open questions.' },
   summary: { label: "PR summary", verb: "Summarize where this PR stands", ask: "Summarize where this pull request stands, what's left before it can merge, and my next action." },
@@ -113,6 +124,7 @@ export const MODES = {
 export function modeFor(item = {}, kind) {
   if (kind === "main") return "main";
   if (kind === "review" || kind === "recheck") return "review";
+  if (kind === "stalePr" || kind === "staleReview") return "summary";
   if (kind === "mention" || kind === "reply") return "mention";
   if (kind === "ciFailed") return "ci";
   if (["changes", "conflict", "ready", "nudge"].includes(kind)) return kind;
@@ -120,14 +132,21 @@ export function modeFor(item = {}, kind) {
   const state = prState(item);
   if (state === "ciFailed") return "ci";
   if (["changes", "conflict", "ready"].includes(state)) return state;
-  return state === "waiting" && ageDays(item.createdAt) >= 3 ? "nudge" : "summary";
+  return (state === "waiting" && ageDays(item.readyAt || item.createdAt) >= 3) || state === "oneMore" ? "nudge" : "summary";
 }
 
-/** Where a row's answer is saved. Any update to the item makes a new key, so a stale answer isn't reused. */
+// Answers about the code are good until the next commit; the rest (mentions, feedback) until any update.
+const BY_COMMIT = ["review", "ci", "conflict", "ready"];
+
+/** Where a row's answer is saved: per commit or per update, so an out-of-date answer isn't offered as current. */
 export function answerKey({ item, kind, task }) {
   const mode = modeFor(item, kind);
-  return mode === "main" ? task.key : `${mode}:${item.id}:${item.updatedAt}`;
+  if (mode === "main") return task.key;
+  return `${answerPrefix({ item, kind })}${BY_COMMIT.includes(mode) && item.lastCommitAt ? item.lastCommitAt : item.updatedAt}`;
 }
+
+/** What every version of a row's answer shares, to find one about an earlier version. */
+export const answerPrefix = ({ item, kind }) => `${modeFor(item, kind)}:${item.id}:`;
 
 export function itemPrompt({ item, kind, task }) {
   const mode = modeFor(item, kind);

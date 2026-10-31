@@ -10,6 +10,9 @@ import { record } from "./sync.js";
 
 export const huntableRepos = (settings) => enabledRepos(settings).filter((r) => r.clone);
 
+// A hunt runs unattended, so it stops at this much Bob usage. Hunts have cost 1.5–6; a runaway one cost 32.
+const HUNT_MAX_COST = 10;
+
 /** A hunt beats every 20 seconds; one marked running with no beat for 2 minutes was cut off (browser closed, worker stopped). */
 export const isHunting = (huntState) => !!huntState?.running && Date.now() - Date.parse(huntState.beat || huntState.startedAt || 0) < 120000;
 
@@ -89,13 +92,17 @@ export async function hunt() {
   try {
     // Hunt the latest main in a worktree of its own; if that fails (offline, say), hunt the clone as it is.
     const git = await huntCheckout(repo.clone, repo.slug).catch(() => gitInfo(repo.clone).then((info) => ({ ...info, path: repo.clone })));
+    // Earlier finds, with what the user made of them, so Bob looks elsewhere and learns what isn't a bug.
+    const verdicts = { real: " (confirmed a real bug)", not: " (not a bug)" };
     const previous = bugHunts
       .filter((h) => h.repo === repo.slug && h.found)
       .slice(0, 15)
-      .map((h) => `- ${h.file}${h.line ? `:${h.line}` : ""} — ${h.title}`)
+      .map((h) => `- ${h.file}${h.line ? `:${h.line}` : ""} — ${h.title}${verdicts[h.verdict] || ""}`)
       .join("\n");
-    const { text, log } = await askBob(prompt(repo.slug, git.branch, git.head, previous), settings, { workspace: git.path });
+    const { text, log } = await askBob(prompt(repo.slug, git.branch, git.head, previous), settings, { workspace: git.path, maxCost: HUNT_MAX_COST });
     const { markdown, meta } = splitReport(text);
+    // No JSON summary at the end: Bob stopped early or answered in another shape. That's not "nothing found".
+    const incomplete = !meta;
     const found = !!meta?.title && meta.found !== false;
     const report = {
       id: uid(),
@@ -106,7 +113,8 @@ export async function hunt() {
       branch: git.branch,
       head: git.head,
       found,
-      title: found ? meta.title : "No obvious bug found",
+      incomplete,
+      title: found ? meta.title : incomplete ? "Bob's report has no summary — open it to read" : "No obvious bug found",
       file: meta?.file || null,
       line: meta?.line || null,
       severity: meta?.severity || null,
@@ -122,8 +130,8 @@ export async function hunt() {
         {
           type: "bugHunt",
           key: `hunt:${report.id}`,
-          title: found ? `Bug of the day: ${report.title}` : `No obvious bug found in ${repoShort(repo.slug)} today`,
-          body: found ? `${repoShort(repo.slug)} · ${report.file}${report.line ? `:${report.line}` : ""}` : "Bob will look somewhere else tomorrow.",
+          title: found ? `Bug of the day: ${report.title}` : incomplete ? `Today's bug hunt in ${repoShort(repo.slug)} needs a look` : `No obvious bug found in ${repoShort(repo.slug)} today`,
+          body: found ? `${repoShort(repo.slug)} · ${report.file}${report.line ? `:${report.line}` : ""}` : incomplete ? "Bob's report ended without its summary. Open Bug of the day to read it." : "Bob will look somewhere else tomorrow.",
           url: "",
           repo: repo.slug,
         },

@@ -93,8 +93,11 @@ export const ref = (item) => `${esc(repoLabel(item.repo))} <span class="mono">#$
 /** Row key → what Bob should look at for that row's ✦ button. Rebuilt on every work render. */
 export const bobTargets = new Map();
 
-/** One row of a list. `bob` ({ item, kind, task }) adds Bob's button; `snooze` and `unfollow` add theirs. */
-export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, unfollow }) {
+/**
+ * One row of a list. `bob` ({ item, kind, task }) adds Bob's button; `snooze` and `unfollow` add theirs.
+ * `cta` ({ label, action, id, tooltip, iconName, primary }) is the row's one-click fix, always in view.
+ */
+export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, unfollow, cta }) {
   let buttons = "";
   if (bob && aiOn()) {
     bobTargets.set(key, bob);
@@ -112,6 +115,7 @@ export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, un
         <a class="item__title" href="${esc(url)}" data-focus="${esc(key)}">${esc(title)}</a>
         <p class="item__meta">${meta}</p>
       </div>
+      ${cta ? `<button class="btn btn--sm ${cta.primary ? "btn--primary" : ""} item__cta" data-action="${esc(cta.action)}" data-id="${esc(cta.id)}" data-tooltip="${esc(cta.tooltip || "")}">${cta.iconName ? icon(cta.iconName, 14) : ""}${esc(cta.label)}</button>` : ""}
       <div class="item__end">${timeEl(at)}${buttons ? `<span class="item__actions">${buttons}</span>` : ""}</div>
     </li>`;
 }
@@ -120,6 +124,15 @@ export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, un
 export function listSection(id, title, items, render, hint = "") {
   if (!items.length) return "";
   return `<div class="section"><h3 class="group">${title} <span>${items.length}</span>${hint ? `<small>${hint}</small>` : ""}</h3><ul class="items items--${id}">${items.map(render).join("")}</ul></div>`;
+}
+
+/** Folded groups the user opened, kept open across re-renders. */
+export const openFolds = new Set();
+
+/** Like listSection, but folded until opened: for what can wait, such as stale items and dependency bumps. */
+export function foldSection(id, title, items, render, hint = "") {
+  if (!items.length) return "";
+  return `<details class="section section--fold" data-fold="${id}" ${openFolds.has(id) ? "open" : ""}><summary class="group">${title} <span>${items.length}</span>${hint ? `<small>${hint}</small>` : ""}${icon("chevronDown", 14)}</summary><ul class="items items--${id}">${items.map(render).join("")}</ul></details>`;
 }
 
 export const skeleton = () => `<ul class="items" aria-hidden="true">${'<li class="item item--skeleton"><span class="sk sk--icon"></span><div class="item__body"><span class="sk sk--line"></span><span class="sk sk--short"></span></div></li>'.repeat(5)}</ul>`;

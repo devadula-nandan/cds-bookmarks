@@ -96,6 +96,8 @@ function onKey(e) {
   else if (key === "j") moveInList(1);
   else if (key === "k") moveInList(-1);
   else if (key === "s") document.activeElement.closest("#work .item")?.querySelector("[data-action=snooze-menu]")?.click();
+  else if (key === "b") document.activeElement.closest("#work .item")?.querySelector("[data-action=bob-item]")?.click();
+  else if (key === "e") document.activeElement.closest("#work .item")?.querySelector(".item__cta:not(:disabled)")?.click();
   else if (key === "r") requestSync(true);
   else if (key === "a") $("#activity").togglePopover();
   else if (/^[1-4]$/.test(key) && connected()) selectTab(["focus", "issues", "prs", "following"][key - 1], true);

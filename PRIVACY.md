@@ -1,6 +1,6 @@
 # Dev Dashboard privacy policy
 
-Last updated: October 27, 2026
+Last updated: October 31, 2026
 
 Dev Dashboard is a Chrome extension that replaces the new tab page with your GitHub work and your repositories' links. This policy explains what data it handles and where that data goes.
 
@@ -17,7 +17,7 @@ Everything is stored locally in your browser with `chrome.storage.local`. The ex
 
 ## Who it is shared with
 
-- **GitHub** (`api.github.com`): your token is sent only to GitHub, to fetch your GitHub data.
+- **GitHub** (`api.github.com`): your token is sent only to GitHub, to fetch your GitHub data. When you click a row's button, the extension also makes that one change on GitHub as you: adding a label and turning on auto-merge (**Ready to merge**), re-running failed CI jobs, removing you as a reviewer, or closing your pull request.
 - **IBM Bob** (optional): only when you click a Bob action, the extension sends the request and your Bob API key to the Bob helper installed on your own computer, which runs Bob Shell. Bob Shell sends the request to IBM under your Bob account and may use your local `gh` login, the web and your local clones to answer. IBM's handling of that data is covered by IBM's own terms and privacy policy.
 
 The extension does not sell data, does not use it for advertising or analytics, does not track your browsing, and does not share it with anyone else.

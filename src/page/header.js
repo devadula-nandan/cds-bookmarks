@@ -2,7 +2,7 @@
 // the Activity drawer, and asking the background worker to sync.
 
 import { planKey } from "../bob.js";
-import { esc, fmtTime, repoShort, timeAgo } from "../core.js";
+import { esc, fmtTime, plural, repoShort, timeAgo } from "../core.js";
 import { greeting, summary } from "../insights.js";
 import { EVENT_TYPES } from "../sync.js";
 import { icon } from "./icons.js";
@@ -76,6 +76,25 @@ export function syncNotice(failed = false) {
     </div>`;
 }
 
+/** A week before the GitHub token expires: syncing stops the day it does. */
+export function tokenNotice() {
+  const at = data()?.tokenExpires;
+  const days = at ? (Date.parse(at) - Date.now()) / 86400000 : Infinity;
+  if (!connected() || days > 7) return "";
+  return `
+    <div class="notice notice--warning">
+      ${icon("alert", 16)}
+      <div class="notice__body">
+        <p class="notice__title">Your GitHub token expires ${days < 1 ? "today" : `in ${plural(Math.ceil(days), "day")}`}</p>
+        <p class="notice__text">Syncing stops when it does. Create a new classic token and paste it in Settings.</p>
+        <div class="notice__actions">
+          <a class="btn btn--primary btn--sm" href="${CLASSIC_TOKEN_URL}">Create a token</a>
+          <button class="btn btn--ghost btn--sm" data-action="settings" data-section="github">Token settings</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 // ---------- the repo bar ----------
 
 /** "Pull Requests - assigned to me" → "Pull Requests · assigned to me". */
@@ -106,6 +125,7 @@ function repoMenu(repo) {
       </div>
     </header>
     ${main ? `<a class="menu__status" href="${esc(main.url)}" data-tooltip="${esc(main.message || "")}"><span class="dot dot--${tone || "neutral"}"></span><span><b>${esc(main.branch)}</b> ${{ error: "failing", warning: "running", success: "passing" }[tone] || "status unknown"}</span><span class="menu__status-meta mono">${esc(main.sha)} · ${timeAgo(main.committedAt)}</span></a>` : ""}
+    ${tone === "error" && main.failing?.length ? `<p class="menu__failing">Failing: ${main.failing.map((c) => (c.url ? `<a href="${esc(c.url)}">${esc(c.name)}</a>` : esc(c.name))).join(", ")}</p>` : ""}
     ${health?.release ? `<a class="menu__status" href="${esc(health.release.url)}">${icon("tag", 14)}<span><b>${esc(health.release.tagName)}</b>${health.release.isPrerelease ? " pre-release" : ""}</span><span class="menu__status-meta">${timeAgo(health.release.publishedAt)}</span></a>` : ""}
     ${code ? `<a class="menu__status" href="${esc(code)}">${icon("code", 14)}<span><b>Open in VS Code</b></span><span class="menu__status-meta mono">${esc(repo.clone)}</span></a>` : ""}
     ${repo.groups.map((g) => `<div class="menu__group"><p class="menu__label">${esc(g.title)}</p>${g.links.map(link).join("")}</div>`).join("")}`;

@@ -14,7 +14,7 @@ const GROUPS = [
   ["others", "Playgrounds"],
 ];
 // Optional fields: left out of the JSON when blank.
-const OPTIONAL = new Set(["short", "clone", "versionedHref", "version"]);
+const OPTIONAL = new Set(["short", "clone", "approvals", "readyLabel", "versionedHref", "version"]);
 
 let draft = [];
 // Repos unfolded in the editor, kept across re-renders (by entry, so moving one keeps it open).
@@ -75,7 +75,10 @@ function repoBlock(entry, i) {
           ${field(`${i}.name`, "Name", entry.name, { placeholder: "Carbon Design System" })}
           ${field(`${i}.short`, "Short name", entry.short, { placeholder: "Optional, for tight spots" })}
           ${field(`${i}.clone`, "Local clone", entry.clone, { mono: true, placeholder: "Optional, like ~/Source/carbon" })}
+          ${field(`${i}.approvals`, "Approvals to merge", entry.approvals, { placeholder: "1" })}
+          ${field(`${i}.readyLabel`, "Ready-to-merge label", entry.readyLabel, { placeholder: "Optional, like status: ready to merge 🎉" })}
         </div>
+        <p class="hint">A PR counts as ready once it has that many approvals (and no visual review label). <b>Ready to merge</b> then adds the label and turns on auto-merge.</p>
         <label class="field"><span>Logo (SVG)</span><textarea class="input mono editor-svg" rows="3" data-path="${i}.icon" spellcheck="false">${esc(entry.icon || "")}</textarea></label>
         <p class="hint">The GitHub repo comes from a GitHub link to its issues or pulls, and the sprint board from a link labelled “Board”.</p>
         ${GROUPS.map(([key, title]) => groupBlock(entry, i, key, title)).join("")}

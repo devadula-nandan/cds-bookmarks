@@ -45,7 +45,7 @@ function huntCard() {
   else if (!clones) body = `<p class="hunt__status">Add a local clone to a repo to start.</p><button class="btn btn--ghost btn--sm hunt__action" data-action="repo-editor">Edit repositories</button>`;
   else if (latest) {
     const where = [repoShort(latest.repo), latest.file && `${latest.file.split("/").pop()}${latest.line ? `:${latest.line}` : ""}`, latest.effort, latest.found && latest.confidence && `${latest.confidence} confidence`].filter(Boolean).join(" · ");
-    body = `<button class="hunt__report bob-btn ${latest.found ? "" : "is-empty"}" data-action="hunt-open" data-id="${esc(latest.id)}">
+    body = `<button class="hunt__report bob-btn ${latest.found ? "" : "is-empty"} ${latest.incomplete ? "is-incomplete" : ""}" data-action="hunt-open" data-id="${esc(latest.id)}">
               <span class="hunt__title">${esc(latest.title)}</span>
               <span class="hunt__meta">${esc(dayLabel(latest.at, true))} · ${esc(where)}</span>
             </button>`;
@@ -146,6 +146,7 @@ function issueUrl(report) {
 /** Details under a hunt report: confidence, links to the code and a new GitHub issue, related issues and earlier hunts. */
 function reportDetails(report, earlierOpen) {
   const chips = [report.severity && `${report.severity} severity`, report.effort, report.confidence && `${report.confidence} confidence`].filter(Boolean);
+  const verdict = (value, text) => `<button class="btn btn--ghost btn--sm hunt-verdict" data-action="hunt-verdict" data-id="${esc(report.id)}" data-verdict="${value}" aria-pressed="${report.verdict === value}">${text}</button>`;
   const code = report.file && vscodeUrl(report.path, report.file, report.line);
   const earlier = state.bugHunts.filter((h) => h.id !== report.id).slice(0, 8);
   return `
@@ -155,6 +156,7 @@ function reportDetails(report, earlierOpen) {
         ${code ? `<a class="link link--bob" href="${esc(code)}">${icon("code", 14)}Open ${esc(report.file.split("/").pop())}${report.line ? `:${report.line}` : ""} in VS Code</a>` : ""}
         ${report.found ? `<button class="link link--bob" data-action="hunt-issue" data-id="${esc(report.id)}" data-tooltip="Opens the repo's Bug report form with this report filled in">${icon("github", 14)}Open a GitHub issue</button>` : ""}
       </p>
+      ${report.found ? `<p class="bob__label bob__links-row">Was it a real bug? ${verdict("real", "Real bug")}${verdict("not", "Not a bug")}<span class="quiet-inline">Bob sees your answer on the next hunt in this repo.</span></p>` : ""}
       <p class="bob__label">Checked ${esc(repoShort(report.repo))} at <span class="mono">${esc(report.branch)} ${esc(String(report.head || "").slice(0, 7))}</span> in <span class="mono">${esc(report.path)}</span></p>
       ${
         report.related?.length
@@ -169,7 +171,7 @@ function reportDetails(report, earlierOpen) {
              <ul class="hunt-list">${earlier
                .map(
                  (h) => `<li class="hunt-list__row">
-                   <button class="hunt-list__item bob-btn bob-made" data-action="hunt-open" data-id="${esc(h.id)}" data-tooltip="${esc(h.title)}">${icon("sparkle", 14)}<span class="hunt-list__title">${esc(h.title)}</span><span class="hunt-list__meta">${esc(repoShort(h.repo))} · ${esc(dayLabel(h.at, true))}</span></button>
+                   <button class="hunt-list__item bob-btn bob-made" data-action="hunt-open" data-id="${esc(h.id)}" data-tooltip="${esc(h.title)}">${icon("sparkle", 14)}<span class="hunt-list__title">${esc(h.title)}</span><span class="hunt-list__meta">${esc(repoShort(h.repo))} · ${esc(dayLabel(h.at, true))}${h.verdict ? ` · ${h.verdict === "real" ? "real bug" : "not a bug"}` : ""}</span></button>
                    <button class="icon-btn icon-btn--sm hunt-list__delete" data-action="hunt-delete" data-id="${esc(h.id)}" data-tooltip="Delete" aria-label="Delete ${esc(h.title)}">${icon("trash", 14)}</button>
                  </li>`
                )
@@ -187,7 +189,8 @@ export function openReport(report, earlierOpen = false) {
     subtitle: `${repoShort(report.repo)}${report.file ? ` · ${report.file}${report.line ? `:${report.line}` : ""}` : ""}`,
     trigger: `[data-action="hunt-open"][data-id="${CSS.escape(report.id)}"]`,
     prompt: `You found this bug earlier in a local clone of ${report.repo} at ${report.branch}:\n\n${report.markdown}`,
-    opts: { workspace: report.path },
+    // The hunt's own worktree: follow-ups such as "draft the fix" may edit files there.
+    opts: { workspace: report.path, edit: true },
     answer: { text: report.markdown, at: report.at, label: "Reported", log: report.log },
     extra: reportDetails(report, earlierOpen),
     regenerate: false,
@@ -217,6 +220,13 @@ export const todayActions = {
       el.lastChild.textContent = "Open a GitHub issue";
     }
     chrome.tabs.create({ url: issueUrl(report) });
+  },
+  // Clicking the chosen answer again clears it.
+  "hunt-verdict": async (el) => {
+    const report = state.bugHunts.find((h) => h.id === el.dataset.id);
+    report.verdict = report.verdict === el.dataset.verdict ? null : el.dataset.verdict;
+    el.parentElement.querySelectorAll("[data-verdict]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.verdict === report.verdict)));
+    await storage.set({ bugHunts: state.bugHunts });
   },
   "hunt-delete": async (el) => {
     el.closest("li").remove();

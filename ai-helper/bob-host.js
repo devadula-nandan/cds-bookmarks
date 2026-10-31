@@ -3,13 +3,14 @@
  * Dev Dashboard ↔ Bob Shell bridge (Chrome native messaging host).
  *
  * Chrome starts this process when the new tab page asks Bob something. Each
- * request runs `bob run` once, unrestricted: Bob's default agent mode with
- * MCP servers and subagents. By default that's in an empty workspace; when the
- * page names a local clone (bug hunts, triage), Bob works in that clone.
+ * request runs `bob run` once in Bob's default agent mode, with MCP servers and
+ * subagents. By default that's in an empty workspace; when the page names a
+ * local clone (bug hunts, triage), Bob works in that clone. `readOnly` turns
+ * off Bob's file-editing tools; `maxCost` stops it at that much Bob usage.
  *
  * Protocol: 4-byte little-endian length + UTF-8 JSON, both directions.
  *   { type: "ping" }                                   → { ok, version, home }
- *   { type: "ask", prompt, key?, workspace? }          (no turn or time limit; Cancel stops it)
+ *   { type: "ask", prompt, key?, workspace?, readOnly?, maxCost? }   (no time limit; Cancel stops it)
  *                                                      → { ok, text, log } | { ok: false, error, log }
  *   { type: "git-info", path }                         → { ok, branch, head }
  *   { type: "hunt-checkout", path, slug }              → { ok, path, branch, head }
@@ -185,7 +186,7 @@ async function gitInfo({ path: p }) {
   }
 }
 
-function ask({ prompt, key, workspace }) {
+function ask({ prompt, key, workspace, readOnly, maxCost }) {
   if (!prompt) return Promise.resolve({ ok: false, error: "Empty prompt." });
   let dir = WORKSPACE;
   try {
@@ -194,7 +195,11 @@ function ask({ prompt, key, workspace }) {
   } catch (err) {
     return Promise.resolve({ ok: false, error: err.message });
   }
-  const args = ["run", "--format", "stream-json", "--log-level", "error", "--trust", "--workspace", dir, prompt];
+  const args = ["run", "--format", "stream-json", "--log-level", "error", "--trust", "--workspace", dir];
+  // Bob's file-editing tools are switched off; it can still read, search and run commands such as gh.
+  if (readOnly) args.push("--disable-tool-groups", "edit");
+  if (Number(maxCost) > 0) args.push("--max-cost", String(Number(maxCost)));
+  args.push(prompt);
 
   const env = { ...process.env, PATH: userPath(), BOB_LOG_LEVEL: "error" };
   if (key) env.BOB_API_KEY = key;

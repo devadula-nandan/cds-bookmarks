@@ -21,6 +21,9 @@ function build(entry) {
     // The GitHub repo comes from its issues or pulls link; the sprint board from a link labelled "Board".
     slug: links.map((b) => b.href?.match(/github\.com\/([^/]+\/[^/?#]+)\/(issues|pulls)/)?.[1]).find(Boolean) || null,
     board: links.find((b) => /board/i.test(b.label))?.href || null,
+    // The repo's merge rule: approvals a PR needs, and the label that says it's ready (Carbon: 2, "status: ready to merge 🎉").
+    approvals: Number(entry.approvals) || 1,
+    readyLabel: entry.readyLabel || null,
     groups: GROUPS.filter((key) => entry[key]?.buttons?.length).map((key) => ({ title: entry[key].title, links: entry[key].buttons })),
   };
 }
