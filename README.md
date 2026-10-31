@@ -36,7 +36,7 @@ Or load it unpacked:
 
 The token stays in the extension's storage and is only sent to `api.github.com`. See the [privacy policy](PRIVACY.md).
 
-To update an unpacked install, replace the folder's files with a newer release and click the reload icon on the extension's card. Don't remove the extension: that erases your token, settings and to-dos. To track `main` instead, load a clone of this repo and `git pull` to update.
+To update an unpacked install, replace the folder's files with a newer release and click the reload icon on the extension's card. Don't remove the extension: that erases your token, settings and to-dos. To track `main` instead, load a clone of this repo and `git pull` to update. Changes land on the `carbon-dev` branch before `main`; check it out to try them first.
 
 ## Bob
 
@@ -59,11 +59,10 @@ Bob actions run [Bob Shell](https://bob.ibm.com/docs/shell) 2.0+ on your compute
 How it works:
 
 - Each action sends Bob a plain question with the item's link. Bob looks things up itself with `gh` (your own login), the web and your local clones.
-- Bob runs **unrestricted** (agent mode, with MCP servers and subagents) in an empty folder, or in a clone for triage and bug hunts, so it can run commands and change files there.
+- Bob runs in agent mode, with MCP servers and subagents, in an empty folder, or in a clone for triage and bug hunts. It can read, search and run commands such as `gh`, but its file-editing tools are switched off, since most answers are briefs and drafts about text other people wrote. Follow-ups on a bug report are the exception: they can edit files in the hunt's own worktree.
 - Tasks run minimised and several can run at once. The button that started one shows its progress, and a toast says when it's ready.
 - Answers for work rows, plans, standups and triage are saved, so asking again opens instantly (a row's ✦ turns blue). Follow-ups continue the thread; on drafts they revise the draft, with Undo.
 - Every answer has a **Bob Shell log** with Bob's full transcript. Set `SHOW_LOGS` in `src/page/bob.js` to hide it.
-- Bob's file-editing tools are switched off, since most answers are briefs and drafts about text other people wrote. Follow-ups on a bug report can edit files in the hunt's own worktree.
 - Answers about code (review briefs, CI, conflicts) are kept until the next commit, not the next comment. An answer from before the latest changes still opens, marked as out of date.
 - Requests count toward your Bob usage. Nothing is sent until you click a Bob action.
 
@@ -96,7 +95,7 @@ You can also edit the list in **Settings → Repositories → Edit repositories*
 
 ## Notifications
 
-Choose which events notify you in **Settings → Notifications**; everything is still listed under the bell. If **Send a test notification** shows nothing, check that the OS allows Chrome's notifications (macOS: **System Settings → Notifications → Google Chrome**) and that Focus or Do Not Disturb is off.
+Choose which events notify you in **Settings → Notifications**; everything is still listed under the bell. A GitHub token that expires within a week always notifies, once a day. If **Send a test notification** shows nothing, check that the OS allows Chrome's notifications (macOS: **System Settings → Notifications → Google Chrome**) and that Focus or Do Not Disturb is off.
 
 ## Code
 
@@ -112,7 +111,7 @@ src/              shared by the worker and the page
   core.js         helpers, storage, settings, per-day to-dos and snoozes
   repos.js        the repo list
   github.js       GitHub API: the dashboard (four queries side by side), the inbox, and the row fixes
-  insights.js     priorities, the header summary, the plain standup
+  insights.js     PR states, priorities, review size, the week in numbers, the header summary, the plain standup
   sync.js         fetch, compare with the last sync, record activity, notify; meeting reminders
   bob.js          talking to Bob Shell, prompts, saved answers
   hunt.js         the daily bug hunt
@@ -120,8 +119,8 @@ src/page/         the new tab page only
   main.js         entry point: loads state, wires events and shortcuts, re-renders on storage changes
   ui.js           page state and shared view helpers
   header.js       greeting, tool buttons, repo bar, Activity drawer
-  work.js         the work tabs, snoozing, unfollowing
-  today.js        meetings, bug of the day, to-dos
+  work.js         the work tabs, row fixes (ready to merge, re-run, remove me, close), snoozing, unfollowing
+  today.js        meetings, bug of the day (and its verdicts), to-dos
   bob.js          the Bob sheet and every Bob button
   search.js       the search box
   settings.js     the Settings sheet
