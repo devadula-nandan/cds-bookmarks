@@ -1,70 +1,68 @@
-// Bob's answers as HTML: a small, escape-first Markdown renderer (headings, nested and task lists, tables,
-// quotes, rules, code with syntax colours and diffs), and the to-dos in a checklist answer.
+// Bob's answers as HTML: GitHub-flavoured Markdown parsed by marked, sanitized by DOMPurify, with code coloured
+// by Prism and diffs tinted; and the to-dos in a checklist answer.
 
 import { esc } from "../core.js";
+import { Marked, Renderer } from "../vendor/marked.esm.js";
+import DOMPurify from "../vendor/purify.es.js";
 
-function inline(text) {
-  const codes = [];
-  let s = String(text).replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`);
-  // Link markup is set aside too, so an underscore or asterisk in a URL isn't read as emphasis.
-  const tags = [];
-  const keep = (html) => `\u0001${tags.push(html) - 1}\u0001`;
-  s = esc(s)
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => keep(`<a href="${url}" target="_blank" rel="noopener">`) + label + keep("</a>"))
-    // A link to a file path in the repo (Bob citing code): the label, with the path on hover.
-    .replace(/\[([^\]]+)\]\(([^\s)]+)\)/g, (_, label, path) => keep(`<span class="md-path" data-tooltip="${path}">`) + label + keep("</span>"))
-    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, pre, url) => pre + keep(`<a href="${url}" target="_blank" rel="noopener">${url.replace(/^https:\/\/(www\.)?github\.com\//, "")}</a>`))
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[^\w])__([^_]+)__(?!\w)/g, "$1<strong>$2</strong>")
-    .replace(/(^|[^*\w])\*([^*\n]+)\*(?!\w)/g, "$1<em>$2</em>")
-    .replace(/(^|[^\w])_([^_\n]+)_(?!\w)/g, "$1<em>$2</em>")
-    .replace(/~~([^~]+)~~/g, "<del>$1</del>");
-  return s.replace(/\u0001(\d+)\u0001/g, (_, i) => tags[+i]).replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${esc(codes[+i])}</code>`);
-}
-
-// ---------- syntax highlighting: a small per-line tokenizer, good enough for answers and diffs ----------
-const KEYWORDS = new Set(
-  "const let var function return if else for while do switch case break continue new class extends import export from default async await try catch finally throw typeof instanceof in of this super null undefined true false void yield delete interface type enum implements public private protected readonly static as satisfies keyof declare abstract def elif lambda pass None True False self fi then esac done echo local".split(" ")
-);
-const LANG = { javascript: "js", typescript: "ts", mjs: "js", cjs: "js", bash: "sh", zsh: "sh", shell: "sh", python: "py", yml: "yaml", htm: "html", svg: "html", xml: "html", vue: "html" };
-const CODE_LANGS = new Set(["js", "jsx", "ts", "tsx", "json", "css", "scss", "sh", "py", "yaml", "html"]);
-const TAGS = new Set(["jsx", "tsx", "html"]);
-const HASH_COMMENTS = new Set(["sh", "py", "yaml"]);
-
-const langOf = (name) => {
+// ---------- syntax highlighting: Prism (src/vendor/prism.js, loaded by index.html) ----------
+// Prism knows the usual short names (js, ts, sh, py, yml, html); these are the others Bob uses.
+const LANG = { mjs: "js", cjs: "js", zsh: "bash", htm: "html", vue: "html" };
+const grammarOf = (name) => {
   const l = String(name || "").toLowerCase();
-  return LANG[l] || l;
+  return globalThis.Prism?.languages[LANG[l] || l];
 };
 
-function highlight(line, lang) {
-  lang = langOf(lang);
-  if (!CODE_LANGS.has(lang)) return esc(line);
-  const parts = [
-    HASH_COMMENTS.has(lang) ? "#.*$" : "\\/\\/.*$|\\/\\*.*?(?:\\*\\/|$)",
-    "\"(?:\\\\.|[^\"\\\\])*\"?|'(?:\\\\.|[^'\\\\])*'?|`(?:\\\\.|[^`\\\\])*`?",
-    "\\b\\d[\\d_.]*(?:px|rem|em|ms|s|%)?\\b",
-    TAGS.has(lang) ? "<\\/?[A-Za-z][\\w.:-]*" : "(?!)",
-    "[A-Za-z_$][\\w$-]*",
-  ];
-  const re = new RegExp(parts.map((p) => `(${p})`).join("|"), "g");
-  let out = "";
-  let last = 0;
-  for (const m of line.matchAll(re)) {
-    out += esc(line.slice(last, m.index));
-    last = m.index + m[0].length;
-    const [, comment, string, number, tag, word] = m;
-    const cls = comment ? "c" : string ? "s" : number ? "n" : tag ? "t" : word && KEYWORDS.has(word) ? "k" : word && /^[\w$-]+\s*\(/.test(line.slice(m.index)) ? "f" : "";
-    out += cls ? `<span class="tok-${cls}">${esc(m[0])}</span>` : esc(m[0]);
-  }
-  return out + esc(line.slice(last));
+/** Code as HTML: coloured when Prism knows the language, otherwise just escaped. */
+function highlight(code, lang) {
+  const grammar = grammarOf(lang);
+  if (!grammar) return esc(code);
+  return (grammar.tag && attrLines(code, grammar, lang)) || Prism.highlight(code, grammar, lang);
 }
 
-/** A fenced block with its language and a Copy button. Diffs tint added, removed and hunk lines and highlight the code in them. */
-function codeBlock(lang, body) {
+const ATTR = /^\s*[\w:.-]+=["'{]/;
+const COMMENT = /^\s*(\/\/|\/?\*|\{\s*\/\*)/;
+
+/**
+ * JSX or HTML attributes quoted without their tag (`aria-controls={open}`, as Bob quotes the lines a bug is on), coloured
+ * as the attributes they are: each run of them is tokenized inside a stand-in tag, which is then dropped. Comment and
+ * blank lines between runs are coloured on their own. Null when the code isn't such a fragment.
+ */
+function attrLines(code, grammar, lang) {
+  const lines = code.split("\n");
+  if (!lines.some((l) => ATTR.test(l)) || lines.some((l) => /^\s*</.test(l))) return null;
+  const runs = [];
+  for (const line of lines) {
+    const loose = !line.trim() || COMMENT.test(line);
+    if (runs.at(-1)?.loose === loose) runs.at(-1).lines.push(line);
+    else runs.push({ loose, lines: [line] });
+  }
+  return runs
+    .map(({ loose, lines }) => {
+      const text = lines.join("\n");
+      if (loose) return Prism.highlight(text, grammar, lang);
+      const closed = /\/?>\s*$/.test(text);
+      const tokens = Prism.tokenize(`<_ ${text}${closed ? "" : ">"}`, grammar);
+      // Without the stand-in "<_", the space after it and, when it was added, the closing ">".
+      const parts = tokens.length === 1 && tokens[0].type === "tag" ? tokens[0].content.slice(1) : [];
+      if (typeof parts[0] !== "string") return Prism.highlight(text, grammar, lang);
+      parts[0] = parts[0].slice(1);
+      if (!closed) parts.pop();
+      return Prism.Token.stringify(Prism.util.encode(parts), lang);
+    })
+    .join("\n");
+}
+
+/**
+ * A fenced block with its language and a Copy button. Diffs tint added, removed and hunk lines and highlight the code in them,
+ * a line at a time. `before` is the language of the answer's previous code block.
+ */
+function codeBlock(lang, body, before) {
   const diff = /^(diff|patch)$/i.test(lang) || body.some((l) => /^@@ /.test(l));
-  // A diff's code language: the fence's (```tsx with a diff in it) or the file's extension.
+  // A diff's code language: the fence's (```tsx with a diff in it), the file's extension, or, for a diff with
+  // no file header, the language of the code block before it (usually the code the diff changes).
   const file = body.map((l) => l.match(/^(?:\+\+\+|---) (?:[ab]\/)?\S+\.(\w+)/)?.[1]).find(Boolean);
-  const code = diff && /^(diff|patch)?$/i.test(lang) ? file : lang;
+  const code = diff && /^(diff|patch)?$/i.test(lang) ? file || before : lang;
   const html = diff
     ? body
         .map((l) => {
@@ -75,141 +73,73 @@ function codeBlock(lang, body) {
           return kind ? `<span class="diff-${kind}"><span class="diff-mark">${mark}</span>${rest}</span>` : esc(mark) + rest;
         })
         .join("\n")
-    : body.map((l) => highlight(l, lang)).join("\n");
+    : highlight(body.join("\n"), lang);
   return `<div class="code"><div class="code__bar"><span>${esc(lang || "code")}</span><button class="code__copy" type="button" data-action="copy-code">Copy</button></div><pre><code>${html}</code></pre></div>`;
 }
 
-/** `| a | b |` → cells, without the outer pipes. */
-function tableCells(line) {
-  return line
-    .trim()
-    .replace(/^\||\|$/g, "")
-    .split(/(?<!\\)\|/)
-    .map((c) => c.trim().replace(/\\\|/g, "|"));
-}
+// ---------- Markdown: marked, with the dashboard's own code blocks, links, task lists, headings and tables ----------
 
-const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+/** The language of the answer's last code block so far, for a diff with no file header. */
+let lastLang = "";
 
-/**
- * A small, escape-first Markdown renderer: headings, nested and task lists, tables, quotes, rules, and code
- * (diffs coloured). Everything is escaped before any markup is added.
- */
+const md = new Marked({
+  gfm: true,
+  // A line break in an answer is a line break, as on GitHub comments.
+  breaks: true,
+  renderer: {
+    code({ text, lang }) {
+      lang = (lang || "").split(/\s/)[0];
+      const html = codeBlock(lang, text.split("\n"), lastLang);
+      if (grammarOf(lang)) lastLang = lang;
+      return html;
+    },
+    // Bob's answers are text: HTML in them is shown, not run.
+    html: ({ text }) => esc(text),
+    // h1 and h2 sit under the sheet's own title.
+    heading({ tokens, depth }) {
+      const tag = depth <= 2 ? "h3" : "h4";
+      return `<${tag}>${this.parser.parseInline(tokens)}</${tag}>`;
+    },
+    // Web links open in a new tab, a bare GitHub URL without its "https://github.com/"; a link to a file path in
+    // the repo (Bob citing code) is the label, with the path on hover.
+    link({ href, text, tokens }) {
+      const label = this.parser.parseInline(tokens);
+      if (!/^https?:\/\//i.test(href)) return `<span class="md-path" data-tooltip="${esc(href)}">${label}</span>`;
+      const shown = text === href ? esc(href.replace(/^https:\/\/(www\.)?github\.com\//, "")) : label;
+      return `<a href="${esc(href)}" target="_blank" rel="noopener">${shown}</a>`;
+    },
+    // No pictures in answers: an image is a link to it.
+    image: ({ href, text }) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(text || href)}</a>`,
+    // Task items are styled boxes (style.css), not form controls.
+    listitem(item) {
+      const task = item.task ? ` class="is-task${item.checked ? " is-done" : ""}"` : "";
+      return `<li${task}>${this.parser.parse(item.tokens)}</li>`;
+    },
+    checkbox: () => "",
+    table(token) {
+      return `<div class="table">${Renderer.prototype.table.call(this, token)}</div>`;
+    },
+  },
+});
+
+/** Markdown as safe HTML. */
 export function markdown(src) {
-  const lines = String(src || "")
-    .replace(/\r/g, "")
-    .replace(/\t/g, "    ")
-    .split("\n");
-  const out = [];
-  let para = [];
-  // Open lists, innermost last. Items stay open (no </li>) so a nested list or code block can go inside.
-  const lists = [];
-  let gap = false;
-  const indentOf = (l) => l.match(/^ */)[0].length;
-  const flushPara = () => {
-    if (para.length) out.push(`<p>${para.map(inline).join("<br>")}</p>`);
-    para = [];
-  };
-  const closeLists = (above = -1) => {
-    while (lists.length && lists.at(-1).indent > above) out.push(`</li></${lists.pop().tag}>`);
-  };
-  const closeAll = () => {
-    flushPara();
-    closeLists();
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const indent = indentOf(line);
-    const inItem = lists.length && indent > lists.at(-1).indent;
-
-    const fence = line.match(/^\s*(```+|~~~+)\s*([\w+-]*)/);
-    if (fence) {
-      flushPara();
-      // Indented under a list item, the code belongs to that item.
-      if (!inItem) closeLists();
-      const body = [];
-      while (++i < lines.length && !lines[i].trim().startsWith(fence[1])) body.push(lines[i].slice(Math.min(indent, indentOf(lines[i]))));
-      out.push(codeBlock(fence[2], body));
-      gap = false;
-      continue;
-    }
-
-    if (!line.trim()) {
-      flushPara();
-      gap = true;
-      continue;
-    }
-
-    const item = line.match(/^(\s*)(?:([-*+•])|(\d+)[.)])\s+(?:\[( |x|X)\]\s+)?(.*)/);
-    if (item) {
-      flushPara();
-      const tag = item[3] ? "ol" : "ul";
-      closeLists(indent);
-      const top = lists.at(-1);
-      if (top && top.indent === indent && top.tag !== tag) closeLists(indent - 1);
-      if (lists.at(-1)?.indent === indent) out.push("</li>");
-      else {
-        lists.push({ tag, indent });
-        out.push(tag === "ol" && item[3] !== "1" ? `<ol start="${+item[3]}">` : `<${tag}>`);
-      }
-      const task = item[4] !== undefined ? ` class="is-task${item[4].trim() ? " is-done" : ""}"` : "";
-      out.push(`<li${task}>${inline(item[5])}`);
-      gap = false;
-      continue;
-    }
-
-    // A line that carries on the current list item: indented under it, or straight after it with no blank line.
-    if (lists.length && (inItem || !gap) && !/^\s*(#{1,6}\s|>|\|)/.test(line)) {
-      out.push(gap ? `<p>${inline(line.trim())}</p>` : `<br>${inline(line.trim())}`);
-      gap = false;
-      continue;
-    }
-
-    const heading = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/);
-    if (heading) {
-      closeAll();
-      const tag = heading[1].length <= 2 ? "h3" : "h4";
-      out.push(`<${tag}>${inline(heading[2])}</${tag}>`);
-    } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) {
-      closeAll();
-      out.push("<hr>");
-    } else if (line.includes("|") && TABLE_RULE.test(lines[i + 1] || "")) {
-      closeAll();
-      const head = tableCells(line);
-      const align = tableCells(lines[++i]).map((c) => (/^:-+:$/.test(c) ? "center" : /-:$/.test(c) ? "right" : ""));
-      const cell = (tag, text, j) => `<${tag}${align[j] ? ` style="text-align: ${align[j]}"` : ""}>${inline(text)}</${tag}>`;
-      const rows = [];
-      while (i + 1 < lines.length && lines[i + 1].includes("|") && lines[i + 1].trim()) rows.push(tableCells(lines[++i]));
-      out.push(
-        `<div class="table"><table><thead><tr>${head.map((c, j) => cell("th", c, j)).join("")}</tr></thead><tbody>${rows
-          .map((r) => `<tr>${head.map((_, j) => cell("td", r[j] || "", j)).join("")}</tr>`)
-          .join("")}</tbody></table></div>`
-      );
-    } else if (/^\s*>/.test(line)) {
-      closeAll();
-      const body = [line.replace(/^\s*>\s?/, "")];
-      while (i + 1 < lines.length && /^\s*>/.test(lines[i + 1])) body.push(lines[++i].replace(/^\s*>\s?/, ""));
-      out.push(`<blockquote>${markdown(body.join("\n"))}</blockquote>`);
-    } else {
-      closeLists();
-      para.push(line.trim());
-    }
-    gap = false;
-  }
-  closeAll();
-  return out.join("");
+  lastLang = "";
+  return DOMPurify.sanitize(md.parse(String(src || "")), { ADD_ATTR: ["target"] });
 }
 
-/** Unchecked "- [ ] …" lines, as plain to-do text. */
+/** Unchecked "- [ ] …" items, as plain to-do text. */
 export function checklist(text) {
-  return String(text || "")
-    .split("\n")
-    .map((l) => l.match(/^\s*[-*+]\s+\[ \]\s+(.*)/)?.[1])
-    .filter(Boolean)
-    .map((t) =>
-      t
+  const todos = [];
+  md.walkTokens(md.lexer(String(text || "")), (t) => {
+    if (t.type !== "list_item" || !t.task || t.checked) return;
+    const line = t.text.replace(/^\[ \]\s*/, "").split("\n")[0];
+    todos.push(
+      line
         .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
         .replace(/\*\*|`/g, "")
         .trim()
     );
+  });
+  return todos.filter(Boolean);
 }

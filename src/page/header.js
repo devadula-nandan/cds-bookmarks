@@ -2,11 +2,12 @@
 // the Activity drawer, and asking the background worker to sync.
 
 import { planKey } from "../bob.js";
-import { esc, fmtTime, plural, repoShort, timeAgo } from "../core.js";
+import { fmtTime, plural, repoShort, timeAgo } from "../core.js";
 import { greeting, summary } from "../insights.js";
 import { EVENT_TYPES } from "../sync.js";
 import { icon } from "./icons.js";
-import { $, CLASSIC_TOKEN_URL, activityList, agoText, aiOn, connected, data, dayLabel, go, iconChip, mainTone, setHtml, shownRepos, state, timeEl, toast, unread, visibleTasks, vscodeUrl } from "./ui.js";
+import { html, nothing, render, repeat } from "./lit.js";
+import { $, CLASSIC_TOKEN_URL, activityList, agoText, aiOn, connected, data, dayLabel, go, iconChip, logo, mainTone, shownRepos, state, timeEl, toast, unread, visibleTasks, vscodeUrl } from "./ui.js";
 
 export function renderMasthead() {
   const now = new Date();
@@ -22,28 +23,31 @@ export function renderMasthead() {
         : "Loading your work…"
       : summary(visibleTasks());
   const planned = state.answered.has(planKey());
-  const plan = aiOn() && d ? `<button class="btn btn--ghost btn--sm bob-btn${planned ? " bob-made" : ""}" data-action="bob-plan">${icon("sparkle", 14)}${planned ? "Today's plan" : "Plan my day with Bob"}</button>` : "";
-  setHtml($("#hello-ai"), plan);
+  const plan = aiOn() && d;
+  render(plan ? html`<button class="btn btn--ghost btn--sm bob-btn ${planned ? "bob-made" : ""}" data-action="bob-plan">${icon("sparkle", 14)}${planned ? "Today's plan" : "Plan my day with Bob"}</button>` : nothing, $("#hello-ai"));
   $("#hello-ai").hidden = !plan;
 }
 
 export function renderTools() {
   const st = state.status;
   const count = unread();
-  let status = "";
-  if (connected() && st.syncing) status = `<span class="sync">Syncing…</span>`;
-  else if (connected() && st.error) status = `<button class="sync sync--error" popovertarget="sync-error" style="anchor-name: --sync" data-tooltip="See what went wrong">${icon("alert", 14)}Sync failed</button>`;
-  else if (connected() && st.at) status = `<span class="sync" data-tooltip="Last synced ${esc(new Date(st.at).toLocaleString())}">Updated <span data-ago="${esc(st.at)}">${agoText(st.at)}</span></span>`;
+  let status = nothing;
+  if (connected() && st.syncing) status = html`<span class="sync">Syncing…</span>`;
+  else if (connected() && st.error) status = html`<button class="sync sync--error" popovertarget="sync-error" style="anchor-name: --sync" data-tooltip="See what went wrong">${icon("alert", 14)}Sync failed</button>`;
+  else if (connected() && st.at) status = html`<span class="sync" data-tooltip="Last synced ${new Date(st.at).toLocaleString()}">Updated <span>${agoText(st.at)}</span></span>`;
 
   $("#search-input").placeholder = aiOn() ? "Search your PRs, issues and links, or ask Bob" : "Search your PRs, issues and links";
-  $("#tools").innerHTML = `
-    ${status}
-    ${connected() ? `<button class="icon-btn ${st.syncing ? "is-spinning" : ""}" data-action="sync" data-tooltip="Sync now (R)" aria-label="Sync now">${icon("refresh", 18)}</button>` : ""}
-    <button class="icon-btn" popovertarget="activity" data-tooltip="Activity (A)" aria-label="Activity${count ? `, ${count} new` : ""}">${icon("bell", 18)}${count ? `<span class="badge-dot"></span>` : ""}</button>
-    ${aiOn() ? `<button class="icon-btn bob-btn" data-action="bob-slack" data-tooltip="Draft a Slack reply with Bob" aria-label="Draft a Slack reply with Bob">${icon("slack", 18)}</button>` : ""}
-    <button class="icon-btn" data-action="settings" data-tooltip="Settings" aria-label="Settings">${icon("gear", 18)}</button>`;
+  render(
+    html`
+      ${status}
+      ${connected() ? html`<button class="icon-btn ${st.syncing ? "is-spinning" : ""}" data-action="sync" data-tooltip="Sync now (R)" aria-label="Sync now">${icon("refresh", 18)}</button>` : nothing}
+      <button class="icon-btn" popovertarget="activity" data-tooltip="Activity (A)" aria-label="Activity${count ? `, ${count} new` : ""}">${icon("bell", 18)}${count ? html`<span class="badge-dot"></span>` : nothing}</button>
+      ${aiOn() ? html`<button class="icon-btn bob-btn" data-action="bob-slack" data-tooltip="Draft a Slack reply with Bob" aria-label="Draft a Slack reply with Bob">${icon("slack", 18)}</button>` : nothing}
+      <button class="icon-btn" data-action="settings" data-tooltip="Settings" aria-label="Settings">${icon("gear", 18)}</button>`,
+    $("#tools")
+  );
   // The error popup lives outside #tools, so re-rendering the header doesn't close it.
-  setHtml($("#sync-error"), st.error ? syncNotice(true) : "");
+  render(st.error ? syncNotice(true) : nothing, $("#sync-error"));
 }
 
 /** The sync error (`failed`), or partial-data warnings when the sync worked, with tips for fixing them. */
@@ -51,24 +55,25 @@ export function syncNotice(failed = false) {
   const { error, errorSso } = state.status;
   const d = data();
   const messages = failed ? [error] : error ? [] : d?.warnings || [];
-  if (!connected() || !messages.length) return "";
+  if (!connected() || !messages.length) return nothing;
   const text = messages.join(" ");
   const sso = errorSso || d?.sso;
+  const classic = html`<a href=${CLASSIC_TOKEN_URL}>classic token</a>`;
   const tips = [
-    (sso || /SAML|SSO/i.test(text)) && `The organization requires SSO. On <a href="https://github.com/settings/tokens">your tokens page</a>, choose <b>Configure SSO</b> next to this token and authorize <b>carbon-design-system</b>.`,
-    (/personal access token|fine-grained|not accessible/i.test(text) || state.settings.tokenScopes === null) && `Fine-grained tokens can be blocked by org policy. A <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code> is most reliable.`,
-    /401|rejected/i.test(text) && `Create a new <a href="${CLASSIC_TOKEN_URL}">classic token</a> on github.com and paste it in Settings.`,
+    (sso || /SAML|SSO/i.test(text)) && html`The organization requires SSO. On <a href="https://github.com/settings/tokens">your tokens page</a>, choose <b>Configure SSO</b> next to this token and authorize <b>carbon-design-system</b>.`,
+    (/personal access token|fine-grained|not accessible/i.test(text) || state.settings.tokenScopes === null) && html`Fine-grained tokens can be blocked by org policy. A ${classic} with <code>repo</code>, <code>notifications</code> and <code>read:org</code> is most reliable.`,
+    /401|rejected/i.test(text) && html`Create a new ${classic} on github.com and paste it in Settings.`,
     /reach api\.github\.com/i.test(text) && "On a corporate network or VPN, a proxy may be blocking api.github.com.",
   ].filter(Boolean);
-  return `
+  return html`
     <div class="notice notice--${failed ? "error" : "warning"}">
       ${icon("alert", 16)}
       <div class="notice__body">
-        <p class="notice__title">${failed ? "Couldn't sync with GitHub" : `Some data couldn't load${d?.failed?.length ? ` (${esc(d.failed.join(", "))})` : ""}`}</p>
-        <p class="notice__text">${esc(messages.slice(0, 2).join(" · "))}</p>
-        ${tips.length ? `<ul class="notice__hints">${tips.map((t) => `<li>${t}</li>`).join("")}</ul>` : ""}
+        <p class="notice__title">${failed ? "Couldn't sync with GitHub" : `Some data couldn't load${d?.failed?.length ? ` (${d.failed.join(", ")})` : ""}`}</p>
+        <p class="notice__text">${messages.slice(0, 2).join(" · ")}</p>
+        ${tips.length ? html`<ul class="notice__hints">${tips.map((t) => html`<li>${t}</li>`)}</ul>` : nothing}
         <div class="notice__actions">
-          ${sso ? `<a class="btn btn--primary btn--sm" href="${esc(sso)}">Authorize SSO</a>` : ""}
+          ${sso ? html`<a class="btn btn--primary btn--sm" href=${sso}>Authorize SSO</a>` : nothing}
           <button class="btn btn--sm" data-action="sync">Retry</button>
           <button class="btn btn--ghost btn--sm" data-action="settings" data-section="github">Token settings</button>
         </div>
@@ -80,15 +85,15 @@ export function syncNotice(failed = false) {
 export function tokenNotice() {
   const at = data()?.tokenExpires;
   const days = at ? (Date.parse(at) - Date.now()) / 86400000 : Infinity;
-  if (!connected() || days > 7) return "";
-  return `
+  if (!connected() || days > 7) return nothing;
+  return html`
     <div class="notice notice--warning">
       ${icon("alert", 16)}
       <div class="notice__body">
         <p class="notice__title">Your GitHub token expires ${days < 1 ? "today" : `in ${plural(Math.ceil(days), "day")}`}</p>
         <p class="notice__text">Syncing stops when it does. Create a new classic token and paste it in Settings.</p>
         <div class="notice__actions">
-          <a class="btn btn--primary btn--sm" href="${CLASSIC_TOKEN_URL}">Create a token</a>
+          <a class="btn btn--primary btn--sm" href=${CLASSIC_TOKEN_URL}>Create a token</a>
           <button class="btn btn--ghost btn--sm" data-action="settings" data-section="github">Token settings</button>
         </div>
       </div>
@@ -103,6 +108,8 @@ export const prettyLabel = (label) => {
   return text[0].toUpperCase() + text.slice(1);
 };
 
+const STATUS = { error: "failing", warning: "running", success: "passing" };
+
 function repoMenu(repo) {
   const health = data()?.repos?.[repo.slug];
   const main = health?.main;
@@ -110,39 +117,51 @@ function repoMenu(repo) {
   const code = vscodeUrl(repo.clone);
   const link = (l) =>
     l.versionedHref
-      ? `<div class="menu__versioned" data-versioned="${esc(l.versionedHref)}">
-           <a class="menu__link" href="${esc(l.href)}">${esc(prettyLabel(l.label))}</a>
-           <input class="menu__version" value="${esc(l.version || "")}" placeholder="version" aria-label="${esc(l.label)} version">
+      ? html`<div class="menu__versioned" data-versioned=${l.versionedHref}>
+           <a class="menu__link" href=${l.href}>${prettyLabel(l.label)}</a>
+           <input class="menu__version" value=${l.version || ""} placeholder="version" aria-label="${l.label} version">
            <button class="icon-btn icon-btn--sm" data-action="open-version" data-tooltip="Open this version" aria-label="Open this version">${icon("arrowRight", 14)}</button>
          </div>`
-      : `<a class="menu__link" href="${esc(l.href)}">${esc(prettyLabel(l.label))}</a>`;
-  return `
+      : html`<a class="menu__link" href=${l.href}>${prettyLabel(l.label)}</a>`;
+  const failing = (c) => (c.url ? html`<a href=${c.url}>${c.name}</a>` : c.name);
+  return html`
     <header class="menu__head">
-      <span class="menu__logo">${repo.logo}</span>
+      <span class="menu__logo">${logo(repo.logo)}</span>
       <div>
-        <p class="menu__title">${esc(repo.name)}</p>
-        ${repo.slug ? `<a class="menu__slug mono" href="https://github.com/${esc(repo.slug)}">${esc(repoShort(repo.slug))}</a>` : ""}
+        <p class="menu__title">${repo.name}</p>
+        ${repo.slug ? html`<a class="menu__slug mono" href="https://github.com/${repo.slug}">${repoShort(repo.slug)}</a>` : nothing}
       </div>
     </header>
-    ${main ? `<a class="menu__status" href="${esc(main.url)}" data-tooltip="${esc(main.message || "")}"><span class="dot dot--${tone || "neutral"}"></span><span><b>${esc(main.branch)}</b> ${{ error: "failing", warning: "running", success: "passing" }[tone] || "status unknown"}</span><span class="menu__status-meta mono">${esc(main.sha)} · ${timeAgo(main.committedAt)}</span></a>` : ""}
-    ${tone === "error" && main.failing?.length ? `<p class="menu__failing">Failing: ${main.failing.map((c) => (c.url ? `<a href="${esc(c.url)}">${esc(c.name)}</a>` : esc(c.name))).join(", ")}</p>` : ""}
-    ${health?.release ? `<a class="menu__status" href="${esc(health.release.url)}">${icon("tag", 14)}<span><b>${esc(health.release.tagName)}</b>${health.release.isPrerelease ? " pre-release" : ""}</span><span class="menu__status-meta">${timeAgo(health.release.publishedAt)}</span></a>` : ""}
-    ${code ? `<a class="menu__status" href="${esc(code)}">${icon("code", 14)}<span><b>Open in VS Code</b></span><span class="menu__status-meta mono">${esc(repo.clone)}</span></a>` : ""}
-    ${repo.groups.map((g) => `<div class="menu__group"><p class="menu__label">${esc(g.title)}</p>${g.links.map(link).join("")}</div>`).join("")}`;
+    ${main ? html`<a class="menu__status" href=${main.url} data-tooltip=${main.message || ""}><span class="dot dot--${tone || "neutral"}"></span><span><b>${main.branch}</b> ${STATUS[tone] || "status unknown"}</span><span class="menu__status-meta mono">${main.sha} · ${timeAgo(main.committedAt)}</span></a>` : nothing}
+    ${tone === "error" && main.failing?.length ? html`<p class="menu__failing">Failing: ${main.failing.map((c, i) => html`${i ? ", " : ""}${failing(c)}`)}</p>` : nothing}
+    ${health?.release ? html`<a class="menu__status" href=${health.release.url}>${icon("tag", 14)}<span><b>${health.release.tagName}</b>${health.release.isPrerelease ? " pre-release" : ""}</span><span class="menu__status-meta">${timeAgo(health.release.publishedAt)}</span></a>` : nothing}
+    ${code ? html`<a class="menu__status" href=${code}>${icon("code", 14)}<span><b>Open in VS Code</b></span><span class="menu__status-meta mono">${repo.clone}</span></a>` : nothing}
+    ${repo.groups.map((g) => html`<div class="menu__group"><p class="menu__label">${g.title}</p>${g.links.map(link)}</div>`)}`;
 }
 
 export function renderRepos() {
-  // Don't rebuild while a menu is open: it would close.
-  if ($("#repo-menus :popover-open")) return;
   const list = shownRepos();
-  $("#repos").innerHTML = list
-    .map((r) => {
-      const tone = mainTone(data()?.repos?.[r.slug]?.main);
-      const dot = tone === "error" || tone === "warning" ? `<span class="dot dot--${tone}" data-tooltip="main ${tone === "error" ? "is failing" : "checks running"}"></span>` : "";
-      return `<button class="repo" popovertarget="menu-${esc(r.id)}" style="anchor-name: --repo-${esc(r.id)}"><span class="repo__logo">${r.logo}</span><span>${esc(r.short)}</span>${dot}${icon("chevronDown", 14)}</button>`;
-    })
-    .join("");
-  $("#repo-menus").innerHTML = list.map((r) => `<div class="menu" id="menu-${esc(r.id)}" popover style="position-anchor: --repo-${esc(r.id)}">${repoMenu(r)}</div>`).join("");
+  render(
+    repeat(
+      list,
+      (r) => r.id,
+      (r) => {
+        const tone = mainTone(data()?.repos?.[r.slug]?.main);
+        const dot = tone === "error" || tone === "warning" ? html`<span class="dot dot--${tone}" data-tooltip="main ${tone === "error" ? "is failing" : "checks running"}"></span>` : nothing;
+        return html`<button class="repo" popovertarget="menu-${r.id}" style="anchor-name: --repo-${r.id}"><span class="repo__logo">${logo(r.logo)}</span><span>${r.short}</span>${dot}${icon("chevronDown", 14)}</button>`;
+      }
+    ),
+    $("#repos")
+  );
+  // An open menu stays open: its element is kept, only what changed in it is updated.
+  render(
+    repeat(
+      list,
+      (r) => r.id,
+      (r) => html`<div class="menu" id="menu-${r.id}" popover style="position-anchor: --repo-${r.id}">${repoMenu(r)}</div>`
+    ),
+    $("#repo-menus")
+  );
 }
 
 function openVersion(el) {
@@ -156,33 +175,37 @@ function openVersion(el) {
 export function renderActivity() {
   const list = activityList();
   let day = "";
-  const items = list
-    .map((a) => {
-      const look = EVENT_TYPES[a.type] || { icon: "activity", tone: "neutral" };
-      const label = dayLabel(a.createdAt);
-      const heading = label !== day ? `<li class="drawer__day">${(day = label)}</li>` : "";
-      return `${heading}
-        <li class="item ${!state.seenAt || a.createdAt > state.seenAt ? "is-new" : ""}">
-          ${iconChip(look.icon, look.tone)}
-          <div class="item__body">
-            ${a.url ? `<a class="item__title" href="${esc(a.url)}">${esc(a.title)}</a>` : `<span class="item__title">${esc(a.title)}</span>`}
-            ${a.body ? `<p class="item__meta">${esc(a.body)}</p>` : ""}
-          </div>
-          <div class="item__end">${timeEl(a.createdAt)}</div>
-        </li>`;
-    })
-    .join("");
-  $("#activity").innerHTML = `
-    <header class="drawer__head">
-      <h2>Activity</h2>
-      <div class="drawer__actions">
-        ${aiOn() && list.length ? `<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-catchup">${icon("sparkle", 14)}Catch me up</button>` : ""}
-        ${list.length ? `<button class="btn btn--ghost btn--sm" data-action="clear-activity">Clear</button>` : ""}
-        <button class="icon-btn icon-btn--sm" popovertarget="activity" popovertargetaction="hide" aria-label="Close">${icon("x", 16)}</button>
-      </div>
-    </header>
-    ${list.length ? `<ul class="items drawer__list">${items}</ul>` : `<div class="empty">${iconChip("bell")}<p class="empty__title">No activity yet</p><p class="empty__text">Approvals, CI results, merges and releases show up here as they happen.</p></div>`}
-    <footer class="drawer__foot">${state.settings.notifications ? "" : "Desktop notifications are off."} <button class="btn btn--ghost btn--sm" data-action="settings" data-section="notifications">Notification settings</button></footer>`;
+  const rows = [];
+  for (const a of list) {
+    const look = EVENT_TYPES[a.type] || { icon: "activity", tone: "neutral" };
+    const label = dayLabel(a.createdAt);
+    if (label !== day) rows.push(html`<li class="drawer__day">${(day = label)}</li>`);
+    rows.push(html`
+      <li class="item ${!state.seenAt || a.createdAt > state.seenAt ? "is-new" : ""}">
+        ${iconChip(look.icon, look.tone)}
+        <div class="item__body">
+          ${a.url ? html`<a class="item__title" href=${a.url}>${a.title}</a>` : html`<span class="item__title">${a.title}</span>`}
+          ${a.body ? html`<p class="item__meta">${a.body}</p>` : nothing}
+        </div>
+        <div class="item__end">${timeEl(a.createdAt)}</div>
+      </li>`);
+  }
+  render(
+    html`
+      <header class="drawer__head">
+        <h2>Activity</h2>
+        <div class="drawer__actions">
+          ${aiOn() && list.length ? html`<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-catchup">${icon("sparkle", 14)}Catch me up</button>` : nothing}
+          ${list.length ? html`<button class="btn btn--ghost btn--sm" data-action="clear-activity">Clear</button>` : nothing}
+          <button class="icon-btn icon-btn--sm" popovertarget="activity" popovertargetaction="hide" aria-label="Close">${icon("x", 16)}</button>
+        </div>
+      </header>
+      ${list.length
+        ? html`<ul class="items drawer__list">${rows}</ul>`
+        : html`<div class="empty">${iconChip("bell")}<p class="empty__title">No activity yet</p><p class="empty__text">Approvals, CI results, merges and releases show up here as they happen.</p></div>`}
+      <footer class="drawer__foot">${state.settings.notifications ? "" : "Desktop notifications are off."} <button class="btn btn--ghost btn--sm" data-action="settings" data-section="notifications">Notification settings</button></footer>`,
+    $("#activity")
+  );
 }
 
 /** The drawer is built as it opens, and everything in it counts as seen. */

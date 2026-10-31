@@ -4,6 +4,8 @@
 
 import { ageDays, fmtTime, itemRef, parseTime, previousWorkday, storage, todayKey, uid } from "./core.js";
 import { prState } from "./insights.js";
+import { jsonrepair } from "./vendor/jsonrepair/regular/jsonrepair.js";
+import { Lexer } from "./vendor/marked.esm.js";
 
 export class BobError extends Error {
   constructor(message, code = "failed", log = null) {
@@ -71,6 +73,39 @@ export const gitInfo = (path) => call({ type: "git-info", path });
 
 /** Fetches the latest main of `slug` into the bug hunter's own worktree of the clone at `path`. */
 export const huntCheckout = (path, slug) => call({ type: "hunt-checkout", path, slug });
+
+// ---------- JSON in Bob's replies ----------
+
+/** JSON text → a value, forgiving what models often get wrong (trailing commas, comments, single quotes, smart quotes). */
+function parseLoose(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    try {
+      return JSON.parse(jsonrepair(text));
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** The last ```json block in a reply, parsed, and the reply before it. `json` is null when there's no such block. */
+export function jsonBlock(text) {
+  text = String(text || "");
+  const block = Lexer.lex(text).filter((t) => t.type === "code" && /^json$/i.test(t.lang || "")).at(-1);
+  const json = block && parseLoose(block.text);
+  if (!json) return { json: null, before: text.trim() };
+  return { json, before: text.slice(0, text.lastIndexOf(block.raw)).trim() };
+}
+
+/** A reply that is a JSON object, fenced or bare (possibly with a line of prose around it), parsed; or null. */
+export function jsonReply(text) {
+  const { json } = jsonBlock(text);
+  if (json) return json;
+  text = String(text || "");
+  const start = text.indexOf("{");
+  return start < 0 ? null : parseLoose(text.slice(start, text.lastIndexOf("}") + 1));
+}
 
 // ---------- saved answers ----------
 // Opening answers are kept, so asking again (or reopening) is instant. The page marks rows that have one.
@@ -233,7 +268,7 @@ Request: ${request}`;
 export function issueFormPrompt(report) {
   return `Fill in ${report.repo}'s GitHub bug report form for the bug below. You're in a clone of it: read the form at .github/ISSUE_TEMPLATE/BUG_REPORT.yaml (or fetch it with gh if it isn't there).
 Reply with only one JSON object mapping each field's id to its value, and nothing else:
-- Dropdowns: exactly one of that field's options, character for character (YAML folds long options onto one line with single spaces). For multi-select dropdowns, join several options with ", ".
+- Dropdowns: GitHub can't fill these in from a link, so put them under a "pick" key instead: an object mapping each dropdown's label to your choice, shortened to the option's opening words (like "Medium (Severity 3)"). For multi-select dropdowns, join several with ", ".
 - The package version: the "version" in that package's package.json here.
 - Browser: the browsers the bug affects (all of them if it isn't browser-specific).
 - The reproduction link: a public Storybook or StackBlitz URL where the bug shows, such as the component's story on the repo's deployed Storybook.

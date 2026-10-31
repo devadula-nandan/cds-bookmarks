@@ -2,10 +2,11 @@
 // entry in bookmarks.json. Saving keeps the list in this browser (`repoData`), ahead of the file; Export
 // JSON downloads it to replace bookmarks.json, and Reset loads the file back in.
 
-import { esc, storage } from "../core.js";
+import { storage } from "../core.js";
 import { fileRepos, rawRepos } from "../repos.js";
 import { icon } from "./icons.js";
-import { $, toast } from "./ui.js";
+import { html, live, nothing, render, repeat } from "./lit.js";
+import { $, logo, toast } from "./ui.js";
 
 const GROUPS = [
   ["github", "GitHub"],
@@ -17,57 +18,57 @@ const GROUPS = [
 const OPTIONAL = new Set(["short", "clone", "approvals", "readyLabel", "versionedHref", "version"]);
 
 let draft = [];
-// Repos unfolded in the editor, kept across re-renders (by entry, so moving one keeps it open).
+// Repos unfolded in the editor (by entry, so moving one keeps it open).
 const unfolded = new WeakSet();
 
 async function openEditor() {
   draft = rawRepos();
-  render();
+  renderEditor();
   const dialog = $("#repo-editor");
   if (!dialog.open) dialog.showModal();
 }
 
 function field(path, label, value, { mono = false, placeholder = "" } = {}) {
-  return `<label class="field"><span>${label}</span><input class="input${mono ? " mono" : ""}" data-path="${path}" value="${esc(value ?? "")}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false"></label>`;
+  return html`<label class="field"><span>${label}</span><input class="input ${mono ? "mono" : ""}" data-path=${path} .value=${live(value ?? "")} placeholder=${placeholder} autocomplete="off" spellcheck="false"></label>`;
 }
 
 function linkRow(path, link, j) {
   const p = `${path}.buttons.${j}`;
-  return `
+  return html`
     <div class="editor-link">
       ${field(`${p}.label`, "Label", link.label)}
       ${field(`${p}.href`, "URL", link.href, { mono: true, placeholder: "https://…" })}
       ${field(`${p}.versionedHref`, "Versioned URL", link.versionedHref, { mono: true, placeholder: "Optional, uses <v>" })}
       ${field(`${p}.version`, "Version", link.version, { placeholder: "Optional" })}
-      <button class="icon-btn icon-btn--sm editor-link__remove" data-action="editor-remove" data-path="${p}" aria-label="Remove ${esc(link.label || "link")}" data-tooltip="Remove link">${icon("trash", 14)}</button>
+      <button class="icon-btn icon-btn--sm editor-link__remove" data-action="editor-remove" data-path=${p} aria-label="Remove ${link.label || "link"}" data-tooltip="Remove link">${icon("trash", 14)}</button>
     </div>`;
 }
 
 function groupBlock(entry, i, key, fallback) {
   const group = entry[key];
-  if (!group) return "";
+  if (!group) return nothing;
   const path = `${i}.${key}`;
-  return `
+  return html`
     <fieldset class="editor-group">
       <div class="editor-group__head">
         ${field(`${path}.title`, `${fallback} group title`, group.title)}
-        <button class="btn btn--ghost btn--sm" data-action="editor-remove" data-path="${path}">Remove group</button>
+        <button class="btn btn--ghost btn--sm" data-action="editor-remove" data-path=${path}>Remove group</button>
       </div>
-      ${(group.buttons || []).map((link, j) => linkRow(path, link, j)).join("")}
-      <button class="btn btn--ghost btn--sm" data-action="editor-add-link" data-path="${path}">${icon("plus", 14)}Add link</button>
+      ${(group.buttons || []).map((link, j) => linkRow(path, link, j))}
+      <button class="btn btn--ghost btn--sm" data-action="editor-add-link" data-path=${path}>${icon("plus", 14)}Add link</button>
     </fieldset>`;
 }
 
 function repoBlock(entry, i) {
   const missing = GROUPS.filter(([key]) => !entry[key]);
-  return `
-    <details class="editor-repo" data-index="${i}" ${unfolded.has(entry) ? "open" : ""}>
+  return html`
+    <details class="editor-repo" data-index=${i} ?open=${unfolded.has(entry)}>
       <summary>
-        <span class="editor-repo__logo" aria-hidden="true">${entry.icon || ""}</span>
-        <span class="editor-repo__name">${esc(entry.name || "Untitled repo")}<small class="mono">${esc(entry.id || "")}</small></span>
-        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index="${i}" data-by="-1" aria-label="Move up" data-tooltip="Move up" ${i ? "" : "disabled"}>${icon("arrowUp", 14)}</button>
-        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index="${i}" data-by="1" aria-label="Move down" data-tooltip="Move down" ${i < draft.length - 1 ? "" : "disabled"}>${icon("arrowDown", 14)}</button>
-        <button class="icon-btn icon-btn--sm" data-action="editor-remove" data-path="${i}" aria-label="Remove ${esc(entry.name || "repo")}" data-tooltip="Remove repo">${icon("trash", 14)}</button>
+        <span class="editor-repo__logo" aria-hidden="true">${logo(entry.icon)}</span>
+        <span class="editor-repo__name">${entry.name || "Untitled repo"}<small class="mono">${entry.id || ""}</small></span>
+        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index=${i} data-by="-1" aria-label="Move up" data-tooltip="Move up" ?disabled=${!i}>${icon("arrowUp", 14)}</button>
+        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index=${i} data-by="1" aria-label="Move down" data-tooltip="Move down" ?disabled=${i >= draft.length - 1}>${icon("arrowDown", 14)}</button>
+        <button class="icon-btn icon-btn--sm" data-action="editor-remove" data-path=${i} aria-label="Remove ${entry.name || "repo"}" data-tooltip="Remove repo">${icon("trash", 14)}</button>
       </summary>
       <div class="editor-repo__body">
         <div class="fields">
@@ -79,37 +80,35 @@ function repoBlock(entry, i) {
           ${field(`${i}.readyLabel`, "Ready-to-merge label", entry.readyLabel, { placeholder: "Optional, like status: ready to merge 🎉" })}
         </div>
         <p class="hint">A PR counts as ready once it has that many approvals (and no visual review label). <b>Ready to merge</b> then adds the label and turns on auto-merge.</p>
-        <label class="field"><span>Logo (SVG)</span><textarea class="input mono editor-svg" rows="3" data-path="${i}.icon" spellcheck="false">${esc(entry.icon || "")}</textarea></label>
+        <label class="field"><span>Logo (SVG)</span><textarea class="input mono editor-svg" rows="3" data-path="${i}.icon" spellcheck="false" .value=${live(entry.icon || "")}></textarea></label>
         <p class="hint">The GitHub repo comes from a GitHub link to its issues or pulls, and the sprint board from a link labelled “Board”.</p>
-        ${GROUPS.map(([key, title]) => groupBlock(entry, i, key, title)).join("")}
-        ${missing.length ? `<p class="editor-add">${missing.map(([key, title]) => `<button class="btn btn--ghost btn--sm" data-action="editor-add-group" data-index="${i}" data-key="${key}">${icon("plus", 14)}${title} group</button>`).join("")}</p>` : ""}
+        ${GROUPS.map(([key, title]) => groupBlock(entry, i, key, title))}
+        ${missing.length ? html`<p class="editor-add">${missing.map(([key, title]) => html`<button class="btn btn--ghost btn--sm" data-action="editor-add-group" data-index=${i} data-key=${key}>${icon("plus", 14)}${title} group</button>`)}</p>` : nothing}
       </div>
     </details>`;
 }
 
-function render() {
-  const el = $("#repo-editor");
-  const body = $(".sheet__body", el);
-  const scroll = body?.scrollTop || 0;
-  el.innerHTML = `
-    <header class="sheet__head">
-      <h2>Edit repositories</h2>
-      <button class="icon-btn" data-action="editor-close" aria-label="Close">${icon("x", 18)}</button>
-    </header>
-    <div class="sheet__body">
-      <p class="hint">Everything in the repo bar, search and work list. Saving keeps this list in this browser, ahead of <code>bookmarks.json</code>; use <b>Export JSON</b> to update the file.</p>
-      ${draft.map(repoBlock).join("")}
-      <button class="btn btn--sm" data-action="editor-add-repo">${icon("plus", 14)}Add repository</button>
-    </div>
-    <footer class="editor__foot">
-      <label class="btn btn--ghost btn--sm">Import JSON<input type="file" accept="application/json,.json" data-editor-import hidden></label>
-      <button class="btn btn--ghost btn--sm" data-action="editor-reset">Reset to bookmarks.json</button>
-      <span class="editor__spacer"></span>
-      <button class="btn btn--sm" data-action="repo-export">Export JSON</button>
-      <button class="btn btn--primary btn--sm" data-action="editor-save">Save</button>
-    </footer>`;
-  const next = $(".sheet__body", el);
-  if (next) next.scrollTop = scroll;
+function renderEditor() {
+  render(
+    html`
+      <header class="sheet__head">
+        <h2>Edit repositories</h2>
+        <button class="icon-btn" data-action="editor-close" aria-label="Close">${icon("x", 18)}</button>
+      </header>
+      <div class="sheet__body">
+        <p class="hint">Everything in the repo bar, search and work list. Saving keeps this list in this browser, ahead of <code>bookmarks.json</code>; use <b>Export JSON</b> to update the file.</p>
+        ${repeat(draft, (entry) => entry, repoBlock)}
+        <button class="btn btn--sm" data-action="editor-add-repo">${icon("plus", 14)}Add repository</button>
+      </div>
+      <footer class="editor__foot">
+        <label class="btn btn--ghost btn--sm">Import JSON<input type="file" accept="application/json,.json" data-editor-import hidden></label>
+        <button class="btn btn--ghost btn--sm" data-action="editor-reset">Reset to bookmarks.json</button>
+        <span class="editor__spacer"></span>
+        <button class="btn btn--sm" data-action="repo-export">Export JSON</button>
+        <button class="btn btn--primary btn--sm" data-action="editor-save">Save</button>
+      </footer>`,
+    $("#repo-editor")
+  );
 }
 
 /** Walks "2.github.buttons.0" to [parent, key]. */
@@ -146,7 +145,7 @@ export function bindEditor() {
       const parsed = JSON.parse(await file.text());
       if (!Array.isArray(parsed)) throw new Error("expected a list of repos");
       draft = parsed;
-      render();
+      renderEditor();
       toast(`Imported ${file.name}. Save to use it.`, "success");
     } catch (err) {
       toast(`Couldn't import ${file.name}: ${err.message}`, "error");
@@ -190,36 +189,36 @@ export const editorActions = {
   "editor-save": save,
   "editor-reset": async () => {
     draft = await fileRepos();
-    render();
+    renderEditor();
     toast("Loaded bookmarks.json. Save to use it.");
   },
   "editor-add-repo": () => {
     const entry = { id: "", name: "", github: { title: "GitHub", buttons: [{ label: "Issues", href: "https://github.com/OWNER/REPO/issues" }] } };
     draft.push(entry);
     unfolded.add(entry);
-    render();
+    renderEditor();
   },
   "editor-add-group": (el) => {
     const entry = draft[el.dataset.index];
     entry[el.dataset.key] = { title: GROUPS.find(([k]) => k === el.dataset.key)[1], buttons: [] };
-    render();
+    renderEditor();
   },
   "editor-add-link": (el) => {
     const [parent, key] = locate(el.dataset.path);
     (parent[key].buttons ||= []).push({ label: "", href: "" });
-    render();
+    renderEditor();
   },
   "editor-remove": (el) => {
     const [parent, key] = locate(el.dataset.path);
     if (Array.isArray(parent)) parent.splice(key, 1);
     else delete parent[key];
-    render();
+    renderEditor();
   },
   "editor-move": (el) => {
     const i = Number(el.dataset.index);
     const j = i + Number(el.dataset.by);
     if (j < 0 || j >= draft.length) return;
     [draft[i], draft[j]] = [draft[j], draft[i]];
-    render();
+    renderEditor();
   },
 };

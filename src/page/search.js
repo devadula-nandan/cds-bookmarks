@@ -1,10 +1,12 @@
 // The search box: your PRs and issues, repo links and page actions, plus asking Bob or searching GitHub.
 
-import { esc, repoShort } from "../core.js";
+import { repoShort } from "../core.js";
 import { enabledRepos, repoLabel } from "../repos.js";
+import uFuzzy from "../vendor/ufuzzy.js";
 import { bobAsk, bobCatchUp, bobFind, bobPlan, bobSlack, bobStandup } from "./bob.js";
 import { prettyLabel, requestSync } from "./header.js";
 import { icon } from "./icons.js";
+import { html, render } from "./lit.js";
 import { openSettings, toggleTheme } from "./settings.js";
 import { openReport, todayActions } from "./today.js";
 import { $, aiOn, connected, data, go, searchUrl, shownRepos, state } from "./ui.js";
@@ -70,12 +72,29 @@ function jumpEntry(q) {
 
 const isQuestion = (q) => q.split(/\s+/).length >= 3 && (/\?$/.test(q) || /^(what|how|why|which|where|when|who|can|could|should|is|are|do|does|did|any|summari[sz]e|explain|list|show me|tell me|help)\b/i.test(q));
 
-/** Every term must appear; matches at the start of the label or a word score higher. */
-function score(entry, terms) {
-  const label = entry.label.toLowerCase();
-  const hay = `${label} ${entry.hint || ""} ${entry.terms || ""}`.toLowerCase();
-  if (!terms.every((t) => hay.includes(t))) return -1;
-  return terms.reduce((s, t) => s + (label.startsWith(t) ? 4 : label.includes(` ${t}`) ? 2 : label.includes(t) ? 1 : 0), 0);
+/**
+ * Fuzzy matching: every word must match, in any order, forgiving one typo per word ("guidebaner" finds
+ * Guidebanner). Unicode-aware, for titles with accents and emoji.
+ */
+const fuzzy = new uFuzzy({
+  intraMode: 1,
+  unicode: true,
+  interSplit: "[^\\p{L}\\d']+",
+  intraSplit: "\\p{Ll}\\p{Lu}",
+  intraBound: "\\p{L}\\d|\\d\\p{L}|\\p{Ll}\\p{Lu}",
+  intraChars: "[\\p{L}\\d']",
+  intraContr: "'\\p{L}{1,2}\\b",
+});
+
+/** The best matches for `q`, best first. The label leads each entry's text, so matches in it rank higher. */
+function search(entries, q) {
+  const [idxs, info, order] = fuzzy.search(
+    entries.map((e) => `${e.label} ${e.hint || ""} ${e.terms || ""}`),
+    q,
+    1
+  );
+  if (!idxs) return [];
+  return order ? order.map((i) => entries[info.idx[i]]) : idxs.map((i) => entries[i]);
 }
 
 // ---------- the results list ----------
@@ -85,13 +104,7 @@ const ORDER = { "Go to": 0, Work: 1, Repos: 2, Links: 3, Actions: 4, Search: 5 }
 function update() {
   const q = input().value.trim();
   if (!q) return close();
-  const terms = q.toLowerCase().split(/\s+/);
-  const matched = [...workEntries(), ...linkEntries(), ...actionEntries()]
-    .map((entry) => ({ entry, s: score(entry, terms) }))
-    .filter((x) => x.s >= 0)
-    .sort((a, b) => b.s - a.s)
-    .slice(0, 8)
-    .map((x) => x.entry);
+  const matched = search([...workEntries(), ...linkEntries(), ...actionEntries()], q).slice(0, 8);
   const jump = jumpEntry(q);
   const bob = aiOn()
     ? [
@@ -113,13 +126,14 @@ function update() {
 
 function draw() {
   let group = "";
-  list().innerHTML = results
-    .map((r, i) => {
-      const heading = r.group !== group ? (r.group === "Search" ? `<li class="search__sep"></li>` : `<li class="search__group">${esc(r.group)}</li>`) : "";
+  render(
+    results.map((r, i) => {
+      const heading = r.group === group ? "" : r.group === "Search" ? html`<li class="search__sep"></li>` : html`<li class="search__group">${r.group}</li>`;
       group = r.group;
-      return `${heading}<li class="search__item ${r.bob ? "bob-btn" : ""} ${i === active ? "is-active" : ""}" id="sr-${i}" role="option" aria-selected="${i === active}" data-index="${i}">${icon(r.iconName, 16)}<span class="search__label">${esc(r.label)}</span>${r.hint ? `<span class="search__hint">${esc(r.hint)}</span>` : ""}</li>`;
-    })
-    .join("");
+      return html`${heading}<li class="search__item ${r.bob ? "bob-btn" : ""} ${i === active ? "is-active" : ""}" id="sr-${i}" role="option" aria-selected=${i === active} data-index=${i}>${icon(r.iconName, 16)}<span class="search__label">${r.label}</span>${r.hint ? html`<span class="search__hint">${r.hint}</span>` : ""}</li>`;
+    }),
+    list()
+  );
   list().hidden = false;
   input().setAttribute("aria-expanded", "true");
   input().setAttribute("aria-activedescendant", `sr-${active}`);

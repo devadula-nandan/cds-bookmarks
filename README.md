@@ -117,7 +117,8 @@ src/              shared by the worker and the page
   hunt.js         the daily bug hunt
 src/page/         the new tab page only
   main.js         entry point: loads state, wires events and shortcuts, re-renders on storage changes
-  ui.js           page state and shared view helpers
+  ui.js           page state and shared view helpers (rows, lists, switches)
+  lit.js          the lit-html pieces the views use
   header.js       greeting, tool buttons, repo bar, Activity drawer
   work.js         the work tabs, row fixes (ready to merge, re-run, remove me, close), snoozing, unfollowing
   today.js        meetings, bug of the day (and its verdicts), to-dos
@@ -125,15 +126,17 @@ src/page/         the new tab page only
   search.js       the search box
   settings.js     the Settings sheet
   repo-editor.js  the repo editor
-  markdown.js     renders Bob's answers (Markdown, syntax colours, diffs)
+  markdown.js     renders Bob's answers (marked, DOMPurify and Prism, with the dashboard's code blocks and diffs)
   icons.js        line icons
   tooltip.js      the page's one tooltip, for every [data-tooltip]
   theme.js        applies a forced light or dark theme before the page paints
+src/vendor/       third-party code, copied as published: lit-html 3.3.3, marked 18.1.1, DOMPurify 3.4.17,
+                  Prism 1.30.0 (with the languages Bob uses), uFuzzy 1.0.19 (search), jsonrepair 3.15.0
 ai-helper/        the native messaging host that runs Bob Shell, and its installer
 scripts/package.sh  builds dist/dev-dashboard.zip
 ```
 
-Data flows one way: the background worker syncs GitHub into `chrome.storage.local`; the page loads storage into `state` and re-renders whenever it changes. Clicks are routed by `data-action` attributes to the `…Actions` object of the part that owns them.
+Data flows one way: the background worker syncs GitHub into `chrome.storage.local`; the page loads storage into `state` and re-renders whenever it changes. Views are lit-html templates, so a re-render only touches what changed (focus, typed text, scroll and open sections stay put) and every value is escaped. Anything a view shows lives in `state` or its module, never in the DOM alone: change the state, then render. Clicks are routed by `data-action` attributes to the `…Actions` object of the part that owns them.
 
 ## Releasing
 

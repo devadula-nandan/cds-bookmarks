@@ -28,13 +28,14 @@ import {
   todaysAnswer,
   triagePrompt,
 } from "../bob.js";
-import { esc, itemRef, plural, uid } from "../core.js";
+import { itemRef, plural, uid } from "../core.js";
 import { enabledRepos, repoBySlug } from "../repos.js";
 import { todaysMeetings } from "../sync.js";
 import { icon } from "./icons.js";
+import { html, live, nothing, render, unsafeHTML } from "./lit.js";
 import { checklist, markdown } from "./markdown.js";
 import { addTodos } from "./today.js";
-import { $, $$, activityList, agoText, bobTargets, copyText, data, go, keepFocus, searchUrl, state, toast } from "./ui.js";
+import { $, $$, activityList, agoText, bobTargets, copyText, data, go, searchUrl, state, toast } from "./ui.js";
 
 // Each answer has a "Bob Shell log" toggle with Bob's full transcript. Comment out the next line to remove them all.
 let SHOW_LOGS = false;
@@ -56,7 +57,7 @@ let timer = 0;
  *   trigger, fallback           selectors for the button that shows this session's status (fallback: its tab)
  *   format                      "edit", "reply" or "query": the answer is a draft to edit and revise
  *   input                       ask for text first (the Slack thread); spec.makePrompt(text) builds the prompt
- *   answer, extra, regenerate   a ready-made answer (bug reports), markup under it, and whether Regenerate shows
+ *   answer, extra, regenerate   a ready-made answer (bug reports), a function for what goes under it, and whether Regenerate shows
  */
 export async function openBob(spec, { fresh = false } = {}) {
   // Asking again for something minimised brings it back instead of starting over.
@@ -87,7 +88,7 @@ function show(s) {
   s.minimised = false;
   s.toast?.remove();
   if (!sheet().open) sheet().showModal();
-  render();
+  renderBob();
 }
 
 /** The sheet stops showing `s`: kept minimised while it works, otherwise closed. */
@@ -139,7 +140,7 @@ async function run(s, question) {
   if (s.minimised) s.toast = toast(s.error ? `Bob couldn't finish “${s.spec.title}”` : `“${s.spec.title}” is ready`, s.error ? "error" : "success", { label: "Open", run: () => show(s) });
 }
 
-const paint = (s) => (s === shown ? render() : markTriggers());
+const paint = (s) => (s === shown ? renderBob() : markTriggers());
 const firstAnswer = (s) => s.turns.find((t) => t.role === "bob");
 const isDraft = (s) => ["edit", "reply", "query"].includes(s.spec.format);
 
@@ -179,19 +180,29 @@ export function openFromTrigger(el) {
 
 // ---------- the sheet ----------
 
-const logToggle = (log) => (SHOW_LOGS && log ? `<details class="bob__log"><summary>${icon("code", 14)}Bob Shell log <span>${plural(log.split("\n").length, "line")}</span></summary><pre>${esc(log)}</pre></details>` : "");
+const logToggle = (log) => (SHOW_LOGS && log ? html`<details class="bob__log"><summary>${icon("code", 14)}Bob Shell log <span>${plural(log.split("\n").length, "line")}</span></summary><pre>${log}</pre></details>` : nothing);
 
-function answerHtml(s, turn) {
-  const outdated = turn.outdated ? `<p class="bob__revised">${icon("refresh", 14)}<span>Written before the latest changes. Regenerate for an up-to-date answer.</span></p>` : "";
-  if (turn !== firstAnswer(s) || !isDraft(s)) return `${outdated}<div class="bob__answer">${markdown(turn.text)}</div>`;
-  const last = s.revisions.at(-1);
-  const undo = last ? `<p class="bob__revised">${icon("sparkle", 14)}<span>Revised: “${esc(last.ask)}”</span><button class="btn btn--ghost btn--sm" data-action="bob-undo">Undo</button></p>` : "";
-  if (s.spec.format === "query")
-    return `${undo}<form class="field-row" data-form="bob-query"><input class="input mono" name="q" value="${esc(draftText(s))}" aria-label="GitHub search query" data-focus="bob-draft" spellcheck="false"><button class="btn btn--primary" type="submit">Search GitHub</button></form>`;
-  return `${undo}<textarea class="input bob__edit" rows="11" aria-label="Draft, editable" data-focus="bob-draft">${esc(draftText(s))}</textarea>`;
+/** Markdown → sanitized HTML, kept per answer so a re-render doesn't parse it again. */
+const rendered = new WeakMap();
+function answerMarkup(turn) {
+  if (rendered.get(turn)?.text !== turn.text) rendered.set(turn, { text: turn.text, html: unsafeHTML(markdown(turn.text)) });
+  return rendered.get(turn).html;
 }
 
-function render() {
+function answerView(s, turn) {
+  const outdated = turn.outdated ? html`<p class="bob__revised">${icon("refresh", 14)}<span>Written before the latest changes. Regenerate for an up-to-date answer.</span></p>` : nothing;
+  if (turn !== firstAnswer(s) || !isDraft(s)) return html`${outdated}<div class="bob__answer">${answerMarkup(turn)}</div>`;
+  const last = s.revisions.at(-1);
+  const undo = last ? html`<p class="bob__revised">${icon("sparkle", 14)}<span>Revised: “${last.ask}”</span><button class="btn btn--ghost btn--sm" data-action="bob-undo">Undo</button></p>` : nothing;
+  if (s.spec.format === "query")
+    return html`${undo}<form class="field-row" data-form="bob-query"><input class="input mono" name="q" .value=${live(draftText(s))} aria-label="GitHub search query" data-draft spellcheck="false"><button class="btn btn--primary" type="submit">Search GitHub</button></form>`;
+  return html`${undo}<textarea class="input bob__edit" rows="11" aria-label="Draft, editable" data-draft .value=${live(draftText(s))}></textarea>`;
+}
+
+const ERROR_TITLES = { missing: "Bob helper not found", license: "Accept Bob Shell's license", nokey: "Bob API key problem", cancelled: "Stopped" };
+
+/** Draws the session in the sheet. While Bob works, it redraws every second (`ticking`) for the elapsed time. */
+export function renderBob(ticking = false) {
   const s = shown;
   if (!s) return;
   const { spec, turns, error } = s;
@@ -202,56 +213,58 @@ function render() {
 
   const input =
     spec.input && !spec.text
-      ? `<form class="bob__input" data-form="bob-input">
-           <label class="field"><span>${esc(spec.input.label)}</span><textarea class="input bob__edit" name="text" rows="12" placeholder="${esc(spec.input.placeholder)}" data-focus="bob-input" required></textarea></label>
-           <div class="bob__input-foot"><p class="hint">${spec.input.hint}</p><button class="btn btn--primary" type="submit">${icon("sparkle", 16)}${esc(spec.input.submit)}</button></div>
-         </form>`
-      : "";
-  const thread = turns
-    .map((t) => `<div class="bob__turn">${t.role === "user" ? `<p class="bob__q">${esc(t.text)}</p>` : answerHtml(s, t) + logToggle(t.log) + (t === first && spec.extra ? spec.extra : "")}</div>`)
-    .join("");
+      ? html`<form class="bob__input" data-form="bob-input">
+          <label class="field"><span>${spec.input.label}</span><textarea class="input bob__edit" name="text" rows="12" placeholder=${spec.input.placeholder} required></textarea></label>
+          <div class="bob__input-foot"><p class="hint">${spec.input.hint}</p><button class="btn btn--primary" type="submit">${icon("sparkle", 16)}${spec.input.submit}</button></div>
+        </form>`
+      : nothing;
+  const thread = turns.map(
+    (t) => html`<div class="bob__turn">${t.role === "user" ? html`<p class="bob__q">${t.text}</p>` : html`${answerView(s, t)}${logToggle(t.log)}${t === first && spec.extra ? spec.extra() : nothing}`}</div>`
+  );
   const waiting = loading
-    ? `<div class="bob__loading bob-shimmer" role="status"><span class="bob__spinner"></span><span>Bob is working…</span><span class="bob__elapsed mono">${Math.round((Date.now() - s.since) / 1000)}s</span><button class="btn btn--ghost btn--sm" data-action="bob-cancel">Cancel</button></div>`
-    : "";
-  const errorTitle = { missing: "Bob helper not found", license: "Accept Bob Shell's license", nokey: "Bob API key problem", cancelled: "Stopped" }[error?.code] || "Bob couldn't answer";
+    ? html`<div class="bob__loading bob-shimmer" role="status"><span class="bob__spinner"></span><span>Bob is working…</span><span class="bob__elapsed mono">${Math.round((Date.now() - s.since) / 1000)}s</span><button class="btn btn--ghost btn--sm" data-action="bob-cancel">Cancel</button></div>`
+    : nothing;
   const failure = error
-    ? `<div class="notice ${error.code === "cancelled" ? "" : "notice--error"}" role="alert">${icon("alert", 16)}<div class="notice__body">
-         <p class="notice__title">${errorTitle}</p>
-         <p class="notice__text">${esc(error.message)}</p>
-         <div class="notice__actions">${["nokey", "missing"].includes(error.code) ? `<button class="btn btn--primary btn--sm" data-action="settings" data-section="bob">Bob settings</button>` : ""}<button class="btn btn--sm" data-action="bob-retry">Try again</button></div>
-       </div></div>${logToggle(error.log)}`
-    : "";
+    ? html`<div class="notice ${error.code === "cancelled" ? "" : "notice--error"}" role="alert">${icon("alert", 16)}<div class="notice__body">
+          <p class="notice__title">${ERROR_TITLES[error.code] || "Bob couldn't answer"}</p>
+          <p class="notice__text">${error.message}</p>
+          <div class="notice__actions">${["nokey", "missing"].includes(error.code) ? html`<button class="btn btn--primary btn--sm" data-action="settings" data-section="bob">Bob settings</button>` : nothing}<button class="btn btn--sm" data-action="bob-retry">Try again</button></div>
+        </div></div>${logToggle(error.log)}`
+    : nothing;
   const tools = last
-    ? `<div class="bob__tools">
-         <button class="btn btn--ghost btn--sm" data-action="bob-copy">${icon("copy", 14)}Copy</button>
-         ${todos.length ? `<button class="btn btn--ghost btn--sm" data-action="bob-todos">${icon("plus", 14)}Add ${plural(todos.length, "to-do")}</button>` : ""}
-         ${spec.input ? `<button class="btn btn--ghost btn--sm" data-action="bob-new-thread" ${loading ? "disabled" : ""}>${icon("message", 14)}New thread</button>` : ""}
-         ${spec.regenerate === false ? "" : `<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-regenerate" ${loading ? "disabled" : ""}>${icon("refresh", 14)}Regenerate</button>`}
-         <span class="bob__meta">${first.label || "Answered"} <span data-ago="${esc(first.at)}">${agoText(first.at)}</span></span>
-       </div>
-       <form class="bob__follow" data-form="bob-follow">
-         <input class="input" name="q" placeholder="${isDraft(s) ? "Ask for changes: shorter, friendlier, add the PR links…" : "Ask a follow-up"}" autocomplete="off" aria-label="Follow-up" data-focus="bob-follow" ${loading ? "disabled" : ""}>
-         <button class="icon-btn" type="submit" aria-label="Send" ${loading ? "disabled" : ""}>${icon("send", 16)}</button>
-       </form>`
-    : "";
+    ? html`<footer class="bob__foot">
+        <div class="bob__tools">
+          <button class="btn btn--ghost btn--sm" data-action="bob-copy">${icon("copy", 14)}Copy</button>
+          ${todos.length ? html`<button class="btn btn--ghost btn--sm" data-action="bob-todos">${icon("plus", 14)}Add ${plural(todos.length, "to-do")}</button>` : nothing}
+          ${spec.input ? html`<button class="btn btn--ghost btn--sm" data-action="bob-new-thread" ?disabled=${loading}>${icon("message", 14)}New thread</button>` : nothing}
+          ${spec.regenerate === false ? nothing : html`<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-regenerate" ?disabled=${loading}>${icon("refresh", 14)}Regenerate</button>`}
+          <span class="bob__meta">${first.label || "Answered"} <span>${agoText(first.at)}</span></span>
+        </div>
+        <form class="bob__follow" data-form="bob-follow">
+          <input class="input" name="q" placeholder=${isDraft(s) ? "Ask for changes: shorter, friendlier, add the PR links…" : "Ask a follow-up"} autocomplete="off" aria-label="Follow-up" ?disabled=${loading}>
+          <button class="icon-btn" type="submit" aria-label="Send" ?disabled=${loading}>${icon("send", 16)}</button>
+        </form>
+      </footer>`
+    : nothing;
 
-  keepFocus(sheet(), () => {
-    sheet().innerHTML = `
+  render(
+    html`
       <header class="sheet__head bob__head">
         <span class="chip-icon tone-info ${loading ? "is-thinking" : ""}">${icon("sparkle", 20)}</span>
         <div class="bob__title">
-          <h2>${esc(spec.title)}</h2>
-          ${spec.subtitle ? (spec.url ? `<a class="bob__subtitle" href="${esc(spec.url)}" target="_blank">${esc(spec.subtitle)}</a>` : `<p class="bob__subtitle">${esc(spec.subtitle)}</p>`) : ""}
+          <h2>${spec.title}</h2>
+          ${spec.subtitle ? (spec.url ? html`<a class="bob__subtitle" href=${spec.url} target="_blank">${spec.subtitle}</a>` : html`<p class="bob__subtitle">${spec.subtitle}</p>`) : nothing}
         </div>
-        <button class="icon-btn" data-action="bob-hide" aria-label="${loading ? "Minimise" : "Close"}" data-tooltip="${loading ? "Minimise. Bob keeps working" : "Close"}">${icon(loading ? "minus" : "x", 18)}</button>
+        <button class="icon-btn" data-action="bob-hide" aria-label=${loading ? "Minimise" : "Close"} data-tooltip=${loading ? "Minimise. Bob keeps working" : "Close"}>${icon(loading ? "minus" : "x", 18)}</button>
       </header>
       <div class="sheet__body bob__body">${input}${thread}${waiting}${failure}</div>
-      ${tools ? `<footer class="bob__foot">${tools}</footer>` : ""}`;
-  });
+      ${tools}`,
+    sheet()
+  );
+  if (ticking) return;
   if (loading) $(".bob__body").scrollTop = $(".bob__body").scrollHeight;
-
   clearInterval(timer);
-  if (loading) timer = setInterval(() => ($(".bob__elapsed") ? ($(".bob__elapsed").textContent = `${Math.round((Date.now() - s.since) / 1000)}s`) : null), 1000);
+  if (loading) timer = setInterval(() => renderBob(true), 1000);
   markTriggers();
 }
 
@@ -302,7 +315,7 @@ export function bindBobEffects() {
 /** Typing in a draft keeps the edits on its turn, so re-renders and revisions start from them. */
 export function bindBobSheet() {
   sheet().addEventListener("input", (e) => {
-    if (e.target.dataset.focus === "bob-draft" && shown) firstAnswer(shown).draft = e.target.value;
+    if (e.target.matches("[data-draft]") && shown) firstAnswer(shown).draft = e.target.value;
   });
   // Escape closes the dialog natively; tidy up the same way as the close button. The event arrives
   // late, so skip it if a session was shown again meanwhile.
@@ -430,7 +443,7 @@ export const bobActions = {
     const last = shown.revisions.pop();
     Object.assign(firstAnswer(shown), { text: last.text, draft: last.draft, label: "Answered" });
     saveAnswer(shown.spec.key, { text: last.text });
-    render();
+    renderBob();
   },
   "bob-copy": () => copyText(isDraft(shown) ? draftText(shown) : shown.turns.findLast((t) => t.role === "bob").text),
   "bob-todos": async () => {

@@ -2857,27 +2857,49 @@ a.bob__subtitle:hover {
   color: var(--error);
 }
 
-/* Syntax colours (markdown.js highlight): keyword, string, number, comment, tag, function call. */
-.tok-k {
+/* Syntax colours for Prism's tokens (markdown.js highlight), in the dashboard's palette. */
+.token.keyword,
+.token.atrule,
+.token.important {
   color: var(--magic);
 }
 
-.tok-s {
+.token.string,
+.token.char,
+.token.attr-value,
+.token.template-string,
+.token.regex,
+.token.url {
   color: var(--success);
 }
 
-.tok-n {
+.token.number,
+.token.boolean,
+.token.constant,
+.token.attr-name,
+.token.property {
   color: var(--warning);
 }
 
-.tok-c {
+.token.comment,
+.token.prolog,
+.token.doctype,
+.token.cdata {
   color: var(--text-3);
   font-style: italic;
 }
 
-.tok-t,
-.tok-f {
+.token.tag,
+.token.function,
+.token.class-name,
+.token.selector,
+.token.builtin {
   color: var(--info);
+}
+
+.token.punctuation,
+.token.operator {
+  color: var(--text-2);
 }
 
 .diff-hunk {
@@ -3224,6 +3246,22 @@ a.bob__subtitle:hover {
 
 .hunt__report.is-incomplete .hunt__title {
   color: var(--warning);
+}
+
+.hunt-verdicts {
+  display: grid;
+  gap: 4px;
+}
+
+.hunt-verdicts__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hunt-verdicts .quiet-inline {
+  margin: 0;
 }
 
 .hunt-verdict[aria-pressed="true"] {

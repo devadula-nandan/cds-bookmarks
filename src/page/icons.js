@@ -1,4 +1,6 @@
-// Line icons (24×24, stroked), used as icon("name", size).
+// Line icons (24×24, stroked), used as icon("name", size) in templates.
+
+import { html, unsafeSVG } from "./lit.js";
 
 const PATHS = {
   eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
@@ -49,5 +51,5 @@ const GITHUB = '<path fill-rule="evenodd" fill="currentColor" stroke="none" d="M
 export function icon(name, size = 16) {
   const body = name === "github" ? GITHUB : PATHS[name] || PATHS.git;
   const box = name === "github" ? "0 0 32 32" : "0 0 24 24";
-  return `<svg class="icon" width="${size}" height="${size}" viewBox="${box}" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+  return html`<svg class="icon" width=${size} height=${size} viewBox=${box} fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${unsafeSVG(body)}</svg>`;
 }

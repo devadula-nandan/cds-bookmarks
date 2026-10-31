@@ -2,7 +2,7 @@
 // the latest main of one local clone and reports the most obvious easy-to-fix bug. Repos with a clone take
 // turns. Runs in the background worker; the page's "Hunt now" asks the worker to start one.
 
-import { askBob, gitInfo, huntCheckout } from "./bob.js";
+import { askBob, gitInfo, huntCheckout, jsonBlock } from "./bob.js";
 import { loadSettings, parseTime, repoShort, storage, todayKey, uid } from "./core.js";
 import { enabledRepos } from "./repos.js";
 import { record } from "./sync.js";
@@ -25,22 +25,11 @@ ${previous || "- none yet"}
 
 Read the surrounding code and its callers to make sure it's really a bug. If you find nothing you're confident about, say so. Then search GitHub with gh for an existing issue about it.
 
-Report in GitHub Markdown: a "## title" line, then **Where**, **What's wrong** (quote the lines), **Why it's a bug** (what a user would see, how to reproduce), **Fix** (a minimal \`\`\`diff), and **Confidence** (high, medium or low, with one line of reasoning).
+Report in GitHub Markdown: a "## title" line, then **Where** (the file path and line in backticks, not a link), **What's wrong** (quote the lines as they are in the file, in a code fence named for its language, with enough around them to be valid code on their own — such as the opening tag of a JSX attribute), **Why it's a bug** (what a user would see, how to reproduce), **Suggested fix** (a minimal \`\`\`diff), and **Confidence** (high, medium or low, with one line of reasoning).
 Finish with this JSON block and nothing after it:
 \`\`\`json
 {"found": true, "title": "…", "file": "path/from/repo/root", "line": 123, "severity": "low|medium|high", "effort": "e.g. 15 min", "confidence": "high|medium|low", "related": [{"ref": "carbon#123", "title": "…", "url": "…", "state": "open|closed"}]}
 \`\`\``;
-}
-
-/** The Markdown report, and the JSON summary block at its end. */
-function splitReport(text) {
-  const blocks = [...String(text).matchAll(/```json\s*([\s\S]*?)```/g)];
-  const last = blocks.at(-1);
-  let meta = null;
-  try {
-    meta = last && JSON.parse(last[1]);
-  } catch {}
-  return { markdown: (last ? text.slice(0, last.index) : text).trim(), meta };
 }
 
 /** Whether a hunt can start now, and why not. Quick, so the page gets an answer right away. */
@@ -100,7 +89,8 @@ export async function hunt() {
       .map((h) => `- ${h.file}${h.line ? `:${h.line}` : ""} — ${h.title}${verdicts[h.verdict] || ""}`)
       .join("\n");
     const { text, log } = await askBob(prompt(repo.slug, git.branch, git.head, previous), settings, { workspace: git.path, maxCost: HUNT_MAX_COST });
-    const { markdown, meta } = splitReport(text);
+    // The report, then a ```json summary block at its end.
+    const { before: markdown, json: meta } = jsonBlock(text);
     // No JSON summary at the end: Bob stopped early or answered in another shape. That's not "nothing found".
     const incomplete = !meta;
     const found = !!meta?.title && meta.found !== false;

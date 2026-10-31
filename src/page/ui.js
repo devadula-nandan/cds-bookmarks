@@ -1,10 +1,12 @@
 // The page's state (a copy of what's in storage) and small helpers shared by every part of the page.
 
 import { MODES, answerKey, modeFor } from "../bob.js";
-import { esc, defaultSettings, timeAgo, todayKey } from "../core.js";
+import { defaultSettings, timeAgo, todayKey } from "../core.js";
 import { focusQueue, isSnoozed } from "../insights.js";
 import { enabledRepos, repoLabel, repos } from "../repos.js";
+import DOMPurify from "../vendor/purify.es.js";
 import { icon } from "./icons.js";
+import { html, live, nothing, repeat, unsafeHTML } from "./lit.js";
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -27,6 +29,7 @@ export const state = {
   untilChange: {}, // snoozed until the item has new activity
   answered: new Set(), // keys of Bob's saved answers
   bobStatus: null,
+  fixing: new Map(), // a row fix that's running ("action:id") → its button's label meanwhile
 };
 
 /** The selected work tab, remembered in this browser only. */
@@ -83,67 +86,86 @@ export function go(url, newTab) {
 
 export const agoText = (at) => (timeAgo(at) === "now" ? "just now" : `${timeAgo(at)} ago`);
 
-export const iconChip = (name, tone = "neutral") => `<span class="chip-icon tone-${tone}">${icon(name, 16)}</span>`;
+export const iconChip = (name, tone = "neutral") => html`<span class="chip-icon tone-${tone}">${icon(name, 16)}</span>`;
 
-export const timeEl = (at) => (at ? `<time class="item__time" data-at="${esc(at)}" data-tooltip="${esc(new Date(at).toLocaleString())}">${timeAgo(at)}</time>` : "");
+export const timeEl = (at) => (at ? html`<time class="item__time" data-tooltip=${new Date(at).toLocaleString()}>${timeAgo(at)}</time>` : nothing);
 
 /** "Carbon #123". */
-export const ref = (item) => `${esc(repoLabel(item.repo))} <span class="mono">#${item.number}</span>`;
+export const ref = (item) => html`${repoLabel(item.repo)} <span class="mono">#${item.number}</span>`;
+
+/** A repo's logo, an SVG from bookmarks.json (which anyone can edit), sanitized once. */
+const logos = new Map();
+export function logo(markup) {
+  if (!logos.has(markup)) logos.set(markup, DOMPurify.sanitize(String(markup || ""), { USE_PROFILES: { svg: true } }));
+  return unsafeHTML(logos.get(markup));
+}
 
 /** Row key → what Bob should look at for that row's ✦ button. Rebuilt on every work render. */
 export const bobTargets = new Map();
 
 /**
  * One row of a list. `bob` ({ item, kind, task }) adds Bob's button; `snooze` and `unfollow` add theirs.
- * `cta` ({ label, action, id, tooltip, iconName, primary }) is the row's one-click fix, always in view.
+ * `cta` ({ label, action, id, tooltip, iconName, primary }) is the row's one-click fix, always in view;
+ * while it runs, `state.fixing` holds its progress label.
  */
 export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, unfollow, cta }) {
-  let buttons = "";
+  const buttons = [];
   if (bob && aiOn()) {
     bobTargets.set(key, bob);
     const { label, verb } = MODES[modeFor(bob.item, bob.kind)];
     // Bob already answered this version of the item: the ✦ turns blue.
     const ready = state.answered.has(answerKey(bob));
-    buttons += `<button class="icon-btn icon-btn--sm bob-btn${ready ? " bob-made" : ""}" data-action="bob-item" data-key="${esc(key)}" data-tooltip="${esc(ready ? `${label} · answer ready` : verb)}" aria-label="${esc(verb)}">${icon("sparkle", 16)}</button>`;
+    buttons.push(html`<button class="icon-btn icon-btn--sm bob-btn ${ready ? "bob-made" : ""}" data-action="bob-item" data-key=${key} data-tooltip=${ready ? `${label} · answer ready` : verb} aria-label=${verb}>${icon("sparkle", 16)}</button>`);
   }
-  if (snooze) buttons += `<button class="icon-btn icon-btn--sm" data-action="snooze-menu" data-key="${esc(snooze)}" popovertarget="snooze-menu" data-tooltip="Snooze" aria-label="Snooze ${esc(title)}">${icon("snooze", 16)}</button>`;
-  if (unfollow) buttons += `<button class="icon-btn icon-btn--sm" data-action="unfollow" data-id="${esc(unfollow)}" data-tooltip="Hide until there's a new reply" aria-label="Hide ${esc(title)}">${icon("x", 16)}</button>`;
-  return `
+  if (snooze) buttons.push(html`<button class="icon-btn icon-btn--sm" data-action="snooze-menu" data-key=${snooze} popovertarget="snooze-menu" data-tooltip="Snooze" aria-label="Snooze ${title}">${icon("snooze", 16)}</button>`);
+  if (unfollow) buttons.push(html`<button class="icon-btn icon-btn--sm" data-action="unfollow" data-id=${unfollow} data-tooltip="Hide until there's a new reply" aria-label="Hide ${title}">${icon("x", 16)}</button>`);
+  const busy = cta && state.fixing.get(`${cta.action}:${cta.id}`);
+  return html`
     <li class="item">
       ${iconChip(iconName, tone)}
       <div class="item__body">
-        <a class="item__title" href="${esc(url)}" data-focus="${esc(key)}">${esc(title)}</a>
+        <a class="item__title" href=${url}>${title}</a>
         <p class="item__meta">${meta}</p>
       </div>
-      ${cta ? `<button class="btn btn--sm ${cta.primary ? "btn--primary" : ""} item__cta" data-action="${esc(cta.action)}" data-id="${esc(cta.id)}" data-tooltip="${esc(cta.tooltip || "")}">${cta.iconName ? icon(cta.iconName, 14) : ""}${esc(cta.label)}</button>` : ""}
-      <div class="item__end">${timeEl(at)}${buttons ? `<span class="item__actions">${buttons}</span>` : ""}</div>
+      ${cta
+        ? html`<button class="btn btn--sm ${cta.primary ? "btn--primary" : ""} item__cta" data-action=${cta.action} data-id=${cta.id} data-tooltip=${cta.tooltip || ""} ?disabled=${!!busy}>${busy || html`${cta.iconName ? icon(cta.iconName, 14) : nothing}${cta.label}`}</button>`
+        : nothing}
+      <div class="item__end">${timeEl(at)}${buttons.length ? html`<span class="item__actions">${buttons}</span>` : nothing}</div>
     </li>`;
 }
 
+/** Rows keyed by `key`, so a row (and focus in it) moves with its item when the list changes. */
+const rows = (items, render, key) => repeat(items, key, render);
+
 /** A titled list whose heading pins while its rows scroll. */
-export function listSection(id, title, items, render, hint = "") {
-  if (!items.length) return "";
-  return `<div class="section"><h3 class="group">${title} <span>${items.length}</span>${hint ? `<small>${hint}</small>` : ""}</h3><ul class="items items--${id}">${items.map(render).join("")}</ul></div>`;
+export function listSection(id, title, items, render, key, hint = "") {
+  if (!items.length) return nothing;
+  return html`<div class="section"><h3 class="group">${title} <span>${items.length}</span>${hint ? html`<small>${hint}</small>` : nothing}</h3><ul class="items items--${id}">${rows(items, render, key)}</ul></div>`;
 }
 
-/** Folded groups the user opened, kept open across re-renders. */
+/** Folded groups the user opened, kept open when a tab switch rebuilds the list. */
 export const openFolds = new Set();
 
 /** Like listSection, but folded until opened: for what can wait, such as stale items and dependency bumps. */
-export function foldSection(id, title, items, render, hint = "") {
-  if (!items.length) return "";
-  return `<details class="section section--fold" data-fold="${id}" ${openFolds.has(id) ? "open" : ""}><summary class="group">${title} <span>${items.length}</span>${hint ? `<small>${hint}</small>` : ""}${icon("chevronDown", 14)}</summary><ul class="items items--${id}">${items.map(render).join("")}</ul></details>`;
+export function foldSection(id, title, items, render, key, hint = "") {
+  if (!items.length) return nothing;
+  return html`<details class="section section--fold" data-fold=${id} ?open=${openFolds.has(id)}><summary class="group">${title} <span>${items.length}</span>${hint ? html`<small>${hint}</small>` : nothing}${icon("chevronDown", 14)}</summary><ul class="items items--${id}">${rows(items, render, key)}</ul></details>`;
 }
 
-export const skeleton = () => `<ul class="items" aria-hidden="true">${'<li class="item item--skeleton"><span class="sk sk--icon"></span><div class="item__body"><span class="sk sk--line"></span><span class="sk sk--short"></span></div></li>'.repeat(5)}</ul>`;
+/** A plain list of rows, keyed like listSection's. */
+export const itemList = (items, render, key) => html`<ul class="items">${rows(items, render, key)}</ul>`;
 
-export const emptyState = (iconName, title, text = "") => `<div class="empty">${iconChip(iconName, "success")}<p class="empty__title">${title}</p>${text ? `<p class="empty__text">${text}</p>` : ""}</div>`;
+const SKELETON_ROW = html`<li class="item item--skeleton"><span class="sk sk--icon"></span><div class="item__body"><span class="sk sk--line"></span><span class="sk sk--short"></span></div></li>`;
+export const skeleton = () => html`<ul class="items" aria-hidden="true">${[1, 2, 3, 4, 5].map(() => SKELETON_ROW)}</ul>`;
 
-export const toggle = ({ attrs, checked, label, hint = "", disabled = false }) => `
+export const emptyState = (iconName, title, text = "") => html`<div class="empty">${iconChip(iconName, "success")}<p class="empty__title">${title}</p>${text ? html`<p class="empty__text">${text}</p>` : nothing}</div>`;
+
+/** A switch. `data` is its data-* attribute, as [name, value]. */
+export const toggle = ({ data: [name, value], checked, label, hint = "", disabled = false }) => html`
   <label class="switch">
-    <input type="checkbox" role="switch" ${attrs} ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+    <input type="checkbox" role="switch" data-setting=${name === "setting" ? value : nothing} data-repo-toggle=${name === "repo" ? value : nothing} .checked=${live(checked)} ?disabled=${disabled}>
     <span class="switch__track" aria-hidden="true"></span>
-    <span class="switch__text">${label}${hint ? `<small>${hint}</small>` : ""}</span>
+    <span class="switch__text">${label}${hint ? html`<small>${hint}</small>` : nothing}</span>
   </label>`;
 
 /** "45m", "1h", "1h 20m". */
@@ -155,31 +177,6 @@ export function dayLabel(at, dated = false) {
   if (key === todayKey()) return "Today";
   if (key === todayKey(new Date(Date.now() - 86400000))) return "Yesterday";
   return dated ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Earlier";
-}
-
-// ---------- rendering ----------
-
-/** Writes markup only when it changed, so a re-render with nothing new doesn't disturb the page. */
-const written = new WeakMap();
-export function setHtml(el, html) {
-  if (written.get(el) === html) return;
-  written.set(el, html);
-  el.innerHTML = html;
-}
-
-/** Re-renders a region without losing keyboard focus, or what's being typed, inside it. */
-export function keepFocus(root, render) {
-  const active = root.contains(document.activeElement) ? document.activeElement : null;
-  const key = active?.dataset.focus;
-  const typed = key && active.matches("input:not([type=checkbox]), textarea") ? [active.value, active.selectionStart, active.selectionEnd] : null;
-  render();
-  const next = key && root.querySelector(`[data-focus="${CSS.escape(key)}"]`);
-  if (!next) return;
-  if (typed) {
-    next.value = typed[0];
-    next.setSelectionRange?.(typed[1], typed[2]);
-  }
-  next.focus({ preventScroll: true });
 }
 
 // ---------- feedback ----------

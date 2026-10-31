@@ -8,7 +8,7 @@ export const storage = chrome.storage.local;
 export const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
-export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+export const uid = () => crypto.randomUUID();
 
 export const plural = (n, word, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
 

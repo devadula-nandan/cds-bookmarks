@@ -1,14 +1,15 @@
 // The work panel: the For you / Issues / Pull requests / Following tabs, snoozing, unfollowing, and the
 // one-click fixes on rows (ready to merge, re-run CI, step off a stale review, close a stale PR).
 
-import { ageDays, esc, plural, storage, updateDay } from "../core.js";
+import { ageDays, plural, storage, updateDay } from "../core.js";
 import { addLabels, enableAutoMerge, removeReviewer, requestReviewers, rerunFailedJobs, setPrState } from "../github.js";
 import { STALE_DAYS, ageText, askedAt, bucket, checkHint, isBot, isSnoozed, prState, reviewSize, weekStats } from "../insights.js";
 import { repoBySlug } from "../repos.js";
 import { requestSync, syncNotice, tokenNotice } from "./header.js";
 import { icon } from "./icons.js";
+import { html, nothing, render } from "./lit.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, foldSection, issueItems, keepFocus, listSection, openFolds, ref, repoScope, row, saveView, searchUrl, setHtml, skeleton, state, toast, view, visibleTasks } from "./ui.js";
+import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, foldSection, issueItems, itemList, listSection, openFolds, ref, repoScope, row, saveView, searchUrl, skeleton, state, toast, view, visibleTasks } from "./ui.js";
 
 // ---------- rows ----------
 
@@ -30,16 +31,18 @@ const TASK_LOOK = {
 
 /** The failing checks, linked to their logs: "avt and test", or "avt, test and 3 more". */
 function checkLinks(checks) {
-  const link = (c) => (c.url ? `<a class="item__link" href="${esc(c.url)}" data-tooltip="Open the ${esc(c.name)} log">${esc(c.name)}</a>` : esc(c.name));
-  if (checks.length > 2) return `${checks.slice(0, 2).map(link).join(", ")} and ${checks.length - 2} more`;
-  return checks.map(link).join(" and ");
+  const link = (c) => (c.url ? html`<a class="item__link" href=${c.url} data-tooltip="Open the ${c.name} log">${c.name}</a>` : c.name);
+  if (checks.length > 2) return html`${link(checks[0])}, ${link(checks[1])} and ${checks.length - 2} more`;
+  return checks.length === 2 ? html`${link(checks[0])} and ${link(checks[1])}` : checks.map(link);
 }
+
+const warn = (text) => html`<span class="t-warning">${text}</span>`;
 
 /** "CI failing: avt · fill in the PR template". */
 function ciMeta(pr) {
   if (!pr.failingChecks?.length) return "CI failing";
   const hint = pr.failingChecks.map((c) => checkHint(c.name)).find(Boolean);
-  return `CI failing: ${checkLinks(pr.failingChecks)}${hint ? ` · <span class="t-warning">${esc(hint)}</span>` : ""}`;
+  return html`CI failing: ${checkLinks(pr.failingChecks)}${hint ? html` · ${warn(hint)}` : nothing}`;
 }
 
 /** Ready to merge: adds the repo's ready label and turns on auto-merge, whichever of the two apply. */
@@ -74,21 +77,21 @@ function taskRow(t) {
       title: `main is failing on ${repoBySlug(t.repo)?.short || t.repo}`,
       iconName: "alert",
       tone: "error",
-      meta: `<span class="mono">${esc(t.ref.split("@")[1])}</span> · ${t.checks?.length ? `${checkLinks(t.checks)} · ` : ""}${esc(t.title)}`,
+      meta: html`<span class="mono">${t.ref.split("@")[1]}</span> · ${t.checks?.length ? html`${checkLinks(t.checks)} · ` : nothing}${t.title}`,
       at: t.at,
       snooze: t.key,
       bob: { kind: "main", task: t },
     });
   const [iconName, tone] = TASK_LOOK[t.kind];
   const quiet = (t.kind === "review" && isBot(t.item.author)) || (t.kind === "ciFailed" && t.item.draft);
-  const reason = t.kind === "ciFailed" ? `${ciMeta(t.item)}${t.item.draft ? " · draft" : ""}` : esc(t.reason);
+  const reason = t.kind === "ciFailed" ? html`${ciMeta(t.item)}${t.item.draft ? " · draft" : ""}` : t.reason;
   return row({
     key: t.key,
     url: t.url,
     title: t.title,
     iconName,
     tone: quiet ? "neutral" : tone,
-    meta: `${ref(t.item)} · ${reason}${t.detail && t.kind !== "ciFailed" ? ` · <span class="t-warning">${esc(t.detail)}</span>` : ""}`,
+    meta: html`${ref(t.item)} · ${reason}${t.detail && t.kind !== "ciFailed" ? html` · ${warn(t.detail)}` : nothing}`,
     at: t.item.updatedAt,
     snooze: t.key,
     bob: { item: t.item, kind: t.kind, task: t },
@@ -113,11 +116,11 @@ const PR_LOOK = {
 function myPrRow(pr) {
   const st = prState(pr);
   const [iconName, tone] = PR_LOOK[st];
-  let text = esc(PR_LOOK[st][2]);
-  if (st === "ciFailed") text = ciMeta(pr);
-  if (st === "changes" && pr.changeRequests.length) text += ` by ${esc(pr.changeRequests.join(", "))}`;
+  let text = PR_LOOK[st][2];
+  if (st === "changes" && pr.changeRequests.length) text += ` by ${pr.changeRequests.join(", ")}`;
   if (st === "queued" && pr.queue.position) text += ` · #${pr.queue.position}`;
-  if (st === "oneMore") text = `${pr.approvals.length} of ${pr.approvalsNeeded} approvals · ${esc(pr.approvals.join(", "))}`;
+  if (st === "oneMore") text = `${pr.approvals.length} of ${pr.approvalsNeeded} approvals · ${pr.approvals.join(", ")}`;
+  if (st === "ciFailed") text = ciMeta(pr);
   const stale = ageDays(pr.updatedAt) >= STALE_DAYS;
   return row({
     key: pr.id,
@@ -125,7 +128,7 @@ function myPrRow(pr) {
     title: pr.title,
     iconName: stale ? "clock" : iconName,
     tone: stale ? "neutral" : tone,
-    meta: `${ref(pr)} · ${stale ? `No activity for ${ageText(ageDays(pr.updatedAt))} · ` : ""}${text}${pr.draft && st !== "draft" ? " · draft" : ""}`,
+    meta: html`${ref(pr)} · ${stale ? `No activity for ${ageText(ageDays(pr.updatedAt))} · ` : ""}${text}${pr.draft && st !== "draft" ? " · draft" : ""}`,
     at: pr.updatedAt,
     bob: { item: pr },
     cta: stale ? closeCta(pr) : st === "ready" ? readyCta(pr) : st === "ciFailed" ? rerunCta(pr) : null,
@@ -136,15 +139,15 @@ function reviewRow(pr) {
   const days = ageDays(askedAt(pr));
   const stale = days >= STALE_DAYS;
   const overdue = !stale && !isBot(pr.author) && days >= state.settings.staleReviewDays;
-  const size = pr.additions != null ? ` · <span data-tooltip="${plural(pr.files || 0, "file")} changed">${reviewSize(pr)} <span class="mono"><span class="t-add">+${pr.additions}</span> <span class="t-del">−${pr.deletions}</span></span></span>` : "";
-  const age = stale ? ` · requested ${ageText(days)} ago` : overdue ? ` · <span class="t-warning">waiting ${Math.floor(days)}d</span>` : "";
+  const size = pr.additions != null ? html` · <span data-tooltip="${plural(pr.files || 0, "file")} changed">${reviewSize(pr)} <span class="mono"><span class="t-add">+${pr.additions}</span> <span class="t-del">−${pr.deletions}</span></span></span>` : nothing;
+  const age = stale ? ` · requested ${ageText(days)} ago` : overdue ? html` · ${warn(`waiting ${Math.floor(days)}d`)}` : nothing;
   return row({
     key: pr.id,
     url: pr.url,
     title: pr.title,
     iconName: stale ? "clock" : "eye",
     tone: isBot(pr.author) || stale ? "neutral" : overdue ? "warning" : "info",
-    meta: `${ref(pr)} · ${esc(pr.author)}${age}${size}`,
+    meta: html`${ref(pr)} · ${pr.author}${age}${size}`,
     at: askedAt(pr),
     bob: { item: pr, kind: "review" },
     cta: stale ? unrequestCta(pr) : null,
@@ -161,7 +164,7 @@ function reviewedRow(pr) {
     title: pr.title,
     iconName: fresh ? "refresh" : pr.myReview?.state === "APPROVED" ? "check" : "message",
     tone: fresh ? "warning" : "neutral",
-    meta: `${ref(pr)} · ${esc(pr.author)} · ${MY_REVIEW[pr.myReview?.state] || "You reviewed"}${fresh ? ` · <span class="t-warning">new commits</span>` : ""}`,
+    meta: html`${ref(pr)} · ${pr.author} · ${MY_REVIEW[pr.myReview?.state] || "You reviewed"}${fresh ? html` · ${warn("new commits")}` : nothing}`,
     at: fresh ? pr.lastCommitAt : pr.myReview?.at || pr.updatedAt,
     bob: { item: pr, kind: fresh ? "recheck" : "review" },
   });
@@ -175,7 +178,7 @@ function issueRow({ item, why }) {
     title: item.title,
     iconName: why === "mention" ? "at" : isPR ? "pr" : "issue",
     tone: why === "mention" ? "info" : "neutral",
-    meta: `${ref(item)} · ${why === "mention" ? `Mentioned${isPR ? " on a PR" : ""}` : `Assigned${isPR ? " PR" : ""}`} · ${esc(item.author)}`,
+    meta: html`${ref(item)} · ${why === "mention" ? `Mentioned${isPR ? " on a PR" : ""}` : `Assigned${isPR ? " PR" : ""}`} · ${item.author}`,
     at: item.updatedAt,
     bob: { item, kind: why === "mention" ? "mention" : null },
   });
@@ -185,14 +188,14 @@ function followingRow(item) {
   const f = item.follow;
   const eyes = item.reasons.includes("eyes");
   const why = eyes && item.reasons.includes("commented") ? "You reacted 👀 and commented" : eyes ? "You reacted 👀" : "You commented";
-  const reply = f.newReply ? `<span class="t-info">${esc(f.lastReply.author)} replied</span>` : f.lastReply ? `last reply from ${esc(f.lastReply.author)}` : "no replies yet";
+  const reply = f.newReply ? html`<span class="t-info">${f.lastReply.author} replied</span>` : f.lastReply ? `last reply from ${f.lastReply.author}` : "no replies yet";
   return row({
     key: `following:${item.id}`,
     url: (f.newReply && f.lastReply.url) || item.url,
     title: item.title,
     iconName: f.newReply ? "message" : eyes ? "eyes" : item.kind === "pr" ? "pr" : "issue",
     tone: f.newReply ? "info" : "neutral",
-    meta: `${ref(item)} · ${why} · ${reply}`,
+    meta: html`${ref(item)} · ${why} · ${reply}`,
     at: f.lastReply?.at || item.updatedAt,
     bob: { item, kind: f.newReply ? "reply" : null },
     unfollow: item.id,
@@ -208,6 +211,9 @@ function followingItems(d) {
 
 // ---------- tabs ----------
 
+const byKey = (t) => t.key;
+const byId = (i) => i.id;
+
 function forYouTab() {
   const all = allTasks();
   const tasks = all.filter((t) => !isSnoozed(t, state.day.snoozed, state.untilChange));
@@ -219,22 +225,22 @@ function forYouTab() {
   else deps = [];
   const active = groups.now.length + groups.next.length + groups.later.length + deps.length;
   const onlyLater = !groups.now.length && !groups.next.length;
-  const folded = foldSection("deps", "Dependency updates", deps, taskRow, "from bots") + foldSection("stale", "Stale", groups.stale, taskRow, `quiet for ${STALE_DAYS}+ days: close, step off, or pick back up`);
+  const folded = html`${foldSection("deps", "Dependency updates", deps, taskRow, byKey, "from bots")}${foldSection("stale", "Stale", groups.stale, taskRow, byKey, `quiet for ${STALE_DAYS}+ days: close, step off, or pick back up`)}`;
   const body = active
-    ? listSection("now", "Now", groups.now, taskRow) + listSection("next", "Next", groups.next, taskRow) + listSection("later", onlyLater ? "When you have time" : "Later", groups.later, taskRow, onlyLater ? "" : "Can wait") + folded
-    : emptyState("check", "You're all caught up", "Nothing needs you right now.") + folded;
+    ? html`${listSection("now", "Now", groups.now, taskRow, byKey)}${listSection("next", "Next", groups.next, taskRow, byKey)}${listSection("later", onlyLater ? "When you have time" : "Later", groups.later, taskRow, byKey, onlyLater ? "" : "Can wait")}${folded}`
+    : html`${emptyState("check", "You're all caught up", "Nothing needs you right now.")}${folded}`;
   const snoozed = all.length - tasks.length;
-  const foot = snoozed ? `<span>${plural(snoozed, "item")} snoozed</span><button class="btn btn--ghost btn--sm" data-action="unsnooze">Restore</button>` : "";
+  const foot = snoozed ? html`<span>${plural(snoozed, "item")} snoozed</span><button class="btn btn--ghost btn--sm" data-action="unsnooze">Restore</button>` : null;
   return { body, foot };
 }
 
 function issuesTab(d, login) {
   const triage = `is:issue is:open label:"status: needs triage 🕵️‍♀️" ${repoScope()}`;
-  const bob = aiOn() && d.triage.items.length ? `<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-triage">${icon("sparkle", 14)}Triage with Bob</button>` : "";
+  const bob = aiOn() && d.triage.items.length ? html`<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-triage">${icon("sparkle", 14)}Triage with Bob</button>` : nothing;
   const items = issueItems(d);
   return {
-    body: items.length ? `<ul class="items">${items.map(issueRow).join("")}</ul>` : emptyState("check", "Nothing assigned and no new mentions"),
-    foot: `<span class="work__foot-group"><a class="link" href="${esc(searchUrl(triage))}">${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a>${bob}</span><a class="link" href="${esc(searchUrl(`is:open assignee:${login} ${repoScope()}`))}">Open on GitHub</a>`,
+    body: items.length ? itemList(items, issueRow, ({ item }) => item.id) : emptyState("check", "Nothing assigned and no new mentions"),
+    foot: html`<span class="work__foot-group"><a class="link" href=${searchUrl(triage)}>${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a>${bob}</span><a class="link" href=${searchUrl(`is:open assignee:${login} ${repoScope()}`)}>Open on GitHub</a>`,
   };
 }
 
@@ -256,17 +262,17 @@ function pullRequestsTab(d, login) {
   return {
     body:
       requested.length || mine.length || reviewed.length
-        ? listSection("requested", "Review requested", requested, reviewRow) + listSection("mine", "Yours", mine, myPrRow) + listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, "still open")
+        ? html`${listSection("requested", "Review requested", requested, reviewRow, byId)}${listSection("mine", "Yours", mine, myPrRow, byId)}${listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, byId, "still open")}`
         : emptyState("check", "No open pull requests"),
-    foot: `${weekLine(d)}<a class="link" href="${esc(searchUrl(`is:pr is:open involves:${login} ${repoScope()}`))}">Open on GitHub</a>`,
+    foot: html`${weekLine(d)}<a class="link" href=${searchUrl(`is:pr is:open involves:${login} ${repoScope()}`)}>Open on GitHub</a>`,
   };
 }
 
 /** "This week: 3 merged · 7 reviewed · first reviews in ~1.5d". */
 function weekLine(d) {
   const w = weekStats(d);
-  const wait = w.firstReviewHours != null ? ` · <span data-tooltip="Median time from ready for review to the first review, on your PRs merged this week">first reviews in ~${hours(w.firstReviewHours)}</span>` : "";
-  return `<span>This week: ${w.merged} merged · ${plural(w.reviewed, "PR")} reviewed${wait}</span>`;
+  const wait = w.firstReviewHours != null ? html` · <span data-tooltip="Median time from ready for review to the first review, on your PRs merged this week">first reviews in ~${hours(w.firstReviewHours)}</span>` : nothing;
+  return html`<span>This week: ${w.merged} merged · ${plural(w.reviewed, "PR")} reviewed${wait}</span>`;
 }
 
 function followingTab(d, login) {
@@ -274,9 +280,9 @@ function followingTab(d, login) {
   const fresh = items.filter((i) => i.follow.newReply);
   return {
     body: items.length
-      ? listSection("replies", "New replies", fresh, followingRow) + listSection("following", fresh.length ? "Following" : "All threads", items.filter((i) => !i.follow.newReply), followingRow)
+      ? html`${listSection("replies", "New replies", fresh, followingRow, byId)}${listSection("following", fresh.length ? "Following" : "All threads", items.filter((i) => !i.follow.newReply), followingRow, byId)}`
       : emptyState("eyes", "Not following anything yet", "Issues and PRs you comment on or react to with 👀 show up here."),
-    foot: `<span>👀 threads are picked up when they next get activity</span><a class="link" href="${esc(searchUrl(`is:open commenter:${login} ${repoScope()}`))}">Open on GitHub</a>`,
+    foot: html`<span>👀 threads are picked up when they next get activity</span><a class="link" href=${searchUrl(`is:open commenter:${login} ${repoScope()}`)}>Open on GitHub</a>`,
   };
 }
 
@@ -287,49 +293,42 @@ const TABS = [
   { id: "following", label: "Following", render: followingTab, count: (d) => followingItems(d).filter((i) => i.follow.newReply).length || null },
 ];
 
-function connectView() {
-  return `
-    <div class="connect">
-      <span class="connect__mark">${icon("github", 28)}</span>
-      <h2>Connect GitHub</h2>
-      <p class="connect__lead">See review requests, your PRs, CI status, mentions and main-branch health for your Carbon repos — on every new tab.</p>
-      <ol class="connect__steps">
-        <li>Create a <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.</li>
-        <li>Paste it below. Your username is detected automatically.</li>
-      </ol>
-      <form class="connect__form" data-form="connect">
-        <input class="input" type="password" name="token" placeholder="ghp_…" autocomplete="off" aria-label="GitHub token" data-focus="connect-token" required>
-        <button class="btn btn--primary" type="submit">Connect</button>
-      </form>
-      <p class="connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to api.github.com. <a href="${PRIVACY_URL}">Privacy policy</a></p>
-    </div>`;
-}
+const CONNECT = html`
+  <div class="connect">
+    <span class="connect__mark">${icon("github", 28)}</span>
+    <h2>Connect GitHub</h2>
+    <p class="connect__lead">See review requests, your PRs, CI status, mentions and main-branch health for your Carbon repos — on every new tab.</p>
+    <ol class="connect__steps">
+      <li>Create a <a href=${CLASSIC_TOKEN_URL}>classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.</li>
+      <li>Paste it below. Your username is detected automatically.</li>
+    </ol>
+    <form class="connect__form" data-form="connect">
+      <input class="input" type="password" name="token" placeholder="ghp_…" autocomplete="off" aria-label="GitHub token" required>
+      <button class="btn btn--primary" type="submit">Connect</button>
+    </form>
+    <p class="connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to api.github.com. <a href=${PRIVACY_URL}>Privacy policy</a></p>
+  </div>`;
 
 export function renderWork() {
   const el = $("#work");
-  if (!connected()) return setHtml(el, connectView());
+  if (!connected()) return render(CONNECT, el);
   bobTargets.clear();
   const d = data();
   if (!TABS.some((t) => t.id === view.tab)) view.tab = "focus";
   const tab = TABS.find((t) => t.id === view.tab);
   const login = state.settings.login || "@me";
-  const { body, foot } = d ? tab.render(d, login) : { body: state.status.error ? "" : skeleton(), foot: "" };
-  // A sync re-renders the list: keep the reader's place.
-  const scroll = $(".work__panel", el)?.scrollTop || 0;
-  keepFocus(el, () =>
-    setHtml(
-      el,
-      `<div class="tabs" role="tablist" aria-label="Work">
+  const { body, foot } = d ? tab.render(d, login) : { body: state.status.error ? nothing : skeleton(), foot: null };
+  render(
+    html`<div class="tabs" role="tablist" aria-label="Work">
         ${TABS.map((t) => {
           const count = d && t.count?.(d);
-          return `<button class="tab" role="tab" id="tab-${t.id}" data-tab="${t.id}" data-focus="tab-${t.id}" aria-selected="${t === tab}" tabindex="${t === tab ? 0 : -1}">${t.label}${count != null ? `<span class="tab__count">${count}</span>` : ""}</button>`;
-        }).join("")}
+          return html`<button class="tab" role="tab" id="tab-${t.id}" data-tab=${t.id} aria-selected=${t === tab} tabindex=${t === tab ? 0 : -1}>${t.label}${count != null ? html`<span class="tab__count">${count}</span>` : nothing}</button>`;
+        })}
       </div>
       <div class="work__panel" role="tabpanel" aria-labelledby="tab-${tab.id}">${syncNotice()}${tokenNotice()}${body}</div>
-      ${foot ? `<footer class="work__foot">${foot}</footer>` : ""}`
-    )
+      ${foot ? html`<footer class="work__foot">${foot}</footer>` : nothing}`,
+    el
   );
-  $(".work__panel", el).scrollTop = scroll;
 }
 
 export function selectTab(id, focus = false) {
@@ -403,17 +402,21 @@ const findPr = (id) => {
  * Undo where there is one), and a sync brings the row up to date.
  */
 async function change(el, busy, run, done, undo = null) {
-  const html = el.innerHTML;
-  el.disabled = true;
-  el.textContent = busy;
+  const key = `${el.dataset.action}:${el.dataset.id}`;
+  const label = (text) => {
+    if (text) state.fixing.set(key, text);
+    else state.fixing.delete(key);
+    renderWork();
+  };
+  label(busy);
   try {
     await run();
-    el.textContent = "Done";
+    label("Done");
     toast(done, "success", undo && { label: "Undo", run: () => undo().then(() => requestSync(), (err) => toast(err.message, "error")) });
-    requestSync();
+    // The sync that follows brings the row up to date (or takes it away); the label goes with it.
+    requestSync().finally(() => label(null));
   } catch (err) {
-    el.disabled = false;
-    el.innerHTML = html;
+    label(null);
     toast(err.message, "error");
   }
 }

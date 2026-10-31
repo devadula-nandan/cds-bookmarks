@@ -2,17 +2,18 @@
 // whenever storage changes (the background worker writes sync results there).
 
 import { ANSWERS } from "../bob.js";
-import { dayKey, loadDay, normalizeSettings, saveSettings, storage, timeAgo } from "../core.js";
+import { dayKey, loadDay, normalizeSettings, saveSettings, storage } from "../core.js";
 import { reposReady } from "../repos.js";
-import { bindBobEffects, bindBobSheet, bobActions, hasMinimised, markTriggers, openFromTrigger, submitBobForm } from "./bob.js";
+import { bindBobEffects, bindBobSheet, bobActions, hasMinimised, markTriggers, openFromTrigger, renderBob, submitBobForm } from "./bob.js";
 import { bindActivity, headerActions, maybeSync, renderActivity, renderMasthead, renderRepos, renderTools, requestSync } from "./header.js";
 import { icon } from "./icons.js";
+import { render } from "./lit.js";
 import { bindEditor, editorActions } from "./repo-editor.js";
 import { bindSearch, focusSearch } from "./search.js";
 import { bindTooltips } from "./tooltip.js";
 import { applyTheme, bindSettings, checkBob, connect, onSettingsChange, openSettings, renderSettings, settingsActions } from "./settings.js";
 import { renderToday, toggleTodo, todayActions, addTodos } from "./today.js";
-import { $, $$, agoText, connected, state, toast } from "./ui.js";
+import { $, $$, connected, state, toast } from "./ui.js";
 import { bindWork, moveInList, renderWork, selectTab, workActions } from "./work.js";
 
 /** Every `data-action` on the page, by name. */
@@ -51,7 +52,6 @@ async function onSubmit(e) {
   if (name === "todo" && value) {
     form.reset();
     await addTodos([value]);
-    $('[data-focus="todo-input"]').focus();
   }
   if (name === "bob-key" && value) {
     state.settings = await saveSettings({ bobKey: value });
@@ -114,7 +114,7 @@ function onStorage(changes) {
     const theme = state.settings.theme;
     state.settings = normalizeSettings(value("settings", {}));
     if (state.settings.theme !== theme) applyTheme();
-    if ($("#settings").open && !$("#settings").contains(document.activeElement)) renderSettings();
+    if ($("#settings").open) renderSettings();
   }
   if (changes.cache) state.cache = value("cache", null);
   if (changes.status) state.status = value("status", {});
@@ -153,22 +153,20 @@ async function load() {
   });
 }
 
-/** Every 10 seconds: the clock, relative times and meetings. At midnight, a new day of to-dos. */
+/** Every 10 seconds: the clock, relative times and meetings (only what changed is redrawn). At midnight, a new day of to-dos. */
 let today = dayKey();
 async function tick() {
   if (dayKey() !== today) {
     today = dayKey();
     state.day = await loadDay();
-    return renderAll();
   }
-  renderMasthead();
-  $$("[data-at]").forEach((el) => (el.textContent = timeAgo(el.dataset.at)));
-  $$("[data-ago]").forEach((el) => (el.textContent = agoText(el.dataset.ago)));
-  if (!$("#today").contains(document.activeElement)) renderToday();
+  renderAll();
+  if ($("#activity:popover-open")) renderActivity();
+  if ($("#ai").open) renderBob();
 }
 
 async function start() {
-  $$("[data-icon]").forEach((el) => (el.innerHTML = icon(el.dataset.icon, 18)));
+  $$("[data-icon]").forEach((el) => render(icon(el.dataset.icon, 18), el));
   await reposReady;
   await load();
   applyTheme();

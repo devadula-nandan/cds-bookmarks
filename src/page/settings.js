@@ -1,21 +1,30 @@
 // The Settings sheet. Sections fold like an accordion: opening one closes the others.
 
 import { bobStatus } from "../bob.js";
-import { NOTIFY_LABELS, esc, plural, saveSettings, storage, uid } from "../core.js";
+import { NOTIFY_LABELS, plural, saveSettings, storage, uid } from "../core.js";
 import { fetchViewer } from "../github.js";
 import { repos } from "../repos.js";
 import { requestSync } from "./header.js";
 import { icon } from "./icons.js";
+import { html, live, nothing, render, repeat } from "./lit.js";
 import { renderAll } from "./main.js";
 import { $, $$, CLASSIC_TOKEN_URL, state, toast, toggle } from "./ui.js";
 
 const sheet = () => $("#settings");
 let openSection = "github";
 
-const section = (id, title, body) =>
-  `<details class="setting-section" id="set-${id}" name="settings" ${openSection === id ? "open" : ""}><summary><h3>${title}</h3>${icon("chevronDown", 16)}</summary>${body}</details>`;
+/** Destructive buttons waiting for a second click: action → its label meanwhile ("Click again to …"). */
+const armed = new Map();
 
-const select = (setting, value, options) => `<select class="input input--select" data-setting="${setting}">${options.map(([v, text]) => `<option value="${v}" ${+value === v ? "selected" : ""}>${text}</option>`).join("")}</select>`;
+const section = (id, title, body) =>
+  html`<details class="setting-section" id="set-${id}" name="settings" ?open=${openSection === id}><summary><h3>${title}</h3>${icon("chevronDown", 16)}</summary>${body}</details>`;
+
+const select = (setting, value, options) => html`<select class="input input--select" data-setting=${setting}>${options.map(([v, text]) => html`<option value=${v} ?selected=${+value === v}>${text}</option>`)}</select>`;
+
+/** A destructive button: the first click arms it (see confirmed()), the second does it. */
+const danger = (action, label, sm = false) => html`<button class="btn btn--danger ${sm ? "btn--sm" : ""}" type="button" data-action=${action}>${armed.get(action) || label}</button>`;
+
+const classicToken = html`<a href=${CLASSIC_TOKEN_URL}>classic token</a>`;
 
 function githubSection(s) {
   const rate = state.cache?.data?.rateLimit;
@@ -24,57 +33,55 @@ function githubSection(s) {
     s.tokenScopes === null
       ? "Fine-grained token — the GitHub inbox won't work and org policy may block it. A classic token is recommended."
       : s.tokenScopes !== undefined && s.token
-        ? `Classic token · scopes: <code>${esc(s.tokenScopes || "none")}</code>`
-        : `Use a <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.`;
+        ? html`Classic token · scopes: <code>${s.tokenScopes || "none"}</code>`
+        : html`Use a ${classicToken} with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.`;
   return section(
     "github",
     "GitHub",
-    `<p class="status-line"><span class="dot dot--${s.token ? "success" : "neutral"}"></span>${s.token ? `Connected${s.login ? ` as <b>${esc(s.login)}</b>` : ""}` : "Not connected"}</p>
-     <form class="field-row" data-form="connect">
-       <input class="input" type="password" name="token" placeholder="${s.token ? "Paste a new token to replace it" : "ghp_…"}" autocomplete="off" aria-label="GitHub token">
-       <button class="btn btn--primary" type="submit">${s.token ? "Replace" : "Connect"}</button>
-       ${s.token ? `<button class="btn btn--danger" type="button" data-action="disconnect">Disconnect</button>` : ""}
-     </form>
-     <p class="hint">${tokenInfo}${expires ? ` · Expires ${esc(new Date(expires).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }))}.` : ""}${rate ? ` · API budget: ${rate.remaining}/${rate.limit} this hour.` : ""}</p>
-     <div class="fields">
-       <label class="field"><span>Check GitHub every</span>${select("pollMinutes", s.pollMinutes, [1, 2, 3, 5, 10, 15].map((m) => [m, `${m} min`]))}</label>
-       <label class="field"><span>Reviews are overdue after</span>${select("staleReviewDays", s.staleReviewDays, [1, 2, 3, 5].map((d) => [d, plural(d, "day")]))}</label>
-     </div>
-     ${toggle({ attrs: 'data-setting="includeTeamReviews"', checked: s.includeTeamReviews, label: "Include team review requests", hint: "Otherwise only reviews requested from you directly" })}`
+    html`<p class="status-line"><span class="dot dot--${s.token ? "success" : "neutral"}"></span>${s.token ? html`Connected${s.login ? html` as <b>${s.login}</b>` : nothing}` : "Not connected"}</p>
+      <form class="field-row" data-form="connect">
+        <input class="input" type="password" name="token" placeholder=${s.token ? "Paste a new token to replace it" : "ghp_…"} autocomplete="off" aria-label="GitHub token">
+        <button class="btn btn--primary" type="submit">${s.token ? "Replace" : "Connect"}</button>
+        ${s.token ? danger("disconnect", "Disconnect") : nothing}
+      </form>
+      <p class="hint">${tokenInfo}${expires ? ` · Expires ${new Date(expires).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}.` : ""}${rate ? ` · API budget: ${rate.remaining}/${rate.limit} this hour.` : ""}</p>
+      <div class="fields">
+        <label class="field"><span>Check GitHub every</span>${select("pollMinutes", s.pollMinutes, [1, 2, 3, 5, 10, 15].map((m) => [m, `${m} min`]))}</label>
+        <label class="field"><span>Reviews are overdue after</span>${select("staleReviewDays", s.staleReviewDays, [1, 2, 3, 5].map((d) => [d, plural(d, "day")]))}</label>
+      </div>
+      ${toggle({ data: ["setting", "includeTeamReviews"], checked: s.includeTeamReviews, label: "Include team review requests", hint: "Otherwise only reviews requested from you directly" })}`
   );
 }
 
 function bobSection(s) {
   const st = state.bobStatus || {};
   const helper = st.checking
-    ? `<span class="dot dot--neutral"></span>Looking for the Bob helper…`
+    ? html`<span class="dot dot--neutral"></span>Looking for the Bob helper…`
     : st.ok
-      ? `<span class="dot dot--success"></span><span>Helper ready · <b>Bob Shell ${esc(st.version)}</b></span>`
-      : `<span class="dot dot--${st.code === "missing" ? "warning" : "error"}"></span><span>${esc(st.error || "Not checked yet")}</span>`;
+      ? html`<span class="dot dot--success"></span><span>Helper ready · <b>Bob Shell ${st.version}</b></span>`
+      : html`<span class="dot dot--${st.code === "missing" ? "warning" : "error"}"></span><span>${st.error || "Not checked yet"}</span>`;
   const setup =
     st.code === "missing"
-      ? `<ol class="steps"><li>Install <a href="https://bob.ibm.com/docs/shell">Bob Shell</a> (it needs Node.js).</li><li>In Terminal, from the extension folder, run <code>sh ai-helper/install.sh</code></li><li>Click <b>Check again</b>.</li></ol>`
-      : "";
+      ? html`<ol class="steps"><li>Install <a href="https://bob.ibm.com/docs/shell">Bob Shell</a> (it needs Node.js).</li><li>In Terminal, from the extension folder, run <code>sh ai-helper/install.sh</code></li><li>Click <b>Check again</b>.</li></ol>`
+      : nothing;
   return section(
     "bob",
     "Bob",
-    `${toggle({ attrs: 'data-setting="ai"', checked: s.ai, label: "Bob actions", hint: "Review briefs, CI explanations, day plans, standups and answers from IBM Bob, when you ask. Only when you click a Bob action, your question and the item's link are sent to IBM through Bob Shell on this computer" })}
-     ${
-       s.ai
-         ? `<p class="status-line">${helper}<button class="btn btn--ghost btn--sm" data-action="bob-check">Check again</button><button class="btn btn--ghost btn--sm" data-action="bob-test" ${s.bobKey && st.ok ? "" : "disabled"}>Send a test prompt</button></p>
+    html`${toggle({ data: ["setting", "ai"], checked: s.ai, label: "Bob actions", hint: "Review briefs, CI explanations, day plans, standups and answers from IBM Bob, when you ask. Only when you click a Bob action, your question and the item's link are sent to IBM through Bob Shell on this computer" })}
+      ${s.ai
+        ? html`<p class="status-line">${helper}<button class="btn btn--ghost btn--sm" data-action="bob-check">Check again</button><button class="btn btn--ghost btn--sm" data-action="bob-test" ?disabled=${!(s.bobKey && st.ok)}>Send a test prompt</button></p>
             ${setup}
             <form class="field-row" data-form="bob-key">
-              <input class="input" type="password" name="key" placeholder="${s.bobKey ? "Paste a new key to replace it" : "Bob API key"}" autocomplete="off" aria-label="Bob API key">
+              <input class="input" type="password" name="key" placeholder=${s.bobKey ? "Paste a new key to replace it" : "Bob API key"} autocomplete="off" aria-label="Bob API key">
               <button class="btn btn--primary" type="submit">${s.bobKey ? "Replace" : "Save"}</button>
-              ${s.bobKey ? `<button class="btn btn--danger" type="button" data-action="bob-key-remove">Remove</button>` : ""}
+              ${s.bobKey ? danger("bob-key-remove", "Remove") : nothing}
             </form>
             <p class="hint">${s.bobKey ? "Key saved. " : ""}Create an <b>Inference</b> key at <a href="https://bob.ibm.com">bob.ibm.com</a> under Settings → API keys. It stays in this browser and is only handed to Bob Shell on this computer.</p>
             <p class="hint">Nothing goes to Bob until you click a Bob action. Bob then works in agent mode, using gh, the web and your local clones, and counts toward your Bob usage.</p>
-            ${toggle({ attrs: 'data-setting="bugHunt"', checked: s.bugHunt, label: "Daily bug hunt", hint: "Bob reads one clone a day, taking turns, and reports the most obvious easy-to-fix bug it can find" })}
-            <div class="fields"><label class="field"><span>Hunt at</span><input class="input" type="time" data-setting="bugHuntTime" value="${esc(s.bugHuntTime)}" ${s.bugHunt ? "" : "disabled"}></label></div>
+            ${toggle({ data: ["setting", "bugHunt"], checked: s.bugHunt, label: "Daily bug hunt", hint: "Bob reads one clone a day, taking turns, and reports the most obvious easy-to-fix bug it can find" })}
+            <div class="fields"><label class="field"><span>Hunt at</span><input class="input" type="time" data-setting="bugHuntTime" .value=${live(s.bugHuntTime)} ?disabled=${!s.bugHunt}></label></div>
             <p class="hint">If the computer is asleep then, it runs when Chrome is next open. A hunt can take several minutes and uses your Bob quota.</p>`
-         : ""
-     }`
+        : nothing}`
   );
 }
 
@@ -82,12 +89,12 @@ function reposSection(s) {
   return section(
     "repos",
     "Repositories",
-    `<p class="hint">Turned-off repos are hidden from the bar, search and your work list.</p>
-     ${repos.map((r) => toggle({ attrs: `data-repo-toggle="${esc(r.id)}"`, checked: !s.disabledRepos.includes(r.id), disabled: !r.slug, label: esc(r.name), hint: `<span class="mono">${esc(r.slug || "no GitHub repo found")}</span>` })).join("")}
-     <p class="field-row editor-actions">
-       <button class="btn btn--sm" data-action="repo-editor">${icon("edit", 14)}Edit repositories</button>
-       <button class="btn btn--ghost btn--sm" data-action="repo-export">Export JSON</button>
-     </p>`
+    html`<p class="hint">Turned-off repos are hidden from the bar, search and your work list.</p>
+      ${repos.map((r) => toggle({ data: ["repo", r.id], checked: !s.disabledRepos.includes(r.id), disabled: !r.slug, label: r.name, hint: html`<span class="mono">${r.slug || "no GitHub repo found"}</span>` }))}
+      <p class="field-row editor-actions">
+        <button class="btn btn--sm" data-action="repo-editor">${icon("edit", 14)}Edit repositories</button>
+        <button class="btn btn--ghost btn--sm" data-action="repo-export">Export JSON</button>
+      </p>`
   );
 }
 
@@ -95,12 +102,12 @@ function notificationsSection(s) {
   return section(
     "notifications",
     "Notifications",
-    `${toggle({ attrs: 'data-setting="notifications"', checked: s.notifications, label: "Desktop notifications", hint: "Shown by Chrome, even when no new tab is open" })}
-     <fieldset class="checks" ${s.notifications ? "" : "disabled"}>
-       <legend>Notify me about</legend>
-       ${Object.entries(NOTIFY_LABELS).map(([k, text]) => `<label class="check"><input type="checkbox" data-notify="${k}" ${s.notifyOn[k] ? "checked" : ""}><span>${text}</span></label>`).join("")}
-     </fieldset>
-     <button class="btn btn--sm" data-action="test-notification" ${s.notifications ? "" : "disabled"}>Send a test notification</button>`
+    html`${toggle({ data: ["setting", "notifications"], checked: s.notifications, label: "Desktop notifications", hint: "Shown by Chrome, even when no new tab is open" })}
+      <fieldset class="checks" ?disabled=${!s.notifications}>
+        <legend>Notify me about</legend>
+        ${Object.entries(NOTIFY_LABELS).map(([k, text]) => html`<label class="check"><input type="checkbox" data-notify=${k} .checked=${live(!!s.notifyOn[k])}><span>${text}</span></label>`)}
+      </fieldset>
+      <button class="btn btn--sm" data-action="test-notification" ?disabled=${!s.notifications}>Send a test notification</button>`
   );
 }
 
@@ -108,54 +115,62 @@ function meetingsSection(s) {
   return section(
     "meetings",
     "Meetings",
-    `<p class="hint">Recurring weekday meetings appear under Today and are reminded 5 minutes before.</p>
-     <ul class="meetings">
-       ${s.meetings
-         .map(
-           (m) => `<li data-id="${esc(m.id)}">
-             <input class="input input--sm" type="time" value="${esc(m.time)}" data-meeting="time" aria-label="Start time">
-             <input class="input input--sm" value="${esc(m.title)}" data-meeting="title" aria-label="Title">
-             <label class="minutes"><input class="input input--sm" type="number" min="5" step="5" value="${m.minutes}" data-meeting="minutes" aria-label="Length in minutes"><span>min</span></label>
-             <button class="icon-btn icon-btn--sm" data-action="meeting-remove" aria-label="Remove ${esc(m.title)}">${icon("trash", 16)}</button>
-           </li>`
-         )
-         .join("")}
-     </ul>
-     <button class="btn btn--sm" data-action="meeting-add">${icon("plus", 14)}Add meeting</button>`
+    html`<p class="hint">Recurring weekday meetings appear under Today and are reminded 5 minutes before.</p>
+      <ul class="meetings">
+        ${repeat(
+          s.meetings,
+          (m) => m.id,
+          (m) => html`<li data-id=${m.id}>
+            <input class="input input--sm" type="time" .value=${live(m.time)} data-meeting="time" aria-label="Start time">
+            <input class="input input--sm" .value=${live(m.title)} data-meeting="title" aria-label="Title">
+            <label class="minutes"><input class="input input--sm" type="number" min="5" step="5" .value=${live(String(m.minutes))} data-meeting="minutes" aria-label="Length in minutes"><span>min</span></label>
+            <button class="icon-btn icon-btn--sm" data-action="meeting-remove" aria-label="Remove ${m.title}">${icon("trash", 16)}</button>
+          </li>`
+        )}
+      </ul>
+      <button class="btn btn--sm" data-action="meeting-add">${icon("plus", 14)}Add meeting</button>`
   );
 }
 
+const kbd = (...keys) => keys.map((k) => html`<kbd>${k}</kbd>`);
 const KEYS = [
-  [`<kbd>/</kbd> or <kbd>⌘</kbd><kbd>K</kbd>`, "Search"],
-  ["<kbd>1</kbd>–<kbd>4</kbd>", "Switch work tabs"],
-  ["<kbd>J</kbd><kbd>K</kbd> or <kbd>↓</kbd><kbd>↑</kbd>", "Move through your work"],
-  ["<kbd>S</kbd>", "Snooze the selected item"],
-  ["<kbd>B</kbd>", "Ask Bob about the selected item"],
-  ["<kbd>E</kbd>", "Run the selected item's button, such as Ready to merge or Re-run"],
-  ["<kbd>R</kbd>", "Sync now"],
-  ["<kbd>A</kbd>", "Activity"],
-  ["<kbd>?</kbd>", "This list"],
+  [html`${kbd("/")} or ${kbd("⌘", "K")}`, "Search"],
+  [html`${kbd("1")}–${kbd("4")}`, "Switch work tabs"],
+  [html`${kbd("J", "K")} or ${kbd("↓", "↑")}`, "Move through your work"],
+  [kbd("S"), "Snooze the selected item"],
+  [kbd("B"), "Ask Bob about the selected item"],
+  [kbd("E"), "Run the selected item's button, such as Ready to merge or Re-run"],
+  [kbd("R"), "Sync now"],
+  [kbd("A"), "Activity"],
+  [kbd("?"), "This list"],
+];
+
+const THEMES = [
+  ["system", "System"],
+  ["light", "Light"],
+  ["dark", "Dark"],
 ];
 
 export function renderSettings() {
   const s = state.settings;
-  const scroll = $(".sheet__body", sheet())?.scrollTop || 0;
-  sheet().innerHTML = `
-    <header class="sheet__head">
-      <h2>Settings</h2>
-      <button class="icon-btn" data-action="close-settings" aria-label="Close settings">${icon("x", 18)}</button>
-    </header>
-    <div class="sheet__body">
-      ${githubSection(s)}
-      ${bobSection(s)}
-      ${reposSection(s)}
-      ${notificationsSection(s)}
-      ${meetingsSection(s)}
-      ${section("appearance", "Appearance", `<div class="segmented" role="radiogroup" aria-label="Theme">${[["system", "System"], ["light", "Light"], ["dark", "Dark"]].map(([v, t]) => `<button class="segmented__opt" role="radio" aria-checked="${s.theme === v}" data-action="theme" data-theme="${v}">${t}</button>`).join("")}</div>`)}
-      ${section("keys", "Keyboard", `<dl class="keys">${KEYS.map(([k, what]) => `<div><dt>${k}</dt><dd>${what}</dd></div>`).join("")}</dl>`)}
-      ${section("reset", "Reset", `<p class="hint">Removes the token, settings, to-dos and activity from this browser.</p><button class="btn btn--danger btn--sm" data-action="reset">Reset everything</button>`)}
-    </div>`;
-  $(".sheet__body", sheet()).scrollTop = scroll;
+  render(
+    html`
+      <header class="sheet__head">
+        <h2>Settings</h2>
+        <button class="icon-btn" data-action="close-settings" aria-label="Close settings">${icon("x", 18)}</button>
+      </header>
+      <div class="sheet__body">
+        ${githubSection(s)}
+        ${bobSection(s)}
+        ${reposSection(s)}
+        ${notificationsSection(s)}
+        ${meetingsSection(s)}
+        ${section("appearance", "Appearance", html`<div class="segmented" role="radiogroup" aria-label="Theme">${THEMES.map(([v, t]) => html`<button class="segmented__opt" role="radio" aria-checked=${s.theme === v} data-action="theme" data-theme=${v}>${t}</button>`)}</div>`)}
+        ${section("keys", "Keyboard", html`<dl class="keys">${KEYS.map(([k, what]) => html`<div><dt>${k}</dt><dd>${what}</dd></div>`)}</dl>`)}
+        ${section("reset", "Reset", html`<p class="hint">Removes the token, settings, to-dos and activity from this browser.</p>${danger("reset", "Reset everything", true)}`)}
+      </div>`,
+    sheet()
+  );
 }
 
 export function openSettings(id) {
@@ -223,14 +238,14 @@ export function toggleTheme() {
 
 /** Click once to arm a destructive button, again within 4 seconds to do it. */
 function confirmed(el, label) {
-  if (el.dataset.armed) return true;
-  el.dataset.armed = "1";
-  const original = el.textContent;
-  el.textContent = label;
-  setTimeout(() => {
-    delete el.dataset.armed;
-    el.textContent = original;
-  }, 4000);
+  const action = el.dataset.action;
+  if (armed.has(action)) {
+    armed.delete(action);
+    return true;
+  }
+  armed.set(action, label);
+  renderSettings();
+  setTimeout(() => armed.delete(action) && renderSettings(), 4000);
   return false;
 }
 
