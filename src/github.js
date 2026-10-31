@@ -65,7 +65,7 @@ const ACTOR = "author { __typename login }";
 const PR_FIELDS = `
   __typename id number title url createdAt updatedAt isDraft mergedAt
   reviewDecision mergeable additions deletions changedFiles
-  viewerCanEnableAutoMerge autoMergeRequest { enabledAt } mergeQueueEntry { state position }
+  autoMergeRequest { enabledAt } mergeQueueEntry { state position }
   repository { nameWithOwner }
   ${ACTOR}
   labels(first: 10) { nodes { name } }
@@ -104,6 +104,9 @@ const CONTEXTS = `contexts(first: 100) { nodes {
 
 const CHECKS = `checks: commits(last: 1) { nodes { commit { statusCheckRollup { ${CONTEXTS} } } } }`;
 
+/** Whether I may turn on auto-merge, for Ready to merge. Slow (50 PRs take over 10 seconds), so only my own PRs ask. */
+const CAN_AUTO_MERGE = "viewerCanEnableAutoMerge";
+
 const TRIAGE_LABELS = ["status: needs triage 🕵️‍♀️", "status: needs triage :female_detective:"];
 
 const search = (name, first, extra = "", prExtra = "") => `
@@ -115,7 +118,7 @@ const search = (name, first, extra = "", prExtra = "") => `
 /** Each search: how many results, extra fields for issues and PRs, and extra fields for PRs only. */
 const SEARCHES = {
   reviews: [50, "", READY + REQUESTS],
-  mine: [50, "", READY + CHECKS],
+  mine: [50, "", READY + CHECKS + CAN_AUTO_MERGE],
   assigned: [50],
   mentions: [30],
   triage: [30],
@@ -128,11 +131,13 @@ const SEARCHES = {
 
 /**
  * The dashboard is fetched as four queries side by side. One query for everything took about as long as
- * GitHub allows (10 seconds) and failed with a 502 when it ran over. Parts are quicker (the 👀 scan alone
- * takes 4–8 seconds, so it gets one to itself), and if one part fails the rest still show.
+ * GitHub allows (10 seconds) and failed with a 502 when it ran over. Parts are quicker, and if one part
+ * fails the rest still show. Review requests (up to 50 PRs with team requests on) and the 👀 scan are the
+ * slowest, so each gets a part of its own; each part takes about 3–6 seconds.
  */
-const PARTS = [["reviews", "assigned", "triage"], ["mine", "mentions"], ["eyes"], ["merged", "reviewed", "commented", "reviewedOpen"]];
-const WATCHED_PART = PARTS[3];
+const PARTS = [["reviews"], ["mine", "mentions"], ["eyes"], ["assigned", "triage", "merged", "reviewed", "commented", "reviewedOpen"]];
+// The lightest part also brings the viewer, repo health and the threads remembered by id.
+const EXTRAS_PART = PARTS[3];
 
 function dashboardQuery(names, repos) {
   const health = repos
@@ -147,15 +152,12 @@ function dashboardQuery(names, repos) {
     })
     .join("");
   const body = names.map((n) => search(n, ...SEARCHES[n])).join("");
-  // The first part also brings the viewer and repo health; another the threads remembered by id.
-  const first = names === PARTS[0];
-  const watched = names === WATCHED_PART;
-  const vars = [...names.map((n) => `$${n}: String!`), ...(body.includes("$login") ? ["$login: String!"] : []), ...(watched ? ["$watched: [ID!]!"] : [])];
+  const extras = names === EXTRAS_PART;
+  const vars = [...names.map((n) => `$${n}: String!`), ...(body.includes("$login") ? ["$login: String!"] : []), ...(extras ? ["$watched: [ID!]!"] : [])];
   return `
     query Dashboard(${vars.join(", ")}) {
-      ${first ? `viewer { login name }\n      rateLimit { remaining limit }\n      ${health}` : ""}
       ${body}
-      ${watched ? `watched: nodes(ids: $watched) { ... on PullRequest { ${PR_FIELDS} ${FOLLOW_FIELDS} } ... on Issue { ${ISSUE_FIELDS} ${FOLLOW_FIELDS} } }` : ""}
+      ${extras ? `viewer { login name }\n      rateLimit { remaining limit }\n      ${health}\n      watched: nodes(ids: $watched) { ... on PullRequest { ${PR_FIELDS} ${FOLLOW_FIELDS} } ... on Issue { ${ISSUE_FIELDS} ${FOLLOW_FIELDS} } }` : ""}
     }`;
 }
 
@@ -320,7 +322,7 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
     PARTS.map((names) => {
       const vars = Object.fromEntries(names.map((n) => [n, queries[n]]));
       const query = dashboardQuery(names, repos);
-      return graphql(token, query, { ...vars, ...(query.includes("$login") && { login }), ...(names === WATCHED_PART && { watched }) });
+      return graphql(token, query, { ...vars, ...(query.includes("$login") && { login }), ...(names === EXTRAS_PART && { watched }) });
     })
   );
   const ok = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
