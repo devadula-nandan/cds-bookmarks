@@ -1,8 +1,9 @@
 #!/bin/sh
 # Builds src/vendor/carbon/ from the versions pinned in package.json (and package-lock.json):
 #   carbon.js   the Carbon web components the page uses, lit-html and the Carbon icons (carbon.js here)
-#   carbon.css  Carbon's reset, themes, type and class-based styles (carbon.scss here)
+#   carbon.css  Carbon's foundations: reset, themes, type, grid and layers (carbon.scss here)
 #   fonts/      IBM Plex Sans and Mono
+# and then the dashboard's overrides (overrides.sh), which use these Carbon versions' Sass tokens.
 # The extension loads the output as is; this only runs when the Carbon versions or the component list change.
 set -eu
 cd "$(dirname "$0")"
@@ -20,3 +21,4 @@ for f in Regular SemiBold; do cp "node_modules/@ibm/plex-mono/fonts/complete/wof
 cp node_modules/@ibm/plex-sans/LICENSE.txt "$out/fonts/LICENSE.txt"
 
 echo "Built $out"
+sh overrides.sh

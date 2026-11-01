@@ -204,7 +204,7 @@ function answerView(s, turn) {
   const last = s.revisions.at(-1);
   const undo = last ? html`<p class="bob__revised">${icon("sparkle", 16)}<span>Revised: “${last.ask}”</span><cds-button kind="ghost" size="sm" data-action="bob-undo">Undo${icon("undo", 16, { slot: "icon" })}</cds-button></p>` : nothing;
   if (s.spec.format === "query")
-    return html`${undo}<form class="field-row" data-form="bob-query"><cds-text-input class="mono" name="q" hide-label label="GitHub search query" .value=${live(draftText(s))} data-draft spellcheck="false"></cds-text-input><cds-button type="submit">Search GitHub</cds-button></form>`;
+    return html`${undo}<form class="field-row" data-form="bob-query"><cds-text-input class="mono" name="q" hide-label label="GitHub search query" .value=${live(draftText(s))} data-draft spellcheck="false"></cds-text-input><cds-button type="submit" size="md">Search GitHub</cds-button></form>`;
   return html`${undo}<cds-textarea class="bob__edit" rows="11" hide-label label="Draft, editable" data-draft .value=${live(draftText(s))}></cds-textarea>`;
 }
 
@@ -232,7 +232,7 @@ export function renderBob(ticking = false) {
   const input =
     spec.input && !spec.text
       ? html`<form class="bob__input" data-form="bob-input">
-          <cds-textarea name="text" rows="12" label=${spec.input.label} placeholder=${spec.input.placeholder} helper-text=${spec.input.hint} required></cds-textarea>
+          <cds-textarea name="text" rows="12" data-modal-primary-focus label=${spec.input.label} placeholder=${spec.input.placeholder} helper-text=${spec.input.hint} required></cds-textarea>
           <cds-button type="submit">${spec.input.submit}${icon("sparkle", 16, { slot: "icon" })}</cds-button>
         </form>`
       : nothing;
@@ -248,7 +248,7 @@ export function renderBob(ticking = false) {
   const toSettings = error && ["nokey", "missing"].includes(error.code);
   const failure = error
     ? html`<cds-actionable-notification class="bob__note" inline low-contrast hide-close-button .hasFocus=${false} kind=${error.code === "cancelled" ? "info" : "error"} title=${ERROR_TITLES[error.code] || "Bob couldn't answer"} subtitle=${error.message}>
-          <cds-actionable-notification-button slot="action" data-action=${toSettings ? "settings" : "bob-retry"} data-section="bob">${toSettings ? "Bob settings" : "Try again"}</cds-actionable-notification-button>
+          <cds-actionable-notification-button slot="action" data-modal-primary-focus data-action=${toSettings ? "settings" : "bob-retry"} data-section="bob">${toSettings ? "Bob settings" : "Try again"}</cds-actionable-notification-button>
         </cds-actionable-notification>${logToggle(error.log)}`
     : nothing;
   const tools = last
@@ -261,7 +261,7 @@ export function renderBob(ticking = false) {
           <span class="bob__meta">${first.label || "Answered"} ${agoText(first.at)}</span>
         </div>
         <form class="bob__follow" data-form="bob-follow">
-          <cds-text-input name="q" hide-label label="Follow-up" placeholder=${isDraft(s) ? "Ask for changes: shorter, friendlier, add the PR links…" : "Ask a follow-up"} autocomplete="off" ?disabled=${loading}></cds-text-input>
+          <cds-text-input name="q" data-modal-primary-focus hide-label label="Follow-up" placeholder=${isDraft(s) ? "Ask for changes: shorter, friendlier, add the PR links…" : "Ask a follow-up"} autocomplete="off" ?disabled=${loading}></cds-text-input>
           <cds-icon-button type="submit" kind="primary" align="top-right" aria-label="Send" ?disabled=${loading}>${icon("send", 16, { slot: "icon" })}<span slot="tooltip-content">Send</span></cds-icon-button>
         </form>
       </footer>`
@@ -271,7 +271,7 @@ export function renderBob(ticking = false) {
     html`
       <cds-modal-header class="bob__head">
         <cds-modal-close-button></cds-modal-close-button>
-        ${spec.subtitle ? html`<cds-modal-label>${spec.url ? html`<cds-link inline href=${spec.url} target="_blank">${spec.subtitle}</cds-link>` : spec.subtitle}</cds-modal-label>` : nothing}
+        ${spec.subtitle ? html`<cds-modal-label>${spec.url ? html`<cds-link href=${spec.url} target="_blank">${spec.subtitle}</cds-link>` : spec.subtitle}</cds-modal-label>` : nothing}
         <cds-modal-heading><span class="bob__title">${spec.title}${AI_NOTE}</span></cds-modal-heading>
         ${spec.head ? spec.head() : nothing}
       </cds-modal-header>

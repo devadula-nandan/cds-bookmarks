@@ -8,6 +8,7 @@
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <script src="src/page/theme.js"></script>
     <link rel="stylesheet" href="src/vendor/carbon/carbon.css" />
+    <link rel="stylesheet" href="src/styles/overrides.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
 
@@ -19,15 +20,17 @@
       <cds-header-panel id="activity" aria-label="Activity"></cds-header-panel>
     </cds-header>
 
-    <cds-grid class="page" full-width>
+    <cds-grid class="page">
       <cds-column class="masthead" sm="4" md="8" lg="16">
         <div class="hello">
           <p class="cds--type-label-01 hello__date" id="date">&nbsp;</p>
-          <h1 class="cds--type-heading-05 hello__greeting" id="greeting">&nbsp;</h1>
+          <h1 class="cds--type-heading-04 hello__greeting" id="greeting">&nbsp;</h1>
           <p class="cds--type-body-01 hello__summary" id="summary">&nbsp;</p>
-          <p class="hello__ai" id="hello-ai" hidden></p>
         </div>
-        <div class="masthead__sync" id="sync"></div>
+        <div class="masthead__actions">
+          <div class="masthead__sync" id="sync"></div>
+          <div class="hello__ai" id="hello-ai" hidden></div>
+        </div>
       </cds-column>
 
       <cds-column class="search" id="search" sm="4" md="8" lg="16">
@@ -40,14 +43,14 @@
       </cds-column>
 
       <cds-column class="work-column" sm="4" md="8" lg="11">
-        <cds-layer class="panel work" with-background id="work" tabindex="-1" aria-label="Your work"></cds-layer>
+        <cds-layer class="panel work" level="1" with-background id="work" tabindex="-1" aria-label="Your work"></cds-layer>
       </cds-column>
       <cds-column class="side" sm="4" md="8" lg="5">
-        <cds-layer class="panel today" with-background id="today" aria-label="Today"></cds-layer>
+        <cds-layer class="panel today" level="1" with-background id="today" aria-label="Today"></cds-layer>
       </cds-column>
     </cds-grid>
 
-    <cds-modal id="settings" size="md" aria-label="Settings"></cds-modal>
+    <cds-modal id="settings" size="lg" aria-label="Settings"></cds-modal>
     <cds-modal id="repo-editor" size="lg" aria-label="Edit repositories"></cds-modal>
     <cds-modal id="ai" size="lg" aria-label="Bob"></cds-modal>
     <div class="toasts" id="toasts" aria-live="polite"></div>

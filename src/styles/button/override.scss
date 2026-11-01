@@ -1,0 +1,19 @@
+// cds-button: a ghost button that starts a line or a column (Plan my day with Bob, Hunt again) lines its
+// label up with the text around it; Carbon pads ghost buttons by 16px. `is-block` fills its container
+// (the standup button under Today).
+@use '@carbon/styles/scss/spacing' as *;
+
+cds-button.is-flush {
+  margin-inline-start: -$spacing-05;
+}
+
+// The button inside keeps Carbon's own width and 20rem cap, so it has to stretch too.
+cds-button.is-block {
+  display: block;
+  inline-size: 100%;
+}
+
+cds-button.is-block::part(button) {
+  inline-size: 100%;
+  max-inline-size: none;
+}

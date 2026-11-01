@@ -137,8 +137,8 @@ function draw() {
       (g) => html`<cds-contained-list label=${g.name} size="md">
         ${g.items.map(
           ({ r, i }) => html`<cds-contained-list-item clickable class=${r.bob ? "bob-btn" : nothing} data-index=${i}>
-            ${icon(r.iconName, 16, { slot: "icon" })}<span class="search__text">${r.label}${r.hint ? html`<span class="search__hint">${r.hint}</span>` : nothing}</span>
-            ${i === active ? html`<cds-tag slot="action" size="sm" type="gray">Enter</cds-tag>` : nothing}
+            ${icon(r.iconName, 16, { slot: "icon" })}
+            <span class="item__row"><span class="item__body search__text">${r.label}${r.hint ? html`<span class="search__hint">${r.hint}</span>` : nothing}</span>${i === active ? html`<cds-tag size="sm" type="gray">Enter</cds-tag>` : nothing}</span>
           </cds-contained-list-item>`
         )}
       </cds-contained-list>`

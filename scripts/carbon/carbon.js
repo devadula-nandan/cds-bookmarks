@@ -13,7 +13,6 @@ import "@carbon/web-components/es/components/contained-list/index.js";
 import "@carbon/web-components/es/components/content-switcher/index.js";
 import "@carbon/web-components/es/components/copy-button/index.js";
 import "@carbon/web-components/es/components/data-table/index.js";
-import "@carbon/web-components/es/components/file-uploader/index.js";
 import "@carbon/web-components/es/components/form-group/index.js";
 import "@carbon/web-components/es/components/grid/index.js";
 import "@carbon/web-components/es/components/icon-button/index.js";
@@ -205,4 +204,21 @@ export const icons = {
   checkbox: { 16: checkbox16, 20: checkbox20 },
   checkboxChecked: { 16: checkboxChecked16, 20: checkboxChecked20 },
   informationFilled: { 16: informationFilled16, 20: informationFilled20 },
+};
+
+// Carbon pictograms for empty states (and the connect screen), by the dashboard's name for them.
+import summitPictogram from "@carbon/pictograms/lib/summit/index.js";
+import reviewChecklistPictogram from "@carbon/pictograms/lib/review-checklist/index.js";
+import codePictogram from "@carbon/pictograms/lib/code/index.js";
+import binocularPictogram from "@carbon/pictograms/lib/binocular/index.js";
+import notificationsPictogram from "@carbon/pictograms/lib/notifications/index.js";
+import connectPictogram from "@carbon/pictograms/lib/connect/index.js";
+
+export const pictograms = {
+  summit: summitPictogram,
+  reviewChecklist: reviewChecklistPictogram,
+  code: codePictogram,
+  binocular: binocularPictogram,
+  notifications: notificationsPictogram,
+  connect: connectPictogram,
 };

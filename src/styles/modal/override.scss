@@ -1,0 +1,11 @@
+// cds-modal: the modal is a grid (header, body, footer). Bob's sheet has its own footer (its tools and the
+// follow-up field), not a cds-modal-footer, so it takes the last row itself, under the scrolling body.
+@use '@carbon/styles/scss/spacing' as *;
+@use '@carbon/styles/scss/theme' as *;
+
+cds-modal > .bob__foot {
+  grid-column: 1 / -1;
+  grid-row: -2 / -1;
+  padding: $spacing-03 $spacing-05 $spacing-05;
+  border-block-start: 1px solid $border-subtle;
+}

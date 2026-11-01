@@ -1,0 +1,7 @@
+// cds-accordion: Carbon keeps an accordion's content to 75% of its width, a measure for reading text. In the
+// repo editor each repo is a form (fields side by side), so it uses the whole width.
+@use '@carbon/styles/scss/spacing' as *;
+
+.editor cds-accordion-item::part(content) {
+  padding-inline-end: $spacing-05;
+}

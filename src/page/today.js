@@ -40,7 +40,7 @@ function huntCard() {
   const clones = huntableRepos(state.settings).length;
   let body;
   if (running) body = html`<cds-inline-loading class="hunt__status" status="active">Bob is reading ${repoShort(hs.repo)}… ${agoText(hs.startedAt)}</cds-inline-loading>`;
-  else if (!clones) body = html`<p class="hunt__status">Add a local clone to a repo to start.</p><cds-button kind="ghost" size="sm" data-action="repo-editor">Edit repositories</cds-button>`;
+  else if (!clones) body = html`<p class="hunt__status">Add a local clone to a repo to start.</p><cds-button class="is-flush" kind="ghost" size="sm" data-action="repo-editor">Edit repositories</cds-button>`;
   else if (latest) {
     const where = [repoShort(latest.repo), latest.file && `${latest.file.split("/").pop()}${latest.line ? `:${latest.line}` : ""}`, latest.effort, latest.found && latest.confidence && `${latest.confidence} confidence`].filter(Boolean).join(" · ");
     body = html`<cds-clickable-tile class="hunt__report ${latest.found ? "" : "is-empty"}" data-action="hunt-open" data-id=${latest.id}>
@@ -54,16 +54,16 @@ function huntCard() {
     <section class="hunt" aria-label="Bug of the day">
       <h3 class="cds--type-heading-compact-01 subhead">${icon("bug", 16)}Bug of the day</h3>
       ${body}${error ? html`<cds-inline-notification class="hunt__error" kind="error" low-contrast hide-close-button title="" subtitle=${error}></cds-inline-notification>` : nothing}
-      ${clones && !running ? html`<cds-button kind="ghost" size="sm" class="bob-btn hunt__action" data-action="hunt-run">Hunt ${latest ? "again" : "now"}${icon("sparkle", 16, { slot: "icon" })}</cds-button>` : nothing}
+      ${clones && !running ? html`<cds-button kind="ghost" size="sm" class="is-flush bob-btn hunt__action" data-action="hunt-run">Hunt ${latest ? "again" : "now"}${icon("sparkle", 16, { slot: "icon" })}</cds-button>` : nothing}
     </section>`;
 }
 
 function standupButton() {
   if (!connected()) return nothing;
   const ready = !!data();
-  if (!aiOn()) return tip("Yesterday, today and blockers from your GitHub activity", html`<cds-button class="today__standup" kind="tertiary" size="md" data-action="copy-standup" ?disabled=${!ready}>Copy standup update${icon("copy", 16, { slot: "icon" })}</cds-button>`, { control: true });
+  if (!aiOn()) return tip("Yesterday, today and blockers from your GitHub activity", html`<cds-button class="is-block" kind="tertiary" size="md" data-action="copy-standup" ?disabled=${!ready}>Copy standup update${icon("copy", 16, { slot: "icon" })}</cds-button>`, { control: true });
   const drafted = state.answered.has(todaysAnswer("standup"));
-  return html`<cds-button class="today__standup bob-btn ${drafted ? "bob-made" : ""}" kind="tertiary" size="md" data-action="bob-standup" ?disabled=${!ready}>${drafted ? "Today's standup draft" : "Write standup with Bob"}${icon("sparkle", 16, { slot: "icon" })}</cds-button>`;
+  return html`<cds-button class="is-block bob-btn ${drafted ? "bob-made" : ""}" kind="tertiary" size="md" data-action="bob-standup" ?disabled=${!ready}>${drafted ? "Today's standup draft" : "Write standup with Bob"}${icon("sparkle", 16, { slot: "icon" })}</cds-button>`;
 }
 
 export function renderToday() {
@@ -83,8 +83,10 @@ export function renderToday() {
             todos,
             (t) => t.id,
             (t) => html`<cds-contained-list-item class="todo ${t.done ? "is-done" : ""}">
-              <cds-checkbox label-text=${t.text} data-action="todo-toggle" data-id=${t.id} .checked=${t.done}></cds-checkbox>
-              <cds-icon-button slot="action" class="todo__remove" kind="ghost" size="sm" data-action="todo-remove" data-id=${t.id} align="left" aria-label="Remove ${t.text}">${icon("x", 16, { slot: "icon" })}<span slot="tooltip-content">Remove</span></cds-icon-button>
+              <div class="item__row">
+                <cds-checkbox class="item__body" label-text=${t.text} data-action="todo-toggle" data-id=${t.id} .checked=${t.done}></cds-checkbox>
+                <cds-icon-button class="todo__remove" kind="ghost" size="sm" data-action="todo-remove" data-id=${t.id} align="left" aria-label="Remove ${t.text}">${icon("x", 16, { slot: "icon" })}<span slot="tooltip-content">Remove</span></cds-icon-button>
+              </div>
             </cds-contained-list-item>`
           )}
         </cds-contained-list>

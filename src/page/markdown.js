@@ -76,7 +76,7 @@ function codeBlock(lang, body, before) {
         })
         .join("\n")
     : highlight(body.join("\n"), lang);
-  return `<cds-code-snippet class="code" type="multi" feedback="Copied">${html}</cds-code-snippet>`;
+  return `<cds-code-snippet class="code" type="multi" feedback="Copied" mincollapsednumberofrows="1">${html}</cds-code-snippet>`;
 }
 
 // ---------- Markdown: marked, rendering Carbon components ----------
@@ -168,7 +168,7 @@ let depth = 0;
 // DOMPurify's own list of safe link protocols, plus vscode: for opening files in VS Code.
 const SAFE_URL = /^(?:(?:https?|mailto|tel|vscode):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
 // Carbon's elements and the attributes the renderer gives them.
-const CARBON = { tagNameCheck: /^cds-/, attributeNameCheck: /^(type|size|kind|inline|nested|feedback|href|target|rel|title)$/, allowCustomizedBuiltInElements: false };
+const CARBON = { tagNameCheck: /^cds-/, attributeNameCheck: /^(type|size|kind|inline|nested|feedback|mincollapsednumberofrows|href|target|rel|title)$/, allowCustomizedBuiltInElements: false };
 
 /**
  * Markdown as safe HTML. `files(path, line)` says where links to files in the repo go: `{ href }`, or

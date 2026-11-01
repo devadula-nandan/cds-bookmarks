@@ -1,8 +1,9 @@
 /* ==========================================================================
    Dev Dashboard: layout and spacing around Carbon's web components.
    The components, themes (zones on <html>), layers and type come from Carbon
-   (src/vendor/carbon). This file only places them, using Carbon's tokens and
-   its spacing steps (2, 4, 8, 12, 16, 24, 32px).
+   (src/vendor/carbon); adjustments to a component are in its own file under
+   src/styles (<component>/override.scss). This file only places things, using
+   Carbon's tokens and its spacing steps (2, 4, 8, 12, 16, 24, 32px).
    ========================================================================== */
 
 /* Carbon's body-01 type for everything that doesn't set its own. */
@@ -13,6 +14,13 @@ body {
   line-height: 1.42857;
   letter-spacing: 0.16px;
   overflow-x: hidden;
+}
+
+/* Carbon's default type sets paragraphs as body-02 (16px), a size for long reading; product UI uses body-01. */
+p {
+  font-size: 0.875rem;
+  line-height: 1.42857;
+  letter-spacing: 0.16px;
 }
 
 .mono {
@@ -38,21 +46,17 @@ body {
 
 /* ---------- page ---------- */
 
-/* Below the fixed 48px UI shell header. Carbon's grid lays out its columns in its "grid" part; its rows are
-   the masthead, search, repos and the work row. */
+/* Below the fixed 48px UI shell header. Its rows are set in src/styles/grid. */
 .page {
   display: block;
   padding-top: calc(48px + 24px);
   padding-bottom: 24px;
 }
 
-.page::part(grid) {
-  row-gap: 16px;
-  align-content: start;
-}
-
+/* The page header: the date, greeting and summary, with the sync status and Plan my day on the right. */
 .masthead {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-end;
   gap: 16px;
@@ -64,11 +68,13 @@ body {
 }
 
 .hello__greeting {
-  margin: 4px 0;
+  margin: 4px 0 8px;
 }
 
-.hello__ai {
-  margin-top: 8px;
+.masthead__actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .masthead__sync {
@@ -136,17 +142,14 @@ body {
   gap: 4px;
 }
 
-.repo.is-failing {
-  --cds-text-primary: var(--cds-text-error);
-}
-
-/* ---------- panels ---------- */
+/* ---------- panels ----------
+   Carbon layers (index.html): the page is the background, each panel is a cds-layer at level 1, painted
+   layer-01, and what's in it (rows, tiles, fields) steps up to layer-02. Page structure stays square in v12. */
 
 .panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-radius: 8px;
   overflow: hidden;
 }
 
@@ -175,20 +178,11 @@ body {
   flex: none;
 }
 
-.tab__count {
-  margin-inline-start: 8px;
-}
-
 .work__panel {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-
-.work__panel > .notice {
-  margin: 16px;
-  max-width: none;
 }
 
 .work__foot {
@@ -229,11 +223,8 @@ body {
   margin-top: 8px;
 }
 
-/* A row: its status icon, the title and what it's waiting on, then its fix, age and actions. */
-.item__body {
-  min-width: 0;
-}
-
+/* A row: its status icon, the title and what it's waiting on, then its fix, age and actions (laid out in
+   src/styles/contained-list). */
 .item__title {
   display: block;
   overflow: hidden;
@@ -319,30 +310,32 @@ body {
   margin-bottom: 16px;
 }
 
+/* Carbon's empty state, left-aligned: a pictogram, the title, what it means, then any action. */
 .empty {
   display: grid;
-  justify-items: center;
+  justify-items: start;
   gap: 8px;
-  padding: 48px 16px;
-  text-align: center;
+  max-width: 32rem;
+  padding: 48px 32px;
 }
 
-.empty__title {
-  font-weight: 600;
+.pictogram {
+  fill: var(--cds-icon-primary);
+  margin-bottom: 16px;
 }
 
 .empty__text {
-  max-width: 36ch;
+  max-width: 40ch;
   color: var(--cds-text-secondary);
 }
 
 .connect {
-  max-width: 560px;
-  padding: 32px;
+  max-width: 36rem;
+  padding: 48px 32px;
 }
 
 .connect__title {
-  margin: 16px 0 8px;
+  margin-bottom: 8px;
 }
 
 .connect__lead,
@@ -351,22 +344,18 @@ body {
 }
 
 .connect__steps {
-  margin: 16px 0;
+  margin: 24px 0;
 }
 
 .connect__form {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  margin: 16px 0;
+  margin: 24px 0 16px;
 }
 
 .connect__form cds-password-input {
   flex: 1;
-}
-
-.notice__body > * + * {
-  margin-top: 8px;
 }
 
 /* ---------- Today ---------- */
@@ -380,12 +369,21 @@ body {
 }
 
 .hunt {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding: 0 16px 8px;
   border-top: 1px solid var(--cds-border-subtle);
-  padding-bottom: 8px;
 }
 
-.hunt > :not(.subhead) {
-  margin: 0 16px 8px;
+.hunt > .subhead {
+  margin-inline: 0;
+  margin-bottom: 0;
+}
+
+.hunt > .hunt__report,
+.hunt > cds-inline-notification {
+  justify-self: stretch;
 }
 
 .hunt__report {
@@ -410,11 +408,12 @@ body {
   overscroll-behavior: contain;
 }
 
+/* Pinned over the panel's scrolling content, in the panel's own colour (layer-01, the level-1 layer's background). */
 .today > .panel__head {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: inherit;
+  background: var(--cds-layer-background);
 }
 
 .today__todos {
@@ -435,15 +434,7 @@ body {
   border-top: 1px solid var(--cds-border-subtle);
 }
 
-.today__standup {
-  width: 100%;
-}
-
 /* ---------- Activity (a Carbon header panel) ---------- */
-
-#activity[expanded] {
-  inline-size: min(400px, 100vw);
-}
 
 .activity {
   display: flex;
@@ -492,6 +483,28 @@ body {
 }
 
 /* ---------- Settings and the repo editor ---------- */
+
+/* Settings: its sections as tabs over the open one, at one height, so switching doesn't resize the modal. */
+.settings__layout {
+  display: flex;
+  flex-direction: column;
+  block-size: min(36rem, 70vh);
+}
+
+.settings__nav {
+  flex: none;
+}
+
+.settings__panel {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: 24px 16px 0 0;
+}
+
+.settings__title {
+  margin-bottom: 16px;
+}
 
 .hint {
   margin: 8px 0;
@@ -674,7 +687,6 @@ body {
 }
 
 .bob__note {
-  max-width: none;
   margin: 8px 0;
 }
 
@@ -718,14 +730,6 @@ body {
   overflow: auto;
   font: 0.75rem/1.25rem "IBM Plex Mono", monospace;
   white-space: pre-wrap;
-}
-
-/* Bob's footer: the last row of the modal's grid, under the scrolling body. */
-.bob__foot {
-  grid-column: 1 / -1;
-  grid-row: -2 / -1;
-  padding: 8px 16px 16px;
-  border-top: 1px solid var(--cds-border-subtle);
 }
 
 .bob__tools {
@@ -961,11 +965,6 @@ body {
 
   .page {
     height: 100dvh;
-  }
-
-  .page::part(grid) {
-    height: 100%;
-    grid-template-rows: auto auto auto minmax(0, 1fr);
   }
 
   .work-column,

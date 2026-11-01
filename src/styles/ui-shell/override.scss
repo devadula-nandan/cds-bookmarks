@@ -1,0 +1,5 @@
+// cds-header-panel: Carbon's header panel is 16rem wide, narrow for Activity's titles; open, it's 25rem (or
+// the whole window on a phone). Closed it stays 0, as Carbon has it.
+cds-header-panel#activity[expanded] {
+  inline-size: min(25rem, 100vw);
+}

@@ -1,0 +1,6 @@
+// cds-tabs: a tab's count is a small Carbon tag after its label; Carbon's tabs have no count of their own.
+@use '@carbon/styles/scss/spacing' as *;
+
+cds-tab .tab__count {
+  margin-inline-start: $spacing-03;
+}

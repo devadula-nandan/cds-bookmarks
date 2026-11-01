@@ -1,0 +1,8 @@
+// cds-ordered-list: Carbon draws an item's number 1.5rem to the left of the item and leaves that room to the
+// page, so a list at the edge of a block (Bob's answers, the connect steps) lost its numbers. The list's host
+// doesn't take a margin, so a top-level list's items make the room.
+@use '@carbon/styles/scss/spacing' as *;
+
+cds-ordered-list:not([nested]) > cds-list-item {
+  margin-inline-start: $spacing-06;
+}

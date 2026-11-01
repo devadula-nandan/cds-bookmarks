@@ -1,0 +1,8 @@
+// cds-menu-button: a repo whose main is failing says so in its label ("Carbon · main failing"), in the
+// error text colour rather than a ghost button's link blue.
+@use '@carbon/styles/scss/theme' as *;
+
+cds-menu-button.is-failing {
+  --cds-link-primary: #{$text-error};
+  --cds-link-primary-hover: #{$text-error};
+}

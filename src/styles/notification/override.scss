@@ -1,0 +1,28 @@
+// cds-actionable-notification, cds-inline-notification: inline, Carbon caps a notification's width; in the
+// work list and Bob's sheet one spans its column, and its own margins keep it inside (it was 100% wide plus
+// its margins, so its action button was cut off).
+@use '@carbon/styles/scss/spacing' as *;
+@use '@carbon/styles/scss/type' as *;
+
+cds-actionable-notification[inline],
+cds-inline-notification {
+  box-sizing: border-box;
+  inline-size: auto;
+  max-inline-size: none;
+}
+
+.work__panel > cds-actionable-notification {
+  margin: $spacing-05;
+}
+
+// Carbon lays out the title, the message and anything after them as one wrapping line; the hints and the
+// settings link start a line of their own.
+cds-actionable-notification .notice__body {
+  @include type-style('body-compact-01');
+
+  flex-basis: 100%;
+  display: grid;
+  justify-items: start;
+  gap: $spacing-03;
+  margin-block: $spacing-03 $spacing-02;
+}

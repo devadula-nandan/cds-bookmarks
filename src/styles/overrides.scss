@@ -1,0 +1,15 @@
+// The dashboard's adjustments to Carbon's components, one file per component (<component>/override.scss).
+// Compiled into overrides.css by scripts/carbon/overrides.sh, and loaded after Carbon's CSS. Each file says
+// what in Carbon it works around or adapts; layout that isn't about a component stays in style.css.
+@use 'accordion/override' as accordion;
+@use 'button/override' as button;
+@use 'code-snippet/override' as code-snippet;
+@use 'contained-list/override' as contained-list;
+@use 'grid/override' as grid;
+@use 'link/override' as link;
+@use 'list/override' as list;
+@use 'menu-button/override' as menu-button;
+@use 'modal/override' as modal;
+@use 'notification/override' as notification;
+@use 'tabs/override' as tabs;
+@use 'ui-shell/override' as ui-shell;

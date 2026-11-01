@@ -1,0 +1,13 @@
+// cds-code-snippet: a multi-line snippet caps itself at 48rem and adds its 1rem padding on top of 100% width,
+// so in Bob's answers it ran past the modal's edge; it fills the answer's width instead. An inline snippet
+// keeps the whitespace around its button in its template, which put a space on each side of the code in a
+// sentence ("get an  aria-label  ?"); as an inline flex box it doesn't render it.
+cds-code-snippet[type='multi'] {
+  box-sizing: border-box;
+  max-inline-size: 100%;
+}
+
+cds-code-snippet[type='inline'] {
+  display: inline-flex;
+  vertical-align: bottom;
+}

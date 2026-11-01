@@ -130,11 +130,13 @@ src/page/         the new tab page only
   markdown.js     renders Bob's answers as Carbon components (marked, DOMPurify and Prism, with diffs tinted)
   icons.js        Carbon icons by the dashboard's names for them
   theme.js        puts Carbon's White or Gray 100 theme on the page before it paints
+src/styles/       adjustments to Carbon's components, one <component>/override.scss each (with why), compiled
+                  into overrides.css by scripts/carbon/overrides.sh
 src/vendor/       third-party code: carbon/ (built by scripts/carbon), and, copied as published, marked 18.1.1,
                   DOMPurify 3.4.17, Prism 1.30.0 (with the languages Bob uses), uFuzzy 1.0.19 (search), jsonrepair 3.15.0
 ai-helper/        the native messaging host that runs Bob Shell, and its installer
 scripts/package.sh  builds dist/dev-dashboard.zip
-scripts/carbon/   builds src/vendor/carbon/: the Carbon web components, lit-html, icons, Carbon's foundation CSS
+scripts/carbon/   builds src/vendor/carbon/: the Carbon web components, lit-html, icons and pictograms, Carbon's foundation CSS
                   and IBM Plex, from pinned versions (sh scripts/carbon/build.sh)
 ```
 

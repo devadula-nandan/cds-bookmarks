@@ -11,7 +11,8 @@
     "@ibm/plex-sans": "1.1.0",
     "@ibm/plex-mono": "1.1.0",
     "esbuild": "0.24.2",
-    "sass": "1.105.1"
+    "sass": "1.105.1",
+    "@carbon/pictograms": "13.0.0-alpha.1"
   },
   "overrides": {
     "@carbon/styles": "2.0.0-alpha.3",

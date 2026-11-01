@@ -1,7 +1,8 @@
-// Carbon icons (@carbon/icons, in the Carbon bundle), used as icon("name", size) in templates. `slot` puts
-// the icon in a Carbon component's icon slot, such as a button's; `cls` replaces its "icon" class.
+// Carbon icons (@carbon/icons, in the Carbon bundle), used as icon("name", size) in templates, and pictograms
+// (@carbon/pictograms) for empty states. `slot` puts an icon in a Carbon component's icon slot, such as a
+// button's; `cls` replaces its "icon" class.
 
-import { iconAttributes, iconString, icons } from "../vendor/carbon/carbon.js";
+import { iconAttributes, iconString, icons, pictograms } from "../vendor/carbon/carbon.js";
 import { unsafeSVG } from "./lit.js";
 
 /** The dashboard's names for Carbon's icons. */
@@ -60,6 +61,16 @@ export function icon(name, size = 16, { slot = "", cls = "icon" } = {}) {
     const glyph = set[size >= 20 ? 20 : 16];
     const attrs = iconAttributes({ ...glyph.attrs, width: size, height: size, class: cls, "aria-hidden": "true", ...(slot ? { slot } : {}) });
     cache.set(key, unsafeSVG(iconString({ ...glyph, attrs })));
+  }
+  return cache.get(key);
+}
+
+/** A Carbon pictogram, by its name in the bundle's `pictograms`, for empty states. */
+export function pictogram(name, size = 64) {
+  const key = `pictogram:${name}:${size}`;
+  if (!cache.has(key)) {
+    const glyph = pictograms[name];
+    cache.set(key, unsafeSVG(iconString({ ...glyph, attrs: iconAttributes({ ...glyph.attrs, width: size, height: size, class: "pictogram", "aria-hidden": "true" }) })));
   }
   return cache.get(key);
 }

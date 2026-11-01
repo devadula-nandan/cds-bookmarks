@@ -1,0 +1,16 @@
+// cds-contained-list: Carbon pins an item's action slot to the item's top edge, so on a two-line row (a title
+// and what it's waiting on) the age and buttons sat above the middle. Rows put them in the item's content
+// instead (.item__row), centred beside the title.
+@use '@carbon/styles/scss/spacing' as *;
+
+cds-contained-list-item .item__row {
+  display: flex;
+  align-items: center;
+  gap: $spacing-05;
+  min-block-size: 100%;
+}
+
+cds-contained-list-item .item__body {
+  flex: 1;
+  min-inline-size: 0;
+}

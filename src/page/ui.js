@@ -5,7 +5,7 @@ import { defaultSettings, timeAgo, todayKey } from "../core.js";
 import { focusQueue, isSnoozed } from "../insights.js";
 import { enabledRepos, repoLabel, repos } from "../repos.js";
 import DOMPurify from "../vendor/purify.es.js";
-import { icon } from "./icons.js";
+import { icon, pictogram } from "./icons.js";
 import { html, nothing, repeat, unsafeHTML } from "./lit.js";
 
 export const $ = (sel, root = document) => root.querySelector(sel);
@@ -147,11 +147,13 @@ export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, un
   return html`
     <cds-contained-list-item class="item">
       ${iconChip(iconName, tone, "icon")}
-      <div class="item__body">
-        <cds-link class="item__title" href=${url}>${title}</cds-link>
-        <p class="item__meta">${meta}</p>
+      <div class="item__row">
+        <div class="item__body">
+          <cds-link class="item__title" href=${url}>${title}</cds-link>
+          <p class="item__meta">${meta}</p>
+        </div>
+        <div class="item__end">${fix}${timeEl(at)}${buttons.length ? html`<span class="item__actions">${buttons}</span>` : nothing}</div>
       </div>
-      <div class="item__end" slot="action">${fix}${timeEl(at)}${buttons.length ? html`<span class="item__actions">${buttons}</span>` : nothing}</div>
     </cds-contained-list-item>`;
 }
 
@@ -193,8 +195,9 @@ export const itemList = (items, render, key) => html`<cds-contained-list size="l
 
 export const skeleton = () => html`<div class="skeleton" aria-hidden="true">${[1, 2, 3, 4, 5].map(() => html`<div class="skeleton__row"><cds-skeleton-text heading></cds-skeleton-text><cds-skeleton-text width="60%"></cds-skeleton-text></div>`)}</div>`;
 
-export const emptyState = (iconName, title, text = "") =>
-  html`<div class="empty">${iconChip(iconName, "success")}<p class="empty__title">${title}</p>${text ? html`<p class="empty__text">${text}</p>` : nothing}</div>`;
+/** Carbon's empty state: a pictogram, a title, what it means, and an action when there's a next step. */
+export const emptyState = (name, title, text = "", action = nothing) =>
+  html`<div class="empty">${pictogram(name)}<h3 class="cds--type-heading-03">${title}</h3>${text ? html`<p class="cds--type-body-01 empty__text">${text}</p>` : nothing}${action}</div>`;
 
 /** A Carbon toggle. `data` is its data-* attribute, as [name, value]. */
 export const toggle = ({ data: [name, value], checked, label, hint = "", disabled = false }) => html`

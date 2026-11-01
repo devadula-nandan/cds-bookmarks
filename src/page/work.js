@@ -6,7 +6,7 @@ import { addLabels, enableAutoMerge, removeReviewer, requestReviewers, rerunFail
 import { STALE_DAYS, ageText, askedAt, bucket, checkHint, isBot, isSnoozed, prState, reviewSize, weekStats } from "../insights.js";
 import { repoBySlug } from "../repos.js";
 import { requestSync, syncNotice, tokenNotice } from "./header.js";
-import { icon } from "./icons.js";
+import { icon, pictogram } from "./icons.js";
 import { html, nothing, render } from "./lit.js";
 import { renderAll } from "./main.js";
 import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, foldSection, issueItems, itemList, listSection, openFolds, ref, repoScope, row, saveView, searchUrl, skeleton, state, tip, toast, view, visibleTasks } from "./ui.js";
@@ -228,7 +228,7 @@ function forYouTab() {
   const folded = html`${foldSection("deps", "Dependency updates", deps, taskRow, byKey, "from bots")}${foldSection("stale", "Stale", groups.stale, taskRow, byKey, `quiet for ${STALE_DAYS}+ days: close, step off, or pick back up`)}`;
   const body = active
     ? html`${listSection("now", "Now", groups.now, taskRow, byKey)}${listSection("next", "Next", groups.next, taskRow, byKey)}${listSection("later", onlyLater ? "When you have time" : "Later", groups.later, taskRow, byKey, onlyLater ? "" : "Can wait")}${folded}`
-    : html`${emptyState("check", "You're all caught up", "Nothing needs you right now.")}${folded}`;
+    : html`${emptyState("summit", "You're all caught up", "Nothing needs you right now. New reviews, CI failures and mentions show up here.")}${folded}`;
   const snoozed = all.length - tasks.length;
   const foot = snoozed ? html`<span>${plural(snoozed, "item")} snoozed</span><cds-button kind="ghost" size="sm" data-action="unsnooze">Restore</cds-button>` : null;
   return { body, foot };
@@ -239,8 +239,8 @@ function issuesTab(d, login) {
   const bob = aiOn() && d.triage.items.length ? html`<cds-button kind="ghost" size="sm" class="bob-btn" data-action="bob-triage">Triage with Bob${icon("sparkle", 16, { slot: "icon" })}</cds-button>` : nothing;
   const items = issueItems(d);
   return {
-    body: items.length ? itemList(items, issueRow, ({ item }) => item.id) : emptyState("check", "Nothing assigned and no new mentions"),
-    foot: html`<span class="work__foot-group"><cds-link inline href=${searchUrl(triage)}>${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</cds-link>${bob}</span><cds-link inline href=${searchUrl(`is:open assignee:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
+    body: items.length ? itemList(items, issueRow, ({ item }) => item.id) : emptyState("reviewChecklist", "Nothing assigned and no new mentions", "Issues and PRs assigned to you, and ones that mention you, show up here."),
+    foot: html`<span class="work__foot-group"><cds-link href=${searchUrl(triage)}>${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</cds-link>${bob}</span><cds-link href=${searchUrl(`is:open assignee:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
   };
 }
 
@@ -263,8 +263,8 @@ function pullRequestsTab(d, login) {
     body:
       requested.length || mine.length || reviewed.length
         ? html`${listSection("requested", "Review requested", requested, reviewRow, byId)}${listSection("mine", "Yours", mine, myPrRow, byId)}${listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, byId, "still open")}`
-        : emptyState("check", "No open pull requests"),
-    foot: html`${weekLine(d)}<cds-link inline href=${searchUrl(`is:pr is:open involves:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
+        : emptyState("code", "No open pull requests", "Reviews requested from you and PRs you opened show up here."),
+    foot: html`${weekLine(d)}<cds-link href=${searchUrl(`is:pr is:open involves:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
   };
 }
 
@@ -281,8 +281,8 @@ function followingTab(d, login) {
   return {
     body: items.length
       ? html`${listSection("replies", "New replies", fresh, followingRow, byId)}${listSection("following", fresh.length ? "Following" : "All threads", items.filter((i) => !i.follow.newReply), followingRow, byId)}`
-      : emptyState("eyes", "Not following anything yet", "Issues and PRs you comment on or react to with 👀 show up here."),
-    foot: html`<span>👀 threads are picked up when they next get activity</span><cds-link inline href=${searchUrl(`is:open commenter:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
+      : emptyState("binocular", "Not following anything yet", "Issues and PRs you comment on or react to with 👀 show up here."),
+    foot: html`<span>👀 threads are picked up when they next get activity</span><cds-link href=${searchUrl(`is:open commenter:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
   };
 }
 
@@ -295,18 +295,18 @@ const TABS = [
 
 const CONNECT = html`
   <div class="connect">
-    <span class="connect__mark">${icon("github", 32)}</span>
-    <h2 class="connect__title">Connect GitHub</h2>
-    <p class="connect__lead">See review requests, your PRs, CI status, mentions and main-branch health for your Carbon repos — on every new tab.</p>
+    ${pictogram("connect", 80)}
+    <h2 class="cds--type-heading-04 connect__title">Connect GitHub</h2>
+    <p class="cds--type-body-01 connect__lead">See review requests, your PRs, CI status, mentions and main-branch health for your Carbon repos — on every new tab.</p>
     <cds-ordered-list class="connect__steps">
       <cds-list-item>Create a <cds-link inline href=${CLASSIC_TOKEN_URL}>classic token</cds-link> with <cds-code-snippet type="inline">repo</cds-code-snippet>, <cds-code-snippet type="inline">notifications</cds-code-snippet> and <cds-code-snippet type="inline">read:org</cds-code-snippet>.</cds-list-item>
       <cds-list-item>Paste it below. Your username is detected automatically.</cds-list-item>
     </cds-ordered-list>
     <form class="connect__form" data-form="connect">
       <cds-password-input name="token" label="GitHub token" placeholder="ghp_…" autocomplete="off" required></cds-password-input>
-      <cds-button type="submit">Connect</cds-button>
+      <cds-button type="submit" size="md">Connect</cds-button>
     </form>
-    <p class="connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to api.github.com. <cds-link inline href=${PRIVACY_URL}>Privacy policy</cds-link></p>
+    <p class="cds--type-helper-text-01 connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to api.github.com. <cds-link inline href=${PRIVACY_URL}>Privacy policy</cds-link></p>
   </div>`;
 
 export function renderWork() {

@@ -1,0 +1,7 @@
+// cds-link: Carbon's template leaves whitespace around its <a>, and around the text inside it, so an inline
+// link in a sentence ("CI failing: avt , test") underlined a trailing space and was followed by another. As
+// inline flex boxes, the host and its link don't render whitespace-only text around their children.
+cds-link[inline],
+cds-link[inline]::part(link) {
+  display: inline-flex;
+}

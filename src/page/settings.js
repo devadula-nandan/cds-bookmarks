@@ -1,4 +1,4 @@
-// The Settings sheet: a Carbon modal whose sections are an accordion, opening one closes the others.
+// The Settings sheet: a Carbon modal with its sections as tabs, the open one under them.
 
 import { bobStatus } from "../bob.js";
 import { NOTIFY_LABELS, plural, saveSettings, storage, uid } from "../core.js";
@@ -13,7 +13,7 @@ import { $, $$, CLASSIC_TOKEN_URL, armed, confirmed, iconChip, state, toast, tog
 const sheet = () => $("#settings");
 let openSection = "github";
 
-const section = (id, title, body) => html`<cds-accordion-item class="setting-section" id="set-${id}" title=${title} ?open=${openSection === id}>${body}</cds-accordion-item>`;
+const section = (id, title, body) => ({ id, title, body });
 
 const select = (setting, label, value, options) =>
   html`<cds-select size="md" label-text=${label} data-setting=${setting} value=${String(value)}>${options.map(([v, text]) => html`<cds-select-item value=${String(v)}>${text}</cds-select-item>`)}</cds-select>`;
@@ -41,7 +41,7 @@ function githubSection(s) {
     html`${status(s.token ? "success" : "neutral", s.token ? html`Connected${s.login ? html` as <b>${s.login}</b>` : nothing}` : "Not connected")}
       <form class="field-row" data-form="connect">
         <cds-password-input name="token" label="GitHub token" hide-label placeholder=${s.token ? "Paste a new token to replace it" : "ghp_…"} autocomplete="off"></cds-password-input>
-        <cds-button type="submit">${s.token ? "Replace" : "Connect"}</cds-button>
+        <cds-button type="submit" size="md">${s.token ? "Replace" : "Connect"}</cds-button>
         ${s.token ? danger("disconnect", "Disconnect") : nothing}
       </form>
       <p class="hint">${tokenInfo}${expires ? ` · Expires ${new Date(expires).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}.` : ""}${rate ? ` · API budget: ${rate.remaining}/${rate.limit} this hour.` : ""}</p>
@@ -73,7 +73,7 @@ function bobSection(s) {
             ${setup}
             <form class="field-row" data-form="bob-key">
               <cds-password-input name="key" label="Bob API key" hide-label placeholder=${s.bobKey ? "Paste a new key to replace it" : "Bob API key"} autocomplete="off"></cds-password-input>
-              <cds-button type="submit">${s.bobKey ? "Replace" : "Save"}</cds-button>
+              <cds-button type="submit" size="md">${s.bobKey ? "Replace" : "Save"}</cds-button>
               ${s.bobKey ? danger("bob-key-remove", "Remove") : nothing}
             </form>
             <p class="hint">${s.bobKey ? "Key saved. " : ""}Create an <b>Inference</b> key at <cds-link inline href="https://bob.ibm.com">bob.ibm.com</cds-link> under Settings → API keys. It stays in this browser and is only handed to Bob Shell on this computer.</p>
@@ -151,6 +151,22 @@ const THEMES = [
 
 export function renderSettings() {
   const s = state.settings;
+  const sections = [
+    githubSection(s),
+    bobSection(s),
+    reposSection(s),
+    notificationsSection(s),
+    meetingsSection(s),
+    section("appearance", "Appearance", html`<cds-content-switcher class="theme-switch" size="md" value=${s.theme} aria-label="Theme">${THEMES.map(([v, t]) => html`<cds-content-switcher-item value=${v}>${t}</cds-content-switcher-item>`)}</cds-content-switcher>`),
+    section(
+      "keys",
+      "Keyboard",
+      html`<cds-structured-list condensed flush><cds-structured-list-body>${KEYS.map(([k, what]) => html`<cds-structured-list-row><cds-structured-list-cell class="keys__key mono">${k}</cds-structured-list-cell><cds-structured-list-cell>${what}</cds-structured-list-cell></cds-structured-list-row>`)}</cds-structured-list-body></cds-structured-list>`
+    ),
+    section("reset", "Reset", html`<p class="hint">Removes the token, settings, to-dos and activity from this browser.</p>${danger("reset", "Reset everything", true)}`),
+  ];
+  const open = sections.find((x) => x.id === openSection) || sections[0];
+  // The open section's tab takes the modal's first focus (Carbon's data-modal-primary-focus), not the close button.
   render(
     html`
       <cds-modal-header>
@@ -158,20 +174,15 @@ export function renderSettings() {
         <cds-modal-heading>Settings</cds-modal-heading>
       </cds-modal-header>
       <cds-modal-body class="settings">
-        <cds-accordion size="lg">
-          ${githubSection(s)}
-          ${bobSection(s)}
-          ${reposSection(s)}
-          ${notificationsSection(s)}
-          ${meetingsSection(s)}
-          ${section("appearance", "Appearance", html`<cds-content-switcher class="theme-switch" size="md" value=${s.theme} aria-label="Theme">${THEMES.map(([v, t]) => html`<cds-content-switcher-item value=${v}>${t}</cds-content-switcher-item>`)}</cds-content-switcher>`)}
-          ${section(
-            "keys",
-            "Keyboard",
-            html`<cds-structured-list condensed flush><cds-structured-list-body>${KEYS.map(([k, what]) => html`<cds-structured-list-row><cds-structured-list-cell class="keys__key mono">${k}</cds-structured-list-cell><cds-structured-list-cell>${what}</cds-structured-list-cell></cds-structured-list-row>`)}</cds-structured-list-body></cds-structured-list>`
-          )}
-          ${section("reset", "Reset", html`<p class="hint">Removes the token, settings, to-dos and activity from this browser.</p>${danger("reset", "Reset everything", true)}`)}
-        </cds-accordion>
+        <div class="settings__layout">
+          <cds-tabs class="settings__nav" value=${open.id} aria-label="Settings sections">
+            ${sections.map((x) => html`<cds-tab id="set-${x.id}" value=${x.id} ?data-modal-primary-focus=${x === open}>${x.title}</cds-tab>`)}
+          </cds-tabs>
+          <section class="settings__panel" role="tabpanel" aria-labelledby="set-${open.id}">
+            <h3 class="cds--type-heading-03 settings__title">${open.title}</h3>
+            ${open.body}
+          </section>
+        </div>
       </cds-modal-body>`,
     sheet()
   );
@@ -182,14 +193,13 @@ export function openSettings(id) {
   if (!state.bobStatus?.ok) checkBob();
   renderSettings();
   sheet().open = true;
-  if (id) requestAnimationFrame(() => $(`#set-${id}`)?.scrollIntoView({ block: "start" }));
 }
 
-/** One section open at a time, remembered across re-renders; the theme switch. */
+/** The section tabs, remembered across re-renders; the theme switch. */
 export function bindSettings() {
-  sheet().addEventListener("cds-accordion-item-toggled", (e) => {
-    if (!e.target.matches(".setting-section")) return;
-    openSection = e.target.open ? e.target.id.slice(4) : null;
+  sheet().addEventListener("cds-tabs-selected", (e) => {
+    if (!e.target.matches(".settings__nav")) return;
+    openSection = e.detail.item.value;
     renderSettings();
   });
   sheet().addEventListener("cds-content-switcher-selected", (e) => setTheme(e.detail.item.value));

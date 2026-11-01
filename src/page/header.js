@@ -7,7 +7,7 @@ import { greeting, summary } from "../insights.js";
 import { EVENT_TYPES } from "../sync.js";
 import { icon } from "./icons.js";
 import { html, nothing, render, repeat } from "./lit.js";
-import { $, CLASSIC_TOKEN_URL, activityList, agoText, aiOn, connected, data, dayLabel, iconChip, mainTone, shownRepos, state, timeEl, tip, toast, unread, visibleTasks, vscodeUrl } from "./ui.js";
+import { $, CLASSIC_TOKEN_URL, activityList, agoText, aiOn, connected, data, dayLabel, emptyState, iconChip, mainTone, shownRepos, state, timeEl, tip, toast, unread, visibleTasks, vscodeUrl } from "./ui.js";
 
 export function renderMasthead() {
   const now = new Date();
@@ -24,7 +24,7 @@ export function renderMasthead() {
       : summary(visibleTasks());
   const planned = state.answered.has(planKey());
   const plan = aiOn() && d;
-  render(plan ? html`<cds-button kind="ghost" size="sm" class="bob-btn ${planned ? "bob-made" : ""}" data-action="bob-plan">${planned ? "Today's plan" : "Plan my day with Bob"}${icon("sparkle", 16, { slot: "icon" })}</cds-button>` : nothing, $("#hello-ai"));
+  render(plan ? html`<cds-button kind="tertiary" size="md" class="bob-btn ${planned ? "bob-made" : ""}" data-action="bob-plan">${planned ? "Today's plan" : "Plan my day with Bob"}${icon("sparkle", 16, { slot: "icon" })}</cds-button>` : nothing, $("#hello-ai"));
   $("#hello-ai").hidden = !plan;
 }
 
@@ -69,7 +69,8 @@ export function syncNotice() {
   return notice({
     kind: failed ? "error" : "warning",
     title: failed ? "Couldn't sync with GitHub" : `Some data couldn't load${d?.failed?.length ? ` (${d.failed.join(", ")})` : ""}`,
-    body: html`<p>${messages.slice(0, 2).join(" · ")}</p>${tips.length ? html`<cds-unordered-list class="notice__hints">${tips.map((t) => html`<cds-list-item>${t}</cds-list-item>`)}</cds-unordered-list>` : nothing}`,
+    text: messages.slice(0, 2).join(" · "),
+    body: tips.length ? html`<cds-unordered-list class="notice__hints">${tips.map((t) => html`<cds-list-item>${t}</cds-list-item>`)}</cds-unordered-list>` : nothing,
     action: sso ? html`<cds-actionable-notification-button slot="action" href=${sso}>Authorize SSO</cds-actionable-notification-button>` : html`<cds-actionable-notification-button slot="action" data-action="sync">Retry</cds-actionable-notification-button>`,
   });
 }
@@ -82,15 +83,16 @@ export function tokenNotice() {
   return notice({
     kind: "warning",
     title: `Your GitHub token expires ${days < 1 ? "today" : `in ${plural(Math.ceil(days), "day")}`}`,
-    body: html`<p>Syncing stops when it does. Create a new classic token and paste it in Settings.</p>`,
+    text: "Syncing stops when it does. Create a new classic token and paste it in Settings.",
+    body: nothing,
     action: html`<cds-actionable-notification-button slot="action" href=${CLASSIC_TOKEN_URL}>Create a token</cds-actionable-notification-button>`,
   });
 }
 
-/** An inline Carbon notification with one action, and a link to the token settings under its text. */
-const notice = ({ kind, title, body, action }) => html`
-  <cds-actionable-notification class="notice" inline low-contrast hide-close-button .hasFocus=${false} kind=${kind} title=${title}>
-    <div slot="subtitle" class="notice__body">${body}<p><cds-link inline href="#" data-action="settings" data-section="github">Token settings</cds-link></p></div>
+/** An inline Carbon notification with one action: its title and `text`, then `body` and a link to the token settings. */
+const notice = ({ kind, title, text, body, action }) => html`
+  <cds-actionable-notification class="notice" inline low-contrast hide-close-button .hasFocus=${false} kind=${kind} title=${title} subtitle=${text}>
+    <div class="notice__body">${body}<cds-link href="#" data-action="settings" data-section="github">Token settings</cds-link></div>
     ${action}
   </cds-actionable-notification>`;
 
@@ -117,9 +119,9 @@ function repoMenu(repo) {
   const code = vscodeUrl(repo.clone);
   const link = (l) =>
     l.versionedHref && l.version
-      ? html`<cds-menu-item label=${prettyLabel(l.label)}><cds-menu slot="submenu" label=${prettyLabel(l.label)}>
+      ? html`<cds-menu-item label=${prettyLabel(l.label)}><cds-menu-item-group slot="submenu">
           ${linkItem("Latest", l.href)}${linkItem(`Version ${l.version}`, l.versionedHref.replace("<v>", encodeURIComponent(l.version)))}
-        </cds-menu></cds-menu-item>`
+        </cds-menu-item-group></cds-menu-item>`
       : linkItem(prettyLabel(l.label), l.href);
   const status = [
     main && linkItem(`${main.branch} ${STATUS[tone] || "status unknown"} · ${main.sha} · ${timeAgo(main.committedAt)}${tone === "error" && main.failing?.length ? ` · ${main.failing.map((c) => c.name).join(", ")}` : ""}`, main.url, STATUS_ICON[tone] || "git", tone || "neutral"),
@@ -155,11 +157,13 @@ const activityRow = (a) => {
   return html`
     <cds-contained-list-item class="item ${!state.seenAt || a.createdAt > state.seenAt ? "is-new" : ""}">
       ${iconChip(look.icon, look.tone, "icon")}
-      <div class="item__body">
-        ${a.url ? html`<cds-link class="item__title" href=${a.url}>${a.title}</cds-link>` : html`<span class="item__title">${a.title}</span>`}
-        ${a.body ? html`<p class="item__meta">${a.body}</p>` : nothing}
+      <div class="item__row">
+        <div class="item__body">
+          ${a.url ? html`<cds-link class="item__title" href=${a.url}>${a.title}</cds-link>` : html`<span class="item__title">${a.title}</span>`}
+          ${a.body ? html`<p class="item__meta">${a.body}</p>` : nothing}
+        </div>
+        <div class="item__end">${timeEl(a.createdAt)}</div>
       </div>
-      <div class="item__end" slot="action">${timeEl(a.createdAt)}</div>
     </cds-contained-list-item>`;
 };
 
@@ -173,8 +177,9 @@ export function renderActivity() {
     days.at(-1).items.push(a);
   }
   render(
+    // The panel is layer-01; what's in it steps up to layer-02, as in the work panels.
     html`
-      <div class="activity">
+      <cds-layer class="activity" level="1">
         <header class="activity__head">
           <h2 class="activity__title">Activity</h2>
           <div class="activity__actions">
@@ -185,10 +190,10 @@ export function renderActivity() {
         <div class="activity__list">
           ${list.length
             ? days.map((day) => html`<cds-contained-list label=${day.label} size="lg">${repeat(day.items, (a) => a.id || a.createdAt + a.title, activityRow)}</cds-contained-list>`)
-            : html`<div class="empty">${iconChip("bell")}<p class="empty__title">No activity yet</p><p class="empty__text">Approvals, CI results, merges and releases show up here as they happen.</p></div>`}
+            : emptyState("notifications", "No activity yet", "Approvals, CI results, merges and releases show up here as they happen.")}
         </div>
         <footer class="activity__foot">${state.settings.notifications ? "" : "Desktop notifications are off."} <cds-button kind="ghost" size="sm" data-action="settings" data-section="notifications">Notification settings</cds-button></footer>
-      </div>`,
+      </cds-layer>`,
     $("#activity")
   );
 }
@@ -205,6 +210,8 @@ export function toggleActivity(open = !activityOpen()) {
 export function bindActivity() {
   new MutationObserver(async () => {
     if (!activityOpen()) return renderTools();
+    // Its button keeps focus, which keeps its tooltip open over the panel.
+    $("#activity-toggle").openTooltip = false;
     renderActivity();
     state.lastSeenAt = state.seenAt; // for "Catch me up"
     state.seenAt = new Date().toISOString();

@@ -1,0 +1,102 @@
+.editor cds-accordion-item::part(content) {
+  padding-inline-end: 1rem;
+}
+
+cds-button.is-flush {
+  margin-inline-start: -1rem;
+}
+
+cds-button.is-block {
+  display: block;
+  inline-size: 100%;
+}
+
+cds-button.is-block::part(button) {
+  inline-size: 100%;
+  max-inline-size: none;
+}
+
+cds-code-snippet[type=multi] {
+  box-sizing: border-box;
+  max-inline-size: 100%;
+}
+
+cds-code-snippet[type=inline] {
+  display: inline-flex;
+  vertical-align: bottom;
+}
+
+cds-contained-list-item .item__row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-block-size: 100%;
+}
+
+cds-contained-list-item .item__body {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.page::part(grid) {
+  row-gap: 1rem;
+  align-content: start;
+}
+
+@media (min-width: 1056px) and (min-height: 640px) {
+  .page::part(grid) {
+    block-size: 100%;
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+  }
+}
+cds-link[inline],
+cds-link[inline]::part(link) {
+  display: inline-flex;
+}
+
+cds-ordered-list:not([nested]) > cds-list-item {
+  margin-inline-start: 1.5rem;
+}
+
+cds-menu-button.is-failing {
+  --cds-link-primary: var(--cds-text-error, #da1e28);
+  --cds-link-primary-hover: var(--cds-text-error, #da1e28);
+}
+
+cds-modal > .bob__foot {
+  grid-column: 1/-1;
+  grid-row: -2/-1;
+  padding: 0.5rem 1rem 1rem;
+  border-block-start: 1px solid var(--cds-border-subtle);
+}
+
+cds-actionable-notification[inline],
+cds-inline-notification {
+  box-sizing: border-box;
+  inline-size: auto;
+  max-inline-size: none;
+}
+
+.work__panel > cds-actionable-notification {
+  margin: 1rem;
+}
+
+cds-actionable-notification .notice__body {
+  font-size: var(--cds-body-compact-01-font-size, 0.875rem);
+  font-weight: var(--cds-body-compact-01-font-weight, 400);
+  line-height: var(--cds-body-compact-01-line-height, 1.28572);
+  letter-spacing: var(--cds-body-compact-01-letter-spacing, 0.16px);
+  flex-basis: 100%;
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  margin-block: 0.5rem 0.25rem;
+}
+
+cds-tab .tab__count {
+  margin-inline-start: 0.5rem;
+}
+
+cds-header-panel#activity[expanded] {
+  inline-size: min(25rem, 100vw);
+}
