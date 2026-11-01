@@ -396,7 +396,10 @@ body:has(#sync-error:popover-open) button.sync--error {
   margin: 0;
 }
 
-/* ---------- buttons ---------- */
+/* ---------- buttons ----------
+   One scale for everything clickable. Regular (36px): beside inputs and in the toolbar. Small (28px): everywhere
+   else; text and icon buttons share it, so they line up in a row. Mini (22px): Copy inside code and quotes.
+   Icons size with the button, whatever size a view asks for. */
 
 .icon-btn {
   position: relative;
@@ -422,6 +425,16 @@ body:has(#sync-error:popover-open) button.sync--error {
   width: 28px;
   height: 28px;
   border-radius: 6px;
+}
+
+.icon-btn > .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.icon-btn--sm > .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .icon-btn.is-spinning .icon {
@@ -474,10 +487,21 @@ body:has(#sync-error:popover-open) button.sync--error {
   cursor: default;
 }
 
+.btn > .icon {
+  width: 16px;
+  height: 16px;
+}
+
 .btn--sm {
-  height: 30px;
+  height: 28px;
+  gap: 6px;
   padding: 0 10px;
   font-size: 13px;
+}
+
+.btn--sm > .icon {
+  width: 14px;
+  height: 14px;
 }
 
 .btn--primary {
@@ -529,13 +553,6 @@ body:has(#sync-error:popover-open) button.sync--error {
 
 .link:hover {
   text-decoration: underline;
-}
-
-/* A link with an icon in front. */
-.link--bob {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
 }
 
 .hello__ai {
@@ -1198,9 +1215,6 @@ a.item__title::after {
 .item__cta {
   position: relative;
   z-index: 1;
-  height: 26px;
-  gap: 6px;
-  white-space: nowrap;
 }
 
 /* Links inside a row's meta (a failing check's log) sit above the row's own link. */
@@ -2010,7 +2024,6 @@ a.item__title::after {
 
 .today__foot .btn {
   justify-content: flex-start;
-  font-weight: 400;
 }
 
 /* ---------- activity drawer ---------- */
@@ -2486,14 +2499,20 @@ a.item__title::after {
   background: transparent;
   color: var(--text-2);
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
 
-.segmented__opt[aria-checked="true"] {
-  background: var(--surface);
+.segmented__opt:hover {
   color: var(--text);
-  font-weight: 500;
-  box-shadow: var(--shadow-sm), 0 0 0 1px var(--border);
+}
+
+/* The chosen option: accent-tinted, with an accent outline, so it stands out on any surface. */
+.segmented__opt[aria-checked="true"],
+.segmented__opt[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .keys {
@@ -2552,13 +2571,6 @@ a.item__title::after {
   .tooltip:popover-open {
     opacity: 0;
   }
-}
-
-/* A bug report's links (VS Code, new GitHub issue) side by side. */
-.bob__links-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
 }
 
 /* ---------- toasts ---------- */
@@ -2811,17 +2823,23 @@ a.bob__subtitle:hover {
   font-size: 11px;
 }
 
-.code__copy {
-  padding: 2px 8px;
+/* Mini buttons: Copy in a code block's bar or a quote's corner. */
+.code__copy,
+.md-quote__copy {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 5px;
   background: none;
   color: var(--text-2);
-  font: inherit;
+  font: 500 12px/1 var(--font);
   cursor: pointer;
 }
 
-.code__copy:hover {
+.code__copy:hover,
+.md-quote__copy:hover {
   background: var(--surface-hover);
   color: var(--text);
 }
@@ -3248,28 +3266,6 @@ a.bob__subtitle:hover {
   color: var(--warning);
 }
 
-.hunt-verdicts {
-  display: grid;
-  gap: 4px;
-}
-
-.hunt-verdicts__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-
-.hunt-verdicts .quiet-inline {
-  margin: 0;
-}
-
-.hunt-verdict[aria-pressed="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
 .hunt__meta {
   color: var(--text-3);
   font-size: 12px;
@@ -3305,23 +3301,176 @@ a.bob__subtitle:hover {
   font-weight: 500;
 }
 
-.bob__report-meta {
+/* A sheet's facts under its title: the review brief's PR, the bug of the day's report (fact() in ui.js). */
+.facts {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 16px 12px 20px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.facts__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 18px;
+}
+
+.fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fact .icon {
+  flex: none;
+  color: var(--text-3);
+}
+
+.fact--success,
+.fact--success .icon {
+  color: var(--success);
+}
+
+.fact--error,
+.fact--error .icon {
+  color: var(--error);
+}
+
+.fact--warning,
+.fact--warning .icon {
+  color: var(--warning);
+}
+
+.facts__row .chip {
+  margin-right: -12px;
+}
+
+.facts__links {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.facts__note {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.segmented--sm {
+  padding: 2px;
+  border-radius: 8px;
+}
+
+.segmented--sm .segmented__opt {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+/* Under the brief: the user's own review, to approve, request changes or comment. */
+.review-box {
+  display: grid;
   gap: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
-.bob__report-meta .bob__label {
+.review-box .bob__label {
   margin: 0;
 }
 
-.bob__chips {
+.review-box__body {
+  min-height: 64px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.review-box__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+}
+
+.review-box__actions .quiet-inline {
+  margin-left: auto;
+}
+
+/* A quote in an answer (a comment to leave, a reply to post), with a Copy button in its corner. */
+.bob__answer .md-quote {
+  position: relative;
+  padding-right: 64px;
+}
+
+.bob__answer .md-quote > :nth-last-child(2),
+.bob__answer .md-comment__body > :last-child {
+  margin-bottom: 0;
+}
+
+/* A comment on a file: a card with the file in its header, beside Copy. */
+.bob__answer .md-comment {
+  margin: 0 0 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.md-comment__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+
+.md-comment__head .md-quote__copy {
+  position: static;
+}
+
+.bob__answer .md-comment__body {
   margin: 0;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+/* A file Bob cites: a code-style chip, a link when it opens somewhere (the PR's diff, VS Code). */
+.bob__answer .md-file {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-sunken);
+  font-family: var(--mono);
+  font-size: 0.85em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.bob__answer a.md-file:hover {
+  text-decoration: underline;
+}
+
+.bob__answer .md-file code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+
+.md-comment__head .md-file {
+  background: none;
+  padding: 0;
+}
+
+.md-quote__copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }
 
 .chip {
@@ -3332,13 +3481,12 @@ a.bob__subtitle:hover {
   font-size: 12px;
 }
 
-.bob__links {
-  margin: 0;
-  padding-left: 18px;
-  font-size: 13px;
+/* Earlier bug hunts: one line each, the title cut short (its tooltip has all of it) and where/when on the right. */
+.hunt-earlier {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
-/* Earlier bug hunts: one line each, the title cut short (its tooltip has all of it) and where/when on the right. */
 .hunt-earlier summary {
   display: flex;
   align-items: center;
@@ -3420,10 +3568,6 @@ a.bob__subtitle:hover {
   flex: none;
   color: var(--text-3);
   font-size: 12px;
-}
-
-.bob__links a {
-  color: var(--accent);
 }
 
 .quiet-inline {

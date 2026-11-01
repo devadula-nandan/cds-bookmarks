@@ -8,20 +8,17 @@ import { requestSync } from "./header.js";
 import { icon } from "./icons.js";
 import { html, live, nothing, render, repeat } from "./lit.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, state, toast, toggle } from "./ui.js";
+import { $, $$, CLASSIC_TOKEN_URL, armed, confirmed, state, toast, toggle } from "./ui.js";
 
 const sheet = () => $("#settings");
 let openSection = "github";
-
-/** Destructive buttons waiting for a second click: action → its label meanwhile ("Click again to …"). */
-const armed = new Map();
 
 const section = (id, title, body) =>
   html`<details class="setting-section" id="set-${id}" name="settings" ?open=${openSection === id}><summary><h3>${title}</h3>${icon("chevronDown", 16)}</summary>${body}</details>`;
 
 const select = (setting, value, options) => html`<select class="input input--select" data-setting=${setting}>${options.map(([v, text]) => html`<option value=${v} ?selected=${+value === v}>${text}</option>`)}</select>`;
 
-/** A destructive button: the first click arms it (see confirmed()), the second does it. */
+/** A destructive button: the first click arms it (see confirmed() in ui.js), the second does it. */
 const danger = (action, label, sm = false) => html`<button class="btn btn--danger ${sm ? "btn--sm" : ""}" type="button" data-action=${action}>${armed.get(action) || label}</button>`;
 
 const classicToken = html`<a href=${CLASSIC_TOKEN_URL}>classic token</a>`;
@@ -236,19 +233,6 @@ export function toggleTheme() {
   setTheme(dark ? "light" : "dark");
 }
 
-/** Click once to arm a destructive button, again within 4 seconds to do it. */
-function confirmed(el, label) {
-  const action = el.dataset.action;
-  if (armed.has(action)) {
-    armed.delete(action);
-    return true;
-  }
-  armed.set(action, label);
-  renderSettings();
-  setTimeout(() => armed.delete(action) && renderSettings(), 4000);
-  return false;
-}
-
 /** Changing what's tracked resets the comparison baseline, so the next sync doesn't announce everything as new. */
 async function resetBaseline() {
   await storage.remove("snapshot");
@@ -275,12 +259,12 @@ export const settingsActions = {
     toast(res?.ok ? "Test notification sent" : "Chrome blocked the notification — check your OS notification settings for Chrome", res?.ok ? "success" : "error");
   },
   "bob-key-remove": async (el) => {
-    if (!confirmed(el, "Click again to remove")) return;
+    if (!confirmed(el.dataset.action, "Click again to remove", renderSettings)) return;
     state.settings = await saveSettings({ bobKey: "" });
     renderSettings();
   },
   disconnect: async (el) => {
-    if (!confirmed(el, "Click again to disconnect")) return;
+    if (!confirmed(el.dataset.action, "Click again to disconnect", renderSettings)) return;
     await storage.remove(["cache", "snapshot", "status", "activity"]);
     Object.assign(state, { cache: null, status: {}, activity: [] });
     state.settings = await saveSettings({ token: "", login: "", tokenScopes: undefined });
@@ -288,7 +272,7 @@ export const settingsActions = {
     renderSettings();
   },
   reset: async (el) => {
-    if (!confirmed(el, "Click again to erase everything")) return;
+    if (!confirmed(el.dataset.action, "Click again to erase everything", renderSettings)) return;
     await storage.clear();
     localStorage.clear();
     location.reload();

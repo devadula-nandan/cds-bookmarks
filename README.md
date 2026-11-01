@@ -123,6 +123,7 @@ src/page/         the new tab page only
   work.js         the work tabs, row fixes (ready to merge, re-run, remove me, close), snoozing, unfollowing
   today.js        meetings, bug of the day (and its verdicts), to-dos
   bob.js          the Bob sheet and every Bob button
+  review.js       the review brief's PR facts, links into the diff, and submitting a review
   search.js       the search box
   settings.js     the Settings sheet
   repo-editor.js  the repo editor

@@ -81,6 +81,8 @@ function codeBlock(lang, body, before) {
 
 /** The language of the answer's last code block so far, for a diff with no file header. */
 let lastLang = "";
+/** Where the answer's links to files in the repo go (markdown()'s `files` option). */
+let files = null;
 
 const md = new Marked({
   gfm: true,
@@ -100,13 +102,32 @@ const md = new Marked({
       const tag = depth <= 2 ? "h3" : "h4";
       return `<${tag}>${this.parser.parseInline(tokens)}</${tag}>`;
     },
-    // Web links open in a new tab, a bare GitHub URL without its "https://github.com/"; a link to a file path in
-    // the repo (Bob citing code) is the label, with the path on hover.
+    // Web links open in a new tab, a bare GitHub URL without its "https://github.com/". A link to a file path in
+    // the repo (Bob citing code, "path:42" or "path#L42") goes where the `files` option says, such as the PR's
+    // diff or VS Code; without one it's the label, with the path on hover.
     link({ href, text, tokens }) {
       const label = this.parser.parseInline(tokens);
-      if (!/^https?:\/\//i.test(href)) return `<span class="md-path" data-tooltip="${esc(href)}">${label}</span>`;
-      const shown = text === href ? esc(href.replace(/^https:\/\/(www\.)?github\.com\//, "")) : label;
-      return `<a href="${esc(href)}" target="_blank" rel="noopener">${shown}</a>`;
+      if (/^https?:\/\//i.test(href)) {
+        const shown = text === href ? esc(href.replace(/^https:\/\/(www\.)?github\.com\//, "")) : label;
+        return `<a href="${esc(href)}" target="_blank" rel="noopener">${shown}</a>`;
+      }
+      const [, path = href, line = ""] = href.match(/^([^#]+?)(?:(?::|#L)(\d+)\S*)?$/) || [];
+      const file = decodeURI(path);
+      const where = `${file}${line ? `:${line}` : ""}`;
+      const to = files?.(file, line);
+      if (!to) return `<span class="md-file md-path" data-tooltip="${esc(where)}">${label}</span>`;
+      // A PR diff's anchor for a file is a hash of its path: the click works it out (see review.js).
+      const diff = to.diff ? ` target="_blank" rel="noopener" data-action="open-diff" data-file="${esc(file)}" data-line="${esc(line)}"` : "";
+      return `<a class="md-file" href="${esc(to.href)}" data-tooltip="${esc(where)}"${diff}>${label}</a>`;
+    },
+    // A quote is often something to paste (a review comment, a reply): it gets a Copy button. One that
+    // follows a line holding only a link (`cite`, see markdown()) is a comment on that file: a card with the
+    // link in its header.
+    blockquote({ tokens, raw, cite }) {
+      const text = esc(raw.replace(/^ {0,3}> ?/gm, "").trim());
+      const copy = `<button class="md-quote__copy" type="button" data-action="copy-quote">Copy</button>`;
+      if (cite) return `<figure class="md-comment" data-copy="${text}"><figcaption class="md-comment__head">${this.parser.parseInline([cite])}${copy}</figcaption><blockquote class="md-comment__body">${this.parser.parse(tokens)}</blockquote></figure>`;
+      return `<blockquote class="md-quote" data-copy="${text}">${this.parser.parse(tokens)}${copy}</blockquote>`;
     },
     // No pictures in answers: an image is a link to it.
     image: ({ href, text }) => `<a href="${esc(href)}" target="_blank" rel="noopener">${esc(text || href)}</a>`,
@@ -122,10 +143,39 @@ const md = new Marked({
   },
 });
 
-/** Markdown as safe HTML. */
-export function markdown(src) {
+// DOMPurify's own list of safe link protocols, plus vscode: for opening files in VS Code.
+const SAFE_URL = /^(?:(?:https?|mailto|tel|vscode):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
+
+/**
+ * Markdown as safe HTML. `files(path, line)` says where links to files in the repo go: `{ href }`, or
+ * `{ href, diff: true }` for a PR's Files changed view; null leaves them as plain labels. `transform(tokens)`
+ * can reshape the parsed blocks first (see marked's lexer), and returns them.
+ */
+export function markdown(src, { files: where = null, transform = (tokens) => tokens } = {}) {
   lastLang = "";
-  return DOMPurify.sanitize(md.parse(String(src || "")), { ADD_ATTR: ["target"] });
+  files = where;
+  const tokens = transform(md.lexer(String(src || "")));
+  return DOMPurify.sanitize(md.parser(withCites(tokens)), { ADD_ATTR: ["target"], ALLOWED_URI_REGEXP: SAFE_URL });
+}
+
+/**
+ * A line holding only a link (bold or not), then a quote: the link becomes the quote's `cite`, for blockquote()
+ * above. Inside list items too, as Bob often numbers its comments ("1. [file](…)" with the quote under it).
+ */
+function withCites(tokens) {
+  for (const t of tokens) if (t.type === "list") t.items.forEach((item) => withCites(item.tokens));
+  for (let i = 0; i < tokens.length; i++) {
+    // A list item's first line is a "text" token, a paragraph's a "paragraph".
+    let only = ["paragraph", "text"].includes(tokens[i].type) && tokens[i].tokens?.filter((t) => t.type !== "text" || t.text.trim());
+    if (only?.length === 1 && only[0].type === "strong") only = only[0].tokens;
+    let next = i + 1;
+    while (tokens[next]?.type === "space") next++;
+    if (only?.length === 1 && only[0].type === "link" && tokens[next]?.type === "blockquote") {
+      tokens[next].cite = only[0];
+      tokens.splice(i, next - i);
+    }
+  }
+  return tokens;
 }
 
 /** Unchecked "- [ ] …" items, as plain to-do text. */

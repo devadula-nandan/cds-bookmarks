@@ -34,6 +34,7 @@ import { todaysMeetings } from "../sync.js";
 import { icon } from "./icons.js";
 import { html, live, nothing, render, unsafeHTML } from "./lit.js";
 import { checklist, markdown } from "./markdown.js";
+import { bindReview, diffLinks, reviewFacts, reviewForm } from "./review.js";
 import { addTodos } from "./today.js";
 import { $, $$, activityList, agoText, bobTargets, copyText, data, go, searchUrl, state, toast } from "./ui.js";
 
@@ -58,6 +59,8 @@ let timer = 0;
  *   format                      "edit", "reply" or "query": the answer is a draft to edit and revise
  *   input                       ask for text first (the Slack thread); spec.makePrompt(text) builds the prompt
  *   answer, extra, regenerate   a ready-made answer (bug reports), a function for what goes under it, and whether Regenerate shows
+ *   head                        a function for what goes under the title (a PR's facts)
+ *   files, transform            where links to files in the repo go, and a reshaping of the answer (see markdown())
  */
 export async function openBob(spec, { fresh = false } = {}) {
   // Asking again for something minimised brings it back instead of starting over.
@@ -184,14 +187,14 @@ const logToggle = (log) => (SHOW_LOGS && log ? html`<details class="bob__log"><s
 
 /** Markdown → sanitized HTML, kept per answer so a re-render doesn't parse it again. */
 const rendered = new WeakMap();
-function answerMarkup(turn) {
-  if (rendered.get(turn)?.text !== turn.text) rendered.set(turn, { text: turn.text, html: unsafeHTML(markdown(turn.text)) });
+function answerMarkup(s, turn) {
+  if (rendered.get(turn)?.text !== turn.text) rendered.set(turn, { text: turn.text, html: unsafeHTML(markdown(turn.text, { files: s.spec.files, transform: s.spec.transform })) });
   return rendered.get(turn).html;
 }
 
 function answerView(s, turn) {
   const outdated = turn.outdated ? html`<p class="bob__revised">${icon("refresh", 14)}<span>Written before the latest changes. Regenerate for an up-to-date answer.</span></p>` : nothing;
-  if (turn !== firstAnswer(s) || !isDraft(s)) return html`${outdated}<div class="bob__answer">${answerMarkup(turn)}</div>`;
+  if (turn !== firstAnswer(s) || !isDraft(s)) return html`${outdated}<div class="bob__answer">${answerMarkup(s, turn)}</div>`;
   const last = s.revisions.at(-1);
   const undo = last ? html`<p class="bob__revised">${icon("sparkle", 14)}<span>Revised: “${last.ask}”</span><button class="btn btn--ghost btn--sm" data-action="bob-undo">Undo</button></p>` : nothing;
   if (s.spec.format === "query")
@@ -257,6 +260,7 @@ export function renderBob(ticking = false) {
         </div>
         <button class="icon-btn" data-action="bob-hide" aria-label=${loading ? "Minimise" : "Close"} data-tooltip=${loading ? "Minimise. Bob keeps working" : "Close"}>${icon(loading ? "minus" : "x", 18)}</button>
       </header>
+      ${spec.head ? spec.head() : nothing}
       <div class="sheet__body bob__body">${input}${thread}${waiting}${failure}</div>
       ${tools}`,
     sheet()
@@ -321,6 +325,7 @@ export function bindBobSheet() {
   // late, so skip it if a session was shown again meanwhile.
   sheet().addEventListener("close", () => !sheet().open && hideSheet());
   sheet().addEventListener("click", (e) => e.target === sheet() && hideSheet());
+  bindReview(sheet());
 }
 
 /** Forms inside the sheet (main.js routes submits here). */
@@ -345,14 +350,22 @@ const repoList = () => enabledRepos(state.settings);
 function bobItem(key) {
   const target = bobTargets.get(key);
   const subject = target.item || target.task;
+  const mode = modeFor(target.item, target.kind);
+  // A review brief shows the PR's facts, links files to its diff, and has a box to submit the review.
+  const review = mode === "review" && {
+    head: () => reviewFacts(subject.id),
+    files: diffLinks(subject.id),
+    extra: () => reviewForm(subject.id, renderBob),
+  };
   openBob({
-    title: MODES[modeFor(target.item, target.kind)].label,
+    title: MODES[mode].label,
     subtitle: `${target.item ? itemRef(subject) : target.task.ref} · ${subject.title}`,
     url: subject.url,
     trigger: `[data-action="bob-item"][data-key="${CSS.escape(key)}"]`,
     key: answerKey(target),
     keyPrefix: target.item ? answerPrefix(target) : null,
     prompt: itemPrompt(target),
+    ...review,
   });
 }
 
@@ -455,6 +468,9 @@ export const bobActions = {
     const spec = { ...shown.spec, text: null };
     hideSheet();
     openBob(spec, { fresh: true });
+  },
+  "copy-quote": async (el) => {
+    if (await copyText(el.closest("[data-copy]").dataset.copy, null)) el.textContent = "Copied";
   },
   "copy-code": async (el) => {
     if (await copyText(el.closest(".code").querySelector("code").textContent, null)) el.textContent = "Copied";

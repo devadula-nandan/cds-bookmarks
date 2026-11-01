@@ -100,6 +100,10 @@ export function logo(markup) {
   return unsafeHTML(logos.get(markup));
 }
 
+/** One fact in a sheet's facts strip (the review brief, the bug of the day): an icon and a few words, coloured by `tone` (success, error or warning). */
+export const fact = (iconName, content, { tone = "", tooltip = "" } = {}) =>
+  html`<span class="fact ${tone ? `fact--${tone}` : ""}" data-tooltip=${tooltip || nothing}>${icon(iconName, 14)}<span>${content}</span></span>`;
+
 /** Row key → what Bob should look at for that row's ✦ button. Rebuilt on every work render. */
 export const bobTargets = new Map();
 
@@ -177,6 +181,32 @@ export function dayLabel(at, dated = false) {
   if (key === todayKey()) return "Today";
   if (key === todayKey(new Date(Date.now() - 86400000))) return "Yesterday";
   return dated ? new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Earlier";
+}
+
+/** Buttons waiting for a second click, by key → their label meanwhile ("Click again to …"). */
+export const armed = new Map();
+
+/** Click once to arm a button that can't be taken back, again within 4 seconds to do it. `redraw` re-renders the button. */
+export function confirmed(key, label, redraw) {
+  if (armed.has(key)) {
+    armed.delete(key);
+    return true;
+  }
+  armed.set(key, label);
+  redraw();
+  setTimeout(() => armed.delete(key) && redraw(), 4000);
+  return false;
+}
+
+/** Any item from the last sync, by id. */
+export function findItem(id) {
+  const d = data();
+  if (!d) return null;
+  for (const key of ["reviews", "reviewedOpen", "mine", "assigned", "mentions", "triage", "merged"]) {
+    const item = d[key]?.items.find((i) => i.id === id);
+    if (item) return item;
+  }
+  return d.following?.find((i) => i.id === id) || null;
 }
 
 // ---------- feedback ----------

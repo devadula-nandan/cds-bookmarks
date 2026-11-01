@@ -421,5 +421,8 @@ export const requestReviewers = (token, slug, number, reviewers) => request(`/re
 
 export const removeReviewer = (token, slug, number, login) => request(`/repos/${slug}/pulls/${number}/requested_reviewers`, token, { method: "DELETE", body: JSON.stringify({ reviewers: [login] }) });
 
+/** Approves (`APPROVE`), requests changes (`REQUEST_CHANGES`) or comments (`COMMENT`) on a PR, with `body` as the review's comment. */
+export const submitReview = (token, slug, number, event, body = "") => request(`/repos/${slug}/pulls/${number}/reviews`, token, { method: "POST", body: JSON.stringify({ event, body }) });
+
 /** "closed" or "open" (to undo a close). */
 export const setPrState = (token, slug, number, state) => request(`/repos/${slug}/pulls/${number}`, token, { method: "PATCH", body: JSON.stringify({ state }) });

@@ -9,6 +9,7 @@ import { bindActivity, headerActions, maybeSync, renderActivity, renderMasthead,
 import { icon } from "./icons.js";
 import { render } from "./lit.js";
 import { bindEditor, editorActions } from "./repo-editor.js";
+import { reviewActions } from "./review.js";
 import { bindSearch, focusSearch } from "./search.js";
 import { bindTooltips } from "./tooltip.js";
 import { applyTheme, bindSettings, checkBob, connect, onSettingsChange, openSettings, renderSettings, settingsActions } from "./settings.js";
@@ -17,7 +18,7 @@ import { $, $$, connected, state, toast } from "./ui.js";
 import { bindWork, moveInList, renderWork, selectTab, workActions } from "./work.js";
 
 /** Every `data-action` on the page, by name. */
-const actions = { ...headerActions, ...workActions, ...todayActions, ...settingsActions, ...bobActions, ...editorActions };
+const actions = { ...headerActions, ...workActions, ...todayActions, ...settingsActions, ...bobActions, ...editorActions, ...reviewActions };
 
 export function renderAll() {
   renderMasthead();

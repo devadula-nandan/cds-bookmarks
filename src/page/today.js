@@ -8,7 +8,7 @@ import { todaysMeetings } from "../sync.js";
 import { openBob, renderBob } from "./bob.js";
 import { icon } from "./icons.js";
 import { html, live, nothing, render, repeat } from "./lit.js";
-import { $, agoText, aiOn, connected, copyText, data, dayLabel, duration, state, toast, vscodeUrl } from "./ui.js";
+import { $, agoText, aiOn, connected, copyText, data, dayLabel, duration, fact, state, toast, vscodeUrl } from "./ui.js";
 
 /** Meetings on a timeline. A meeting in progress shows how far along it is; otherwise a "now" line sits before the next one. */
 function agenda(meetings, now) {
@@ -151,7 +151,7 @@ function issueUrl(report) {
 /** Bob's choices for the form's dropdowns, which GitHub can't prefill, to pick by hand. */
 function issuePicks(report) {
   const pick = Object.entries(report.issue?.pick || {});
-  return pick.length ? html`<p class="bob__label">In the GitHub form, pick: ${pick.map(([label, value], i) => html`${i ? " · " : ""}${label} <strong>${value}</strong>`)}</p>` : nothing;
+  return pick.length ? html`<p class="facts__note">In the GitHub form, pick: ${pick.map(([label, value], i) => html`${i ? " · " : ""}${label} <strong>${value}</strong>`)}</p>` : nothing;
 }
 
 /** Bumped when the issue form prompt changes, so reports filled in before are filled in again. 3: just the steps to reproduce. */
@@ -160,61 +160,105 @@ const FORM_VERSION = 3;
 /** Reports Bob is filling in the GitHub issue form for, by id. */
 const filling = new Set();
 
-/** Details under a hunt report: confidence, links to the code and a new GitHub issue, related issues and earlier hunts. Read live, so it follows changes. */
-function reportDetails(id) {
+const SEVERITY = { high: "error", medium: "warning" };
+const CONFIDENCE = { high: "success", low: "warning" };
+
+/** "**Confidence:** High — the same guard is used at line 142." → "High — the same guard is used at line 142." */
+const confidenceNote = (markdown) => markdown.match(/^\*\*Confidence:?\*\*:?\s*(.+)$/im)?.[1].replace(/[*`]/g, "") || "";
+
+/** What the report says about itself, and what to do with it: under the sheet's title. Read live, so it follows changes. */
+function reportFacts(id) {
   const report = state.bugHunts.find((h) => h.id === id);
   if (!report) return nothing;
-  const chips = [report.severity && `${report.severity} severity`, report.effort, report.confidence && `${report.confidence} confidence`].filter(Boolean);
-  const verdict = (value, text) => html`<button class="btn btn--ghost btn--sm hunt-verdict" data-action="hunt-verdict" data-id=${report.id} data-verdict=${value} aria-pressed=${report.verdict === value}>${text}</button>`;
   const code = report.file && vscodeUrl(report.path, report.file, report.line);
-  const earlier = state.bugHunts.filter((h) => h.id !== report.id).slice(0, 8);
   const busy = filling.has(report.id);
+  const verdict = (value, text) => html`<button class="segmented__opt" data-action="hunt-verdict" data-id=${report.id} data-verdict=${value} aria-pressed=${report.verdict === value}>${text}</button>`;
+  const related = report.related || [];
   return html`
-    <div class="bob__report-meta">
-      ${chips.length ? html`<p class="bob__chips">${chips.map((c) => html`<span class="chip">${c}</span>`)}</p>` : nothing}
-      <p class="bob__label bob__links-row">
-        ${code ? html`<a class="link link--bob" href=${code}>${icon("code", 14)}Open ${report.file.split("/").pop()}${report.line ? `:${report.line}` : ""} in VS Code</a>` : nothing}
-        ${report.found ? html`<button class="link link--bob" data-action="hunt-issue" data-id=${report.id} ?disabled=${busy} data-tooltip="Opens the repo's Bug report form with this report filled in">${icon("github", 14)}${busy ? "Bob is filling in the form…" : "Open a GitHub issue"}</button>` : nothing}
-      </p>
-      ${issuePicks(report)}
-      ${report.found
-        ? html`<div class="hunt-verdicts">
-            <div class="hunt-verdicts__row" role="group" aria-labelledby="verdict-${report.id}"><span class="bob__label" id="verdict-${report.id}">Was it a real bug?</span>${verdict("real", "Real bug")}${verdict("not", "Not a bug")}</div>
-            <p class="quiet-inline">Bob sees your answer on the next hunt in this repo.</p>
+    <div class="facts">
+      <div class="facts__row">
+        ${report.severity ? fact("alert", `${report.severity[0].toUpperCase()}${report.severity.slice(1)} severity`, { tone: SEVERITY[report.severity] }) : nothing}
+        ${report.effort ? fact("clock", report.effort) : nothing}
+        ${report.found && report.confidence ? fact("check", `${report.confidence[0].toUpperCase()}${report.confidence.slice(1)} confidence`, { tone: CONFIDENCE[report.confidence], tooltip: confidenceNote(report.markdown) }) : nothing}
+        ${report.found
+          ? related.length
+            ? fact("issue", html`Maybe reported: ${related.map((r, i) => html`${i ? ", " : ""}<a href=${r.url} target="_blank" rel="noopener" data-tooltip="${r.title} (${r.state})">${r.ref}</a>`)}`, { tone: "warning" })
+            : fact("issue", "Not reported on GitHub yet")
+          : nothing}
+        ${fact("git", html`<span class="mono">${String(report.branch).split("/").pop()} ${String(report.head || "").slice(0, 7)}</span>`, { tooltip: `Checked ${report.branch} in ${report.path}` })}
+      </div>
+      ${report.found || code
+        ? html`<div class="facts__row">
+            ${code ? html`<a class="btn btn--ghost btn--sm" href=${code}>${icon("code", 14)}Open in VS Code</a>` : nothing}
+            ${report.found ? html`<button class="btn btn--primary btn--sm" data-action="hunt-issue" data-id=${report.id} ?disabled=${busy} data-tooltip="Opens the repo's Bug report form with this report filled in">${icon("github", 14)}${busy ? "Bob is filling in the form…" : "Open a GitHub issue"}</button>` : nothing}
+            ${report.found
+              ? html`<span class="facts__links" role="group" aria-label="Was it a real bug?" data-tooltip="Bob sees your answer on the next hunt in this repo"><span class="segmented segmented--sm">${verdict("real", "Real bug")}${verdict("not", "Not a bug")}</span></span>`
+              : nothing}
           </div>`
         : nothing}
-      <p class="bob__label">Checked ${repoShort(report.repo)} at <span class="mono">${report.branch} ${String(report.head || "").slice(0, 7)}</span> in <span class="mono">${report.path}</span></p>
-      ${report.related?.length
-        ? html`<p class="bob__label">Possibly already reported</p><ul class="bob__links">${report.related.map((r) => html`<li><a href=${r.url} target="_blank" rel="noopener">${r.ref}</a> ${r.title} <span class="quiet-inline">${r.state}</span></li>`)}</ul>`
-        : report.found
-          ? html`<p class="bob__label">No matching GitHub issue found.</p>`
-          : nothing}
-      ${earlier.length
-        ? html`<details class="hunt-earlier"><summary class="bob__label">Earlier hunts <span>${earlier.length}</span>${icon("chevronDown", 14)}</summary>
-            <ul class="hunt-list">${repeat(
-              earlier,
-              (h) => h.id,
-              (h) => html`<li class="hunt-list__row">
-                <button class="hunt-list__item bob-btn bob-made" data-action="hunt-open" data-id=${h.id} data-tooltip=${h.title}>${icon("sparkle", 14)}<span class="hunt-list__title">${h.title}</span><span class="hunt-list__meta">${repoShort(h.repo)} · ${dayLabel(h.at, true)}${h.verdict ? ` · ${h.verdict === "real" ? "real bug" : "not a bug"}` : ""}</span></button>
-                <button class="icon-btn icon-btn--sm hunt-list__delete" data-action="hunt-delete" data-id=${h.id} data-tooltip="Delete" aria-label="Delete ${h.title}">${icon("trash", 14)}</button>
-              </li>`
-            )}</ul></details>`
-        : nothing}
+      ${issuePicks(report)}
     </div>`;
+}
+
+/**
+ * The report as the sheet shows it. Its title is the sheet's, and Where and Confidence are in the facts, so
+ * those go; a bold label opening a paragraph ("**What's wrong:**") becomes a heading, like the review brief's.
+ */
+function reportBody(tokens) {
+  const out = [];
+  for (const t of tokens) {
+    if (t.type === "hr" || (t.type === "heading" && t.depth <= 2 && !out.length)) continue;
+    if (t.type === "paragraph" && /^\*\*(Where|Confidence)\b/i.test(t.raw)) continue;
+    const [label, ...rest] = t.type === "paragraph" ? t.tokens : [];
+    if (label?.type !== "strong" || !/:\s*$/.test(label.text)) {
+      if (t.type !== "space" || out.length) out.push(t);
+      continue;
+    }
+    const text = label.text.replace(/:\s*$/, "");
+    out.push({ type: "heading", depth: 3, raw: label.raw, text, tokens: [{ type: "text", raw: text, text }] });
+    if (rest[0]?.type === "text") rest[0] = { ...rest[0], text: rest[0].text.trimStart(), raw: rest[0].raw.trimStart() };
+    if (rest.some((r) => r.type !== "text" || r.text.trim())) out.push({ type: "paragraph", raw: "", text: "", tokens: rest });
+  }
+  return out;
+}
+
+/** Under the report: earlier hunts, to open or delete. */
+function reportMore(id) {
+  const earlier = state.bugHunts.filter((h) => h.id !== id).slice(0, 8);
+  if (!earlier.length) return nothing;
+  return html`
+    <details class="hunt-earlier"><summary class="bob__label">Earlier hunts <span>${earlier.length}</span>${icon("chevronDown", 14)}</summary>
+      <ul class="hunt-list">${repeat(
+        earlier,
+        (h) => h.id,
+        (h) => html`<li class="hunt-list__row">
+          <button class="hunt-list__item bob-btn bob-made" data-action="hunt-open" data-id=${h.id} data-tooltip=${h.title}>${icon("sparkle", 14)}<span class="hunt-list__title">${h.title}</span><span class="hunt-list__meta">${repoShort(h.repo)} · ${dayLabel(h.at, true)}${h.verdict ? ` · ${h.verdict === "real" ? "real bug" : "not a bug"}` : ""}</span></button>
+          <button class="icon-btn icon-btn--sm hunt-list__delete" data-action="hunt-delete" data-id=${h.id} data-tooltip="Delete" aria-label="Delete ${h.title}">${icon("trash", 14)}</button>
+        </li>`
+      )}</ul>
+    </details>`;
 }
 
 /** A hunt report in the Bob sheet. Follow-ups ("draft the fix", "write the issue") run in the same clone. */
 export function openReport(report) {
   if (!report) return;
+  const where = report.file ? ` · ${report.file.split("/").pop()}${report.line ? `:${report.line}` : ""}` : "";
   openBob({
-    title: report.found ? "Bug of the day" : "Bug hunt",
-    subtitle: `${repoShort(report.repo)}${report.file ? ` · ${report.file}${report.line ? `:${report.line}` : ""}` : ""}`,
+    title: report.found ? report.title : "Bug hunt: nothing found",
+    subtitle: `Bug of the day · ${repoShort(report.repo)}${where}`,
     trigger: `[data-action="hunt-open"][data-id="${CSS.escape(report.id)}"]`,
     prompt: `You found this bug earlier in a local clone of ${report.repo} at ${report.branch}:\n\n${report.markdown}`,
     // The hunt's own worktree: follow-ups such as "draft the fix" may edit files there.
     opts: { workspace: report.path, edit: true },
     answer: { text: report.markdown, at: report.at, label: "Reported", log: report.log },
-    extra: () => reportDetails(report.id),
+    head: () => reportFacts(report.id),
+    transform: reportBody,
+    extra: () => reportMore(report.id),
+    // Files Bob cites open in VS Code, in the hunt's worktree.
+    files: (file, line) => {
+      const href = vscodeUrl(report.path, file, line);
+      return href ? { href } : null;
+    },
     regenerate: false,
   });
 }

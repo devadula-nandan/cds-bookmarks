@@ -143,7 +143,11 @@ const SLACK = 'Format for Slack, not Markdown: *bold*, `code`, "• " bullets, l
 
 /** The kind of help each work row gets, with its button label and question. */
 export const MODES = {
-  review: { label: "Review brief", verb: "Brief me on this review", ask: "I've been asked to review this pull request. Give me a review brief: what it does, where to look, possible issues, and up to 3 comments I could leave." },
+  review: {
+    label: "Review brief",
+    verb: "Brief me on this review",
+    ask: 'I\'ve been asked to review this pull request. Give me a review brief under these headings: "### What it does" (two or three sentences), "### Where to look" (the files and lines that matter most, each as a link to its path in the repo like [Button.tsx:42](packages/react/src/components/Button/Button.tsx#L42), with why), "### Possible issues" (bullets, or "None found"), and "### Comments to leave" (up to 3, each a link to its file and line, then the comment as a > quote, ready to paste).',
+  },
   ci: { label: "Why CI is failing", verb: "Explain the CI failure", ask: "CI is failing on my pull request. Find the failing checks and their logs, then tell me the likely cause, how to fix it, and whether it looks flaky." },
   main: { label: "Why main is failing", verb: "Explain why main is failing", ask: "The default branch is failing at this commit. Find the failing checks and their logs, then tell me the likely cause, whether it blocks other PRs, the next step, and whether it looks flaky." },
   changes: { label: "Requested changes", verb: "Turn review feedback into a checklist", ask: 'Reviewers requested changes on my pull request. Turn their unresolved feedback into a "- [ ] " checklist, one task per request with the file:line and reviewer, then list comments that need a reply.' },
