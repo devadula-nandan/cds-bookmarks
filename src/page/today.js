@@ -7,23 +7,20 @@ import { standup } from "../insights.js";
 import { todaysMeetings } from "../sync.js";
 import { openBob, renderBob } from "./bob.js";
 import { icon } from "./icons.js";
-import { html, live, nothing, render, repeat } from "./lit.js";
-import { $, agoText, aiOn, connected, copyText, data, dayLabel, duration, fact, state, toast, vscodeUrl } from "./ui.js";
+import { html, nothing, render, repeat } from "./lit.js";
+import { $, agoText, aiOn, connected, copyText, data, dayLabel, duration, fact, state, tip, toast, vscodeUrl } from "./ui.js";
 
-/** Meetings on a timeline. A meeting in progress shows how far along it is; otherwise a "now" line sits before the next one. */
+/** Meetings as a vertical Carbon progress indicator: done, in progress (with the time left), and to come (the next one with how long until it starts). */
 function agenda(meetings, now) {
   const live = meetings.find((m) => now >= m.start && now < m.end);
   const next = live ? null : meetings.find((m) => m.start > now);
-  const nowRow = html`<li class="agenda__now"><span class="agenda__dot" data-tooltip="Now · ${fmtTime(now)}"></span><span class="agenda__line"></span><span class="agenda__when">${next ? `${next.title} in ${duration(Math.ceil((next.start - now) / 60000))}` : "Done for today"}</span></li>`;
-  const rows = meetings.flatMap((m) => {
-    const isLive = m === live;
-    const when = isLive ? html`<span class="agenda__live">${duration(Math.ceil((m.end - now) / 60000))} left</span>` : duration(m.minutes);
-    const progress = isLive ? html`<span class="agenda__progress" style="--done: ${Math.round(((now - m.start) / (m.end - m.start)) * 100)}%"></span>` : nothing;
-    const item = html`<li class="agenda__item ${now >= m.end ? "is-past" : ""} ${isLive ? "is-live" : ""} ${m === next ? "is-next" : ""}"><span class="agenda__dot" data-tooltip="${fmtTime(m.start)} – ${fmtTime(m.end)}"></span><span class="agenda__title" data-tooltip=${m.title}>${m.title}</span><span class="agenda__when">${when}</span>${progress}</li>`;
-    return m === next ? [nowRow, item] : [item];
-  });
-  if (!live && !next) rows.push(nowRow);
-  return html`<ol class="agenda">${rows}</ol>`;
+  const left = (at) => duration(Math.ceil((at - now) / 60000));
+  return html`<cds-progress-indicator class="agenda" vertical>
+    ${meetings.map((m) => {
+      const when = m === live ? `${left(m.end)} left` : m === next ? `in ${left(m.start)}` : duration(m.minutes);
+      return html`<cds-progress-step state=${now >= m.end ? "complete" : m === live ? "current" : "incomplete"} label=${m.title} secondary-label="${fmtTime(m.start)} · ${when}"></cds-progress-step>`;
+    })}
+  </cds-progress-indicator>`;
 }
 
 function meetingsView(now) {
@@ -31,7 +28,7 @@ function meetingsView(now) {
   if (!meetings.length) return html`<p class="quiet">No meetings today.</p>`;
   // Once the last meeting is over, fold the timeline so the to-dos get the room.
   if (meetings.every((m) => now >= m.end))
-    return html`<details class="agenda-done"><summary>${icon("check", 14)}${plural(meetings.length, "meeting")} done for today${icon("chevronDown", 14)}</summary>${agenda(meetings, now)}</details>`;
+    return html`<cds-accordion class="agenda-done" size="sm"><cds-accordion-item title="${plural(meetings.length, "meeting")} done for today">${agenda(meetings, now)}</cds-accordion-item></cds-accordion>`;
   return agenda(meetings, now);
 }
 
@@ -42,31 +39,31 @@ function huntCard() {
   const running = isHunting(hs);
   const clones = huntableRepos(state.settings).length;
   let body;
-  if (running) body = html`<p class="hunt__status bob-shimmer"><span class="bob__spinner"></span>Bob is reading ${repoShort(hs.repo)}…<span class="hunt__ago">${agoText(hs.startedAt)}</span></p>`;
-  else if (!clones) body = html`<p class="hunt__status">Add a local clone to a repo to start.</p><button class="btn btn--ghost btn--sm hunt__action" data-action="repo-editor">Edit repositories</button>`;
+  if (running) body = html`<cds-inline-loading class="hunt__status" status="active">Bob is reading ${repoShort(hs.repo)}… ${agoText(hs.startedAt)}</cds-inline-loading>`;
+  else if (!clones) body = html`<p class="hunt__status">Add a local clone to a repo to start.</p><cds-button kind="ghost" size="sm" data-action="repo-editor">Edit repositories</cds-button>`;
   else if (latest) {
     const where = [repoShort(latest.repo), latest.file && `${latest.file.split("/").pop()}${latest.line ? `:${latest.line}` : ""}`, latest.effort, latest.found && latest.confidence && `${latest.confidence} confidence`].filter(Boolean).join(" · ");
-    body = html`<button class="hunt__report bob-btn ${latest.found ? "" : "is-empty"} ${latest.incomplete ? "is-incomplete" : ""}" data-action="hunt-open" data-id=${latest.id}>
+    body = html`<cds-clickable-tile class="hunt__report ${latest.found ? "" : "is-empty"}" data-action="hunt-open" data-id=${latest.id}>
               <span class="hunt__title">${latest.title}</span>
               <span class="hunt__meta">${dayLabel(latest.at, true)} · ${where}</span>
-            </button>`;
+            </cds-clickable-tile>`;
   } else body = html`<p class="hunt__status">First hunt at ${fmtTime(parseTime(state.settings.bugHuntTime))}.</p>`;
   // Still marked running after the stale window: it was cut off (browser closed or worker stopped).
   const error = hs.running && !running ? "The last hunt was interrupted before it finished." : hs.error && hs.lastDay === todayKey() ? `Today's hunt failed: ${hs.error}` : "";
   return html`
     <section class="hunt" aria-label="Bug of the day">
-      <h3 class="subhead">${icon("bug", 14)}Bug of the day</h3>
-      ${body}${error ? html`<p class="hunt__error">${error}</p>` : nothing}
-      ${clones && !running ? html`<button class="btn btn--ghost btn--sm bob-btn hunt__action" data-action="hunt-run">${icon("sparkle", 14)}Hunt ${latest ? "again" : "now"}</button>` : nothing}
+      <h3 class="cds--type-heading-compact-01 subhead">${icon("bug", 16)}Bug of the day</h3>
+      ${body}${error ? html`<cds-inline-notification class="hunt__error" kind="error" low-contrast hide-close-button title="" subtitle=${error}></cds-inline-notification>` : nothing}
+      ${clones && !running ? html`<cds-button kind="ghost" size="sm" class="bob-btn hunt__action" data-action="hunt-run">Hunt ${latest ? "again" : "now"}${icon("sparkle", 16, { slot: "icon" })}</cds-button>` : nothing}
     </section>`;
 }
 
 function standupButton() {
   if (!connected()) return nothing;
   const ready = !!data();
-  if (!aiOn()) return html`<button class="btn btn--ghost btn--block" data-action="copy-standup" ?disabled=${!ready} data-tooltip="Yesterday, today and blockers from your GitHub activity">${icon("copy", 16)}Copy standup update</button>`;
+  if (!aiOn()) return tip("Yesterday, today and blockers from your GitHub activity", html`<cds-button class="today__standup" kind="tertiary" size="md" data-action="copy-standup" ?disabled=${!ready}>Copy standup update${icon("copy", 16, { slot: "icon" })}</cds-button>`, { control: true });
   const drafted = state.answered.has(todaysAnswer("standup"));
-  return html`<button class="btn btn--ghost btn--block bob-btn ${drafted ? "bob-made" : ""}" data-action="bob-standup" ?disabled=${!ready}>${icon("sparkle", 16)}${drafted ? "Today's standup draft" : "Write standup with Bob"}</button>`;
+  return html`<cds-button class="today__standup bob-btn ${drafted ? "bob-made" : ""}" kind="tertiary" size="md" data-action="bob-standup" ?disabled=${!ready}>${drafted ? "Today's standup draft" : "Write standup with Bob"}${icon("sparkle", 16, { slot: "icon" })}</cds-button>`;
 }
 
 export function renderToday() {
@@ -74,24 +71,24 @@ export function renderToday() {
   const open = todos.filter((t) => !t.done).length;
   render(
     html`<header class="panel__head">
-        <h2>Today</h2>
-        <button class="btn btn--ghost btn--sm" data-action="settings" data-section="meetings">Edit</button>
+        <h2 class="cds--type-heading-03">Today</h2>
+        <cds-button kind="ghost" size="sm" data-action="settings" data-section="meetings">Edit</cds-button>
       </header>
       ${meetingsView(new Date())}
       ${huntCard()}
       <div class="today__todos">
-        <h3 class="subhead">To-dos ${open ? html`<span>${open}</span>` : nothing}</h3>
-        <ul class="todos">
+        <h3 class="cds--type-heading-compact-01 subhead">To-dos ${open ? html`<cds-tag size="sm" type="gray">${open}</cds-tag>` : nothing}</h3>
+        <cds-contained-list class="todos" size="sm">
           ${repeat(
             todos,
             (t) => t.id,
-            (t) => html`<li class="todo ${t.done ? "is-done" : ""}">
-              <label><input type="checkbox" data-action="todo-toggle" data-id=${t.id} .checked=${live(t.done)}><span>${t.text}</span></label>
-              <button class="icon-btn icon-btn--sm todo__remove" data-action="todo-remove" data-id=${t.id} aria-label="Remove ${t.text}">${icon("x", 14)}</button>
-            </li>`
+            (t) => html`<cds-contained-list-item class="todo ${t.done ? "is-done" : ""}">
+              <cds-checkbox label-text=${t.text} data-action="todo-toggle" data-id=${t.id} .checked=${t.done}></cds-checkbox>
+              <cds-icon-button slot="action" class="todo__remove" kind="ghost" size="sm" data-action="todo-remove" data-id=${t.id} align="left" aria-label="Remove ${t.text}">${icon("x", 16, { slot: "icon" })}<span slot="tooltip-content">Remove</span></cds-icon-button>
+            </cds-contained-list-item>`
           )}
-        </ul>
-        <form class="todo-form" data-form="todo">${icon("plus", 16)}<input name="text" placeholder="Add a to-do" autocomplete="off" aria-label="New to-do"></form>
+        </cds-contained-list>
+        <form class="todo-form" data-form="todo"><cds-text-input name="text" size="sm" hide-label label="New to-do" placeholder="Add a to-do" autocomplete="off"></cds-text-input></form>
       </div>
       ${connected() ? html`<footer class="today__foot">${standupButton()}</footer>` : nothing}`,
     $("#today")
@@ -172,7 +169,7 @@ function reportFacts(id) {
   if (!report) return nothing;
   const code = report.file && vscodeUrl(report.path, report.file, report.line);
   const busy = filling.has(report.id);
-  const verdict = (value, text) => html`<button class="segmented__opt" data-action="hunt-verdict" data-id=${report.id} data-verdict=${value} aria-pressed=${report.verdict === value}>${text}</button>`;
+  const verdict = (value, text) => html`<cds-selectable-tag size="md" text=${text} data-action="hunt-verdict" data-id=${report.id} data-verdict=${value} .selected=${report.verdict === value}></cds-selectable-tag>`;
   const related = report.related || [];
   return html`
     <div class="facts">
@@ -182,17 +179,21 @@ function reportFacts(id) {
         ${report.found && report.confidence ? fact("check", `${report.confidence[0].toUpperCase()}${report.confidence.slice(1)} confidence`, { tone: CONFIDENCE[report.confidence], tooltip: confidenceNote(report.markdown) }) : nothing}
         ${report.found
           ? related.length
-            ? fact("issue", html`Maybe reported: ${related.map((r, i) => html`${i ? ", " : ""}<a href=${r.url} target="_blank" rel="noopener" data-tooltip="${r.title} (${r.state})">${r.ref}</a>`)}`, { tone: "warning" })
+            ? fact("issue", html`Maybe reported: ${related.map((r, i) => html`${i ? ", " : ""}<cds-link inline href=${r.url} target="_blank" rel="noopener" title="${r.title} (${r.state})">${r.ref}</cds-link>`)}`, { tone: "warning" })
             : fact("issue", "Not reported on GitHub yet")
           : nothing}
         ${fact("git", html`<span class="mono">${String(report.branch).split("/").pop()} ${String(report.head || "").slice(0, 7)}</span>`, { tooltip: `Checked ${report.branch} in ${report.path}` })}
       </div>
       ${report.found || code
         ? html`<div class="facts__row">
-            ${code ? html`<a class="btn btn--ghost btn--sm" href=${code}>${icon("code", 14)}Open in VS Code</a>` : nothing}
-            ${report.found ? html`<button class="btn btn--primary btn--sm" data-action="hunt-issue" data-id=${report.id} ?disabled=${busy} data-tooltip="Opens the repo's Bug report form with this report filled in">${icon("github", 14)}${busy ? "Bob is filling in the form…" : "Open a GitHub issue"}</button>` : nothing}
             ${report.found
-              ? html`<span class="facts__links" role="group" aria-label="Was it a real bug?" data-tooltip="Bob sees your answer on the next hunt in this repo"><span class="segmented segmented--sm">${verdict("real", "Real bug")}${verdict("not", "Not a bug")}</span></span>`
+              ? busy
+                ? html`<cds-inline-loading status="active">Bob is filling in the form…</cds-inline-loading>`
+                : tip("Opens the repo's Bug report form with this report filled in", html`<cds-button size="sm" data-action="hunt-issue" data-id=${report.id}>Open a GitHub issue${icon("github", 16, { slot: "icon" })}</cds-button>`, { control: true })
+              : nothing}
+            ${code ? html`<cds-button kind="ghost" size="sm" href=${code}>Open in VS Code${icon("code", 16, { slot: "icon" })}</cds-button>` : nothing}
+            ${report.found
+              ? html`<span class="facts__links verdict" role="group" aria-label="Was it a real bug?">${tip("Bob sees your answer on the next hunt in this repo", "Was it a real bug?")}${verdict("real", "Real bug")}${verdict("not", "Not a bug")}</span>`
               : nothing}
           </div>`
         : nothing}
@@ -227,16 +228,17 @@ function reportMore(id) {
   const earlier = state.bugHunts.filter((h) => h.id !== id).slice(0, 8);
   if (!earlier.length) return nothing;
   return html`
-    <details class="hunt-earlier"><summary class="bob__label">Earlier hunts <span>${earlier.length}</span>${icon("chevronDown", 14)}</summary>
-      <ul class="hunt-list">${repeat(
+    <cds-accordion class="hunt-earlier" size="md"><cds-accordion-item title="Earlier hunts (${earlier.length})">
+      <cds-contained-list size="md">${repeat(
         earlier,
         (h) => h.id,
-        (h) => html`<li class="hunt-list__row">
-          <button class="hunt-list__item bob-btn bob-made" data-action="hunt-open" data-id=${h.id} data-tooltip=${h.title}>${icon("sparkle", 14)}<span class="hunt-list__title">${h.title}</span><span class="hunt-list__meta">${repoShort(h.repo)} · ${dayLabel(h.at, true)}${h.verdict ? ` · ${h.verdict === "real" ? "real bug" : "not a bug"}` : ""}</span></button>
-          <button class="icon-btn icon-btn--sm hunt-list__delete" data-action="hunt-delete" data-id=${h.id} data-tooltip="Delete" aria-label="Delete ${h.title}">${icon("trash", 14)}</button>
-        </li>`
-      )}</ul>
-    </details>`;
+        (h) => html`<cds-contained-list-item clickable data-action="hunt-open" data-id=${h.id}>
+          <span class="hunt-list__title">${h.title}</span>
+          <span class="hunt-list__meta">${repoShort(h.repo)} · ${dayLabel(h.at, true)}${h.verdict ? ` · ${h.verdict === "real" ? "real bug" : "not a bug"}` : ""}</span>
+          <cds-icon-button slot="action" kind="ghost" size="sm" data-action="hunt-delete" data-id=${h.id} align="left" aria-label="Delete ${h.title}">${icon("trash", 16, { slot: "icon" })}<span slot="tooltip-content">Delete</span></cds-icon-button>
+        </cds-contained-list-item>`
+      )}</cds-contained-list>
+    </cds-accordion-item></cds-accordion>`;
 }
 
 /** A hunt report in the Bob sheet. Follow-ups ("draft the fix", "write the issue") run in the same clone. */

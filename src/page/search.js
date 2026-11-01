@@ -1,15 +1,16 @@
-// The search box: your PRs and issues, repo links and page actions, plus asking Bob or searching GitHub.
+// The search box (Carbon search, with its results in Carbon contained lists): your PRs and issues, repo links
+// and page actions, plus asking Bob or searching GitHub.
 
 import { repoShort } from "../core.js";
 import { enabledRepos, repoLabel } from "../repos.js";
 import uFuzzy from "../vendor/ufuzzy.js";
 import { bobAsk, bobCatchUp, bobFind, bobPlan, bobSlack, bobStandup } from "./bob.js";
-import { prettyLabel, requestSync } from "./header.js";
+import { prettyLabel, requestSync, toggleActivity } from "./header.js";
 import { icon } from "./icons.js";
-import { html, render } from "./lit.js";
-import { openSettings, toggleTheme } from "./settings.js";
+import { html, nothing, render } from "./lit.js";
+import { isDark, openSettings, toggleTheme } from "./settings.js";
 import { openReport, todayActions } from "./today.js";
-import { $, aiOn, connected, data, go, searchUrl, shownRepos, state } from "./ui.js";
+import { $, $$, aiOn, connected, data, go, searchUrl, shownRepos, state } from "./ui.js";
 import { unsnooze } from "./work.js";
 
 const input = () => $("#search-input");
@@ -43,7 +44,7 @@ function linkEntries() {
 function actionEntries() {
   const act = (label, iconName, run, terms = "", bob = false) => ({ group: "Actions", label, iconName, run, terms, bob });
   const bob = aiOn();
-  const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  const dark = isDark();
   return [
     connected() && act("Sync now", "refresh", () => requestSync(true), "refresh reload"),
     act("Copy standup update", "copy", todayActions["copy-standup"], "standup slack"),
@@ -53,7 +54,7 @@ function actionEntries() {
     bob && act("Draft a Slack reply with Bob", "slack", bobSlack, "slack support question thread reply help", true),
     bob && state.settings.bugHunt && act("Hunt for a bug now", "bug", todayActions["hunt-run"], "bug hunt bob daily", true),
     bob && state.bugHunts[0] && act("Open the latest bug report", "bug", () => openReport(state.bugHunts[0]), "bug hunt report daily"),
-    act("Open activity", "bell", () => $("#activity").showPopover(), "notifications"),
+    act("Open activity", "bell", () => toggleActivity(true), "notifications"),
     act("Open settings", "gear", () => openSettings(), "preferences token"),
     act(`Switch to ${dark ? "light" : "dark"} theme`, "moon", toggleTheme, "theme dark light"),
     (Object.keys(state.day.snoozed).length || Object.keys(state.untilChange).length) && act("Restore snoozed items", "snooze", () => unsnooze(), "unsnooze"),
@@ -101,8 +102,9 @@ function search(entries, q) {
 
 const ORDER = { "Go to": 0, Work: 1, Repos: 2, Links: 3, Actions: 4, Search: 5 };
 
-function update() {
-  const q = input().value.trim();
+/** `e` is cds-search's input event, which carries the new text before the element's value has it. */
+function update(e) {
+  const q = (e?.detail?.value ?? input().value).trim();
   if (!q) return close();
   const matched = search([...workEntries(), ...linkEntries(), ...actionEntries()], q).slice(0, 8);
   const jump = jumpEntry(q);
@@ -125,25 +127,30 @@ function update() {
 }
 
 function draw() {
-  let group = "";
+  const groups = [];
+  results.forEach((r, i) => {
+    if (groups.at(-1)?.name !== r.group) groups.push({ name: r.group, items: [] });
+    groups.at(-1).items.push({ r, i });
+  });
   render(
-    results.map((r, i) => {
-      const heading = r.group === group ? "" : r.group === "Search" ? html`<li class="search__sep"></li>` : html`<li class="search__group">${r.group}</li>`;
-      group = r.group;
-      return html`${heading}<li class="search__item ${r.bob ? "bob-btn" : ""} ${i === active ? "is-active" : ""}" id="sr-${i}" role="option" aria-selected=${i === active} data-index=${i}>${icon(r.iconName, 16)}<span class="search__label">${r.label}</span>${r.hint ? html`<span class="search__hint">${r.hint}</span>` : ""}</li>`;
-    }),
+    groups.map(
+      (g) => html`<cds-contained-list label=${g.name} size="md">
+        ${g.items.map(
+          ({ r, i }) => html`<cds-contained-list-item clickable class=${r.bob ? "bob-btn" : nothing} data-index=${i}>
+            ${icon(r.iconName, 16, { slot: "icon" })}<span class="search__text">${r.label}${r.hint ? html`<span class="search__hint">${r.hint}</span>` : nothing}</span>
+            ${i === active ? html`<cds-tag slot="action" size="sm" type="gray">Enter</cds-tag>` : nothing}
+          </cds-contained-list-item>`
+        )}
+      </cds-contained-list>`
+    ),
     list()
   );
   list().hidden = false;
-  input().setAttribute("aria-expanded", "true");
-  input().setAttribute("aria-activedescendant", `sr-${active}`);
-  $(`#sr-${active}`)?.scrollIntoView({ block: "nearest" });
 }
 
 function close() {
   results = [];
   list().hidden = true;
-  input().setAttribute("aria-expanded", "false");
 }
 
 function choose(i, newTab) {
@@ -158,29 +165,42 @@ function choose(i, newTab) {
 
 export const focusSearch = () => input().focus();
 
+/** Moves focus through the results (from the box, to the first one); up past the first, back to the box. */
+function step(by) {
+  const items = $$("cds-contained-list-item", list());
+  const at = items.indexOf(document.activeElement);
+  const next = at + by;
+  if (next < 0) return focusSearch();
+  // A clickable list item doesn't take focus itself: its button, in its shadow root, does.
+  const item = items[Math.min(next, items.length - 1)];
+  (item?.shadowRoot?.querySelector("button") || item)?.focus();
+}
+
 export function bindSearch() {
-  input().addEventListener("input", update);
-  input().addEventListener("focus", update);
-  input().addEventListener("blur", () => setTimeout(close, 120));
-  input().addEventListener("keydown", (e) => {
-    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && results.length) {
+  input().addEventListener("cds-search-input", update);
+  input().addEventListener("focus", () => update());
+  // Closes once focus leaves both the box and its results.
+  $("#search").addEventListener("focusout", () => setTimeout(() => !$("#search").contains(document.activeElement) && close(), 120));
+  $("#search").addEventListener("keydown", (e) => {
+    const inBox = e.target === input();
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!results.length) return;
       e.preventDefault();
-      active = (active + (e.key === "ArrowDown" ? 1 : -1) + results.length) % results.length;
-      draw();
-    } else if (e.key === "Enter") {
+      if (!inBox || e.key === "ArrowDown") step(e.key === "ArrowDown" ? 1 : -1);
+    } else if (e.key === "Enter" && inBox) {
       e.preventDefault();
       choose(active, e.metaKey || e.ctrlKey);
     } else if (e.key === "Escape") {
       e.stopPropagation();
+      if (!inBox) return focusSearch();
       if (input().value) {
         input().value = "";
         close();
       } else input().blur();
     }
   });
-  list().addEventListener("mousedown", (e) => e.preventDefault());
   list().addEventListener("click", (e) => {
-    const li = e.target.closest("[data-index]");
-    if (li) choose(+li.dataset.index, e.metaKey || e.ctrlKey);
+    const item = e.target.closest("[data-index]");
+    if (item) choose(+item.dataset.index, e.metaKey || e.ctrlKey);
   });
 }

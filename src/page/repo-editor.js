@@ -1,4 +1,4 @@
-// The repository editor (Settings → Repositories → Edit repositories): a form over every option of an
+// The repository editor (Settings → Repositories → Edit repositories): a Carbon modal with a form over every option of an
 // entry in bookmarks.json. Saving keeps the list in this browser (`repoData`), ahead of the file; Export
 // JSON downloads it to replace bookmarks.json, and Reset loads the file back in.
 
@@ -21,16 +21,19 @@ let draft = [];
 // Repos unfolded in the editor (by entry, so moving one keeps it open).
 const unfolded = new WeakSet();
 
+/** Opens in place of Settings: Carbon modals don't stack. */
 async function openEditor() {
   draft = rawRepos();
   renderEditor();
-  const dialog = $("#repo-editor");
-  if (!dialog.open) dialog.showModal();
+  $("#settings").open = false;
+  $("#repo-editor").open = true;
 }
 
 function field(path, label, value, { mono = false, placeholder = "" } = {}) {
-  return html`<label class="field"><span>${label}</span><input class="input ${mono ? "mono" : ""}" data-path=${path} .value=${live(value ?? "")} placeholder=${placeholder} autocomplete="off" spellcheck="false"></label>`;
+  return html`<cds-text-input class=${mono ? "mono" : nothing} label=${label} data-path=${path} .value=${live(value ?? "")} placeholder=${placeholder} autocomplete="off" spellcheck="false"></cds-text-input>`;
 }
+
+const remove = (path, label) => html`<cds-icon-button kind="ghost" size="md" data-action="editor-remove" data-path=${path} align="left" aria-label=${label}>${icon("trash", 16, { slot: "icon" })}<span slot="tooltip-content">${label}</span></cds-icon-button>`;
 
 function linkRow(path, link, j) {
   const p = `${path}.buttons.${j}`;
@@ -40,7 +43,7 @@ function linkRow(path, link, j) {
       ${field(`${p}.href`, "URL", link.href, { mono: true, placeholder: "https://…" })}
       ${field(`${p}.versionedHref`, "Versioned URL", link.versionedHref, { mono: true, placeholder: "Optional, uses <v>" })}
       ${field(`${p}.version`, "Version", link.version, { placeholder: "Optional" })}
-      <button class="icon-btn icon-btn--sm editor-link__remove" data-action="editor-remove" data-path=${p} aria-label="Remove ${link.label || "link"}" data-tooltip="Remove link">${icon("trash", 14)}</button>
+      ${remove(p, `Remove ${link.label || "link"}`)}
     </div>`;
 }
 
@@ -49,64 +52,63 @@ function groupBlock(entry, i, key, fallback) {
   if (!group) return nothing;
   const path = `${i}.${key}`;
   return html`
-    <fieldset class="editor-group">
+    <cds-form-group class="editor-group" legend-text="${group.title || fallback} links">
       <div class="editor-group__head">
         ${field(`${path}.title`, `${fallback} group title`, group.title)}
-        <button class="btn btn--ghost btn--sm" data-action="editor-remove" data-path=${path}>Remove group</button>
+        <cds-button kind="danger--ghost" size="sm" data-action="editor-remove" data-path=${path}>Remove group</cds-button>
       </div>
       ${(group.buttons || []).map((link, j) => linkRow(path, link, j))}
-      <button class="btn btn--ghost btn--sm" data-action="editor-add-link" data-path=${path}>${icon("plus", 14)}Add link</button>
-    </fieldset>`;
+      <cds-button kind="ghost" size="sm" data-action="editor-add-link" data-path=${path}>Add link${icon("plus", 16, { slot: "icon" })}</cds-button>
+    </cds-form-group>`;
 }
 
 function repoBlock(entry, i) {
   const missing = GROUPS.filter(([key]) => !entry[key]);
   return html`
-    <details class="editor-repo" data-index=${i} ?open=${unfolded.has(entry)}>
-      <summary>
+    <cds-accordion-item class="editor-repo" data-index=${i} ?open=${unfolded.has(entry)} title="${entry.name || "Untitled repo"}${entry.id ? ` (${entry.id})` : ""}">
+      <div class="editor-repo__tools">
         <span class="editor-repo__logo" aria-hidden="true">${logo(entry.icon)}</span>
-        <span class="editor-repo__name">${entry.name || "Untitled repo"}<small class="mono">${entry.id || ""}</small></span>
-        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index=${i} data-by="-1" aria-label="Move up" data-tooltip="Move up" ?disabled=${!i}>${icon("arrowUp", 14)}</button>
-        <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index=${i} data-by="1" aria-label="Move down" data-tooltip="Move down" ?disabled=${i >= draft.length - 1}>${icon("arrowDown", 14)}</button>
-        <button class="icon-btn icon-btn--sm" data-action="editor-remove" data-path=${i} aria-label="Remove ${entry.name || "repo"}" data-tooltip="Remove repo">${icon("trash", 14)}</button>
-      </summary>
-      <div class="editor-repo__body">
-        <div class="fields">
-          ${field(`${i}.id`, "ID", entry.id, { mono: true, placeholder: "cds" })}
-          ${field(`${i}.name`, "Name", entry.name, { placeholder: "Carbon Design System" })}
-          ${field(`${i}.short`, "Short name", entry.short, { placeholder: "Optional, for tight spots" })}
-          ${field(`${i}.clone`, "Local clone", entry.clone, { mono: true, placeholder: "Optional, like ~/Source/carbon" })}
-          ${field(`${i}.approvals`, "Approvals to merge", entry.approvals, { placeholder: "1" })}
-          ${field(`${i}.readyLabel`, "Ready-to-merge label", entry.readyLabel, { placeholder: "Optional, like status: ready to merge 🎉" })}
-        </div>
-        <p class="hint">A PR counts as ready once it has that many approvals (and no visual review label). <b>Ready to merge</b> then adds the label and turns on auto-merge.</p>
-        <label class="field"><span>Logo (SVG)</span><textarea class="input mono editor-svg" rows="3" data-path="${i}.icon" spellcheck="false" .value=${live(entry.icon || "")}></textarea></label>
-        <p class="hint">The GitHub repo comes from a GitHub link to its issues or pulls, and the sprint board from a link labelled “Board”.</p>
-        ${GROUPS.map(([key, title]) => groupBlock(entry, i, key, title))}
-        ${missing.length ? html`<p class="editor-add">${missing.map(([key, title]) => html`<button class="btn btn--ghost btn--sm" data-action="editor-add-group" data-index=${i} data-key=${key}>${icon("plus", 14)}${title} group</button>`)}</p>` : nothing}
+        <cds-button kind="ghost" size="sm" data-action="editor-move" data-index=${i} data-by="-1" ?disabled=${!i}>Move up${icon("arrowUp", 16, { slot: "icon" })}</cds-button>
+        <cds-button kind="ghost" size="sm" data-action="editor-move" data-index=${i} data-by="1" ?disabled=${i >= draft.length - 1}>Move down${icon("arrowDown", 16, { slot: "icon" })}</cds-button>
+        <cds-button kind="danger--ghost" size="sm" data-action="editor-remove" data-path=${i}>Remove repo${icon("trash", 16, { slot: "icon" })}</cds-button>
       </div>
-    </details>`;
+      <div class="fields">
+        ${field(`${i}.id`, "ID", entry.id, { mono: true, placeholder: "cds" })}
+        ${field(`${i}.name`, "Name", entry.name, { placeholder: "Carbon Design System" })}
+        ${field(`${i}.short`, "Short name", entry.short, { placeholder: "Optional, for tight spots" })}
+        ${field(`${i}.clone`, "Local clone", entry.clone, { mono: true, placeholder: "Optional, like ~/Source/carbon" })}
+        ${field(`${i}.approvals`, "Approvals to merge", entry.approvals, { placeholder: "1" })}
+        ${field(`${i}.readyLabel`, "Ready-to-merge label", entry.readyLabel, { placeholder: "Optional, like status: ready to merge 🎉" })}
+      </div>
+      <p class="hint">A PR counts as ready once it has that many approvals (and no visual review label). <b>Ready to merge</b> then adds the label and turns on auto-merge.</p>
+      <cds-textarea class="mono editor-svg" rows="3" label="Logo (SVG)" data-path="${i}.icon" spellcheck="false" .value=${live(entry.icon || "")}></cds-textarea>
+      <p class="hint">The GitHub repo comes from a GitHub link to its issues or pulls, and the sprint board from a link labelled “Board”.</p>
+      ${GROUPS.map(([key, title]) => groupBlock(entry, i, key, title))}
+      ${missing.length ? html`<p class="editor-add">${missing.map(([key, title]) => html`<cds-button kind="ghost" size="sm" data-action="editor-add-group" data-index=${i} data-key=${key}>${title} group${icon("plus", 16, { slot: "icon" })}</cds-button>`)}</p>` : nothing}
+    </cds-accordion-item>`;
 }
 
 function renderEditor() {
   render(
     html`
-      <header class="sheet__head">
-        <h2>Edit repositories</h2>
-        <button class="icon-btn" data-action="editor-close" aria-label="Close">${icon("x", 18)}</button>
-      </header>
-      <div class="sheet__body">
-        <p class="hint">Everything in the repo bar, search and work list. Saving keeps this list in this browser, ahead of <code>bookmarks.json</code>; use <b>Export JSON</b> to update the file.</p>
-        ${repeat(draft, (entry) => entry, repoBlock)}
-        <button class="btn btn--sm" data-action="editor-add-repo">${icon("plus", 14)}Add repository</button>
-      </div>
-      <footer class="editor__foot">
-        <label class="btn btn--ghost btn--sm">Import JSON<input type="file" accept="application/json,.json" data-editor-import hidden></label>
-        <button class="btn btn--ghost btn--sm" data-action="editor-reset">Reset to bookmarks.json</button>
-        <span class="editor__spacer"></span>
-        <button class="btn btn--sm" data-action="repo-export">Export JSON</button>
-        <button class="btn btn--primary btn--sm" data-action="editor-save">Save</button>
-      </footer>`,
+      <cds-modal-header>
+        <cds-modal-close-button></cds-modal-close-button>
+        <cds-modal-heading>Edit repositories</cds-modal-heading>
+      </cds-modal-header>
+      <cds-modal-body class="editor">
+        <p class="hint">Everything in the repo bar, search and work list. Saving keeps this list in this browser, ahead of <cds-code-snippet type="inline">bookmarks.json</cds-code-snippet>; use <b>Export JSON</b> to update the file.</p>
+        <div class="editor__tools">
+          <cds-file-uploader-button button-kind="ghost" size="sm" accept="application/json .json" data-editor-import>Import JSON</cds-file-uploader-button>
+          <cds-button kind="ghost" size="sm" data-action="editor-reset">Reset to bookmarks.json</cds-button>
+          <cds-button kind="ghost" size="sm" data-action="repo-export">Export JSON</cds-button>
+        </div>
+        <cds-accordion size="lg">${repeat(draft, (entry) => entry, repoBlock)}</cds-accordion>
+        <cds-button kind="tertiary" size="sm" data-action="editor-add-repo">Add repository${icon("plus", 16, { slot: "icon" })}</cds-button>
+      </cds-modal-body>
+      <cds-modal-footer>
+        <cds-modal-footer-button kind="secondary" data-action="editor-close">Cancel</cds-modal-footer-button>
+        <cds-modal-footer-button kind="primary" data-action="editor-save">Save</cds-modal-footer-button>
+      </cds-modal-footer>`,
     $("#repo-editor")
   );
 }
@@ -128,18 +130,13 @@ export function bindEditor() {
     if (OPTIONAL.has(key) && !value.trim()) delete parent[key];
     else parent[key] = value;
   });
-  el.addEventListener(
-    "toggle",
-    (e) => {
-      if (!e.target.matches(".editor-repo")) return;
-      const entry = draft[e.target.dataset.index];
-      if (entry) e.target.open ? unfolded.add(entry) : unfolded.delete(entry);
-    },
-    true
-  );
-  el.addEventListener("change", async (e) => {
-    if (!e.target.matches("[data-editor-import]")) return;
-    const file = e.target.files?.[0];
+  el.addEventListener("cds-accordion-item-toggled", (e) => {
+    if (!e.target.matches(".editor-repo")) return;
+    const entry = draft[e.target.dataset.index];
+    if (entry) e.target.open ? unfolded.add(entry) : unfolded.delete(entry);
+  });
+  el.addEventListener("cds-file-uploader-button-changed", async (e) => {
+    const file = e.detail.addedFiles?.[0];
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
@@ -185,7 +182,7 @@ async function save() {
 export const editorActions = {
   "repo-editor": openEditor,
   "repo-export": () => ($("#repo-editor").open ? exportJson(draft) : exportJson()),
-  "editor-close": () => $("#repo-editor").close(),
+  "editor-close": () => ($("#repo-editor").open = false),
   "editor-save": save,
   "editor-reset": async () => {
     draft = await fileRepos();

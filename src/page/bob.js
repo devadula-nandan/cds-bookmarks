@@ -35,6 +35,7 @@ import { icon } from "./icons.js";
 import { html, live, nothing, render, unsafeHTML } from "./lit.js";
 import { checklist, markdown } from "./markdown.js";
 import { bindReview, diffLinks, reviewFacts, reviewForm } from "./review.js";
+import { toggleActivity } from "./header.js";
 import { addTodos } from "./today.js";
 import { $, $$, activityList, agoText, bobTargets, copyText, data, go, searchUrl, state, toast } from "./ui.js";
 
@@ -90,7 +91,7 @@ function show(s) {
   shown = s;
   s.minimised = false;
   s.toast?.remove();
-  if (!sheet().open) sheet().showModal();
+  sheet().open = true;
   renderBob();
 }
 
@@ -105,11 +106,11 @@ function drop(s) {
   sessions.splice(sessions.indexOf(s), 1);
 }
 
-/** Closing the sheet, however it happens: the ✕ or minimise button, Escape, or a click on the backdrop. */
+/** Closing the sheet, however it happens: its close button, Escape, or a click outside it. */
 function hideSheet() {
   if (shown) leave(shown);
   shown = null;
-  if (sheet().open) sheet().close();
+  sheet().open = false;
   clearInterval(timer);
   markTriggers();
 }
@@ -183,7 +184,10 @@ export function openFromTrigger(el) {
 
 // ---------- the sheet ----------
 
-const logToggle = (log) => (SHOW_LOGS && log ? html`<details class="bob__log"><summary>${icon("code", 14)}Bob Shell log <span>${plural(log.split("\n").length, "line")}</span></summary><pre>${log}</pre></details>` : nothing);
+const logToggle = (log) =>
+  SHOW_LOGS && log
+    ? html`<cds-accordion class="bob__log" size="sm"><cds-accordion-item title="Bob Shell log (${plural(log.split("\n").length, "line")})"><pre>${log}</pre></cds-accordion-item></cds-accordion>`
+    : nothing;
 
 /** Markdown → sanitized HTML, kept per answer so a re-render doesn't parse it again. */
 const rendered = new WeakMap();
@@ -193,16 +197,27 @@ function answerMarkup(s, turn) {
 }
 
 function answerView(s, turn) {
-  const outdated = turn.outdated ? html`<p class="bob__revised">${icon("refresh", 14)}<span>Written before the latest changes. Regenerate for an up-to-date answer.</span></p>` : nothing;
+  const outdated = turn.outdated
+    ? html`<cds-inline-notification class="bob__note" kind="info" low-contrast hide-close-button title="Written before the latest changes." subtitle="Regenerate for an up-to-date answer."></cds-inline-notification>`
+    : nothing;
   if (turn !== firstAnswer(s) || !isDraft(s)) return html`${outdated}<div class="bob__answer">${answerMarkup(s, turn)}</div>`;
   const last = s.revisions.at(-1);
-  const undo = last ? html`<p class="bob__revised">${icon("sparkle", 14)}<span>Revised: “${last.ask}”</span><button class="btn btn--ghost btn--sm" data-action="bob-undo">Undo</button></p>` : nothing;
+  const undo = last ? html`<p class="bob__revised">${icon("sparkle", 16)}<span>Revised: “${last.ask}”</span><cds-button kind="ghost" size="sm" data-action="bob-undo">Undo${icon("undo", 16, { slot: "icon" })}</cds-button></p>` : nothing;
   if (s.spec.format === "query")
-    return html`${undo}<form class="field-row" data-form="bob-query"><input class="input mono" name="q" .value=${live(draftText(s))} aria-label="GitHub search query" data-draft spellcheck="false"><button class="btn btn--primary" type="submit">Search GitHub</button></form>`;
-  return html`${undo}<textarea class="input bob__edit" rows="11" aria-label="Draft, editable" data-draft .value=${live(draftText(s))}></textarea>`;
+    return html`${undo}<form class="field-row" data-form="bob-query"><cds-text-input class="mono" name="q" hide-label label="GitHub search query" .value=${live(draftText(s))} data-draft spellcheck="false"></cds-text-input><cds-button type="submit">Search GitHub</cds-button></form>`;
+  return html`${undo}<cds-textarea class="bob__edit" rows="11" hide-label label="Draft, editable" data-draft .value=${live(draftText(s))}></cds-textarea>`;
 }
 
 const ERROR_TITLES = { missing: "Bob helper not found", license: "Accept Bob Shell's license", nokey: "Bob API key problem", cancelled: "Stopped" };
+
+/** The AI label next to the title: who wrote the answer, and how. */
+const AI_NOTE = html`<cds-ai-label size="xs" alignment="bottom-left" autoalign>
+  <div slot="body-text">
+    <p class="ai-note__label">AI explained</p>
+    <p class="ai-note__title">Written by IBM Bob</p>
+    <p class="ai-note__text">Bob works on this computer in agent mode, with gh, the web and your local clones. Check what it says before acting on it.</p>
+  </div>
+</cds-ai-label>`;
 
 /** Draws the session in the sheet. While Bob works, it redraws every second (`ticking`) for the elapsed time. */
 export function renderBob(ticking = false) {
@@ -217,51 +232,50 @@ export function renderBob(ticking = false) {
   const input =
     spec.input && !spec.text
       ? html`<form class="bob__input" data-form="bob-input">
-          <label class="field"><span>${spec.input.label}</span><textarea class="input bob__edit" name="text" rows="12" placeholder=${spec.input.placeholder} required></textarea></label>
-          <div class="bob__input-foot"><p class="hint">${spec.input.hint}</p><button class="btn btn--primary" type="submit">${icon("sparkle", 16)}${spec.input.submit}</button></div>
+          <cds-textarea name="text" rows="12" label=${spec.input.label} placeholder=${spec.input.placeholder} helper-text=${spec.input.hint} required></cds-textarea>
+          <cds-button type="submit">${spec.input.submit}${icon("sparkle", 16, { slot: "icon" })}</cds-button>
         </form>`
       : nothing;
   const thread = turns.map(
     (t) => html`<div class="bob__turn">${t.role === "user" ? html`<p class="bob__q">${t.text}</p>` : html`${answerView(s, t)}${logToggle(t.log)}${t === first && spec.extra ? spec.extra() : nothing}`}</div>`
   );
   const waiting = loading
-    ? html`<div class="bob__loading bob-shimmer" role="status"><span class="bob__spinner"></span><span>Bob is working…</span><span class="bob__elapsed mono">${Math.round((Date.now() - s.since) / 1000)}s</span><button class="btn btn--ghost btn--sm" data-action="bob-cancel">Cancel</button></div>`
+    ? html`<div class="bob__loading" role="status">
+        <div class="bob__loading-row"><cds-inline-loading status="active">Bob is working… <span class="mono">${Math.round((Date.now() - s.since) / 1000)}s</span></cds-inline-loading><cds-button kind="ghost" size="sm" data-action="bob-cancel">Cancel</cds-button></div>
+        <cds-ai-skeleton-text paragraph .lineCount=${4}></cds-ai-skeleton-text>
+      </div>`
     : nothing;
+  const toSettings = error && ["nokey", "missing"].includes(error.code);
   const failure = error
-    ? html`<div class="notice ${error.code === "cancelled" ? "" : "notice--error"}" role="alert">${icon("alert", 16)}<div class="notice__body">
-          <p class="notice__title">${ERROR_TITLES[error.code] || "Bob couldn't answer"}</p>
-          <p class="notice__text">${error.message}</p>
-          <div class="notice__actions">${["nokey", "missing"].includes(error.code) ? html`<button class="btn btn--primary btn--sm" data-action="settings" data-section="bob">Bob settings</button>` : nothing}<button class="btn btn--sm" data-action="bob-retry">Try again</button></div>
-        </div></div>${logToggle(error.log)}`
+    ? html`<cds-actionable-notification class="bob__note" inline low-contrast hide-close-button .hasFocus=${false} kind=${error.code === "cancelled" ? "info" : "error"} title=${ERROR_TITLES[error.code] || "Bob couldn't answer"} subtitle=${error.message}>
+          <cds-actionable-notification-button slot="action" data-action=${toSettings ? "settings" : "bob-retry"} data-section="bob">${toSettings ? "Bob settings" : "Try again"}</cds-actionable-notification-button>
+        </cds-actionable-notification>${logToggle(error.log)}`
     : nothing;
   const tools = last
     ? html`<footer class="bob__foot">
         <div class="bob__tools">
-          <button class="btn btn--ghost btn--sm" data-action="bob-copy">${icon("copy", 14)}Copy</button>
-          ${todos.length ? html`<button class="btn btn--ghost btn--sm" data-action="bob-todos">${icon("plus", 14)}Add ${plural(todos.length, "to-do")}</button>` : nothing}
-          ${spec.input ? html`<button class="btn btn--ghost btn--sm" data-action="bob-new-thread" ?disabled=${loading}>${icon("message", 14)}New thread</button>` : nothing}
-          ${spec.regenerate === false ? nothing : html`<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-regenerate" ?disabled=${loading}>${icon("refresh", 14)}Regenerate</button>`}
-          <span class="bob__meta">${first.label || "Answered"} <span>${agoText(first.at)}</span></span>
+          <cds-button kind="ghost" size="sm" data-action="bob-copy">Copy${icon("copy", 16, { slot: "icon" })}</cds-button>
+          ${todos.length ? html`<cds-button kind="ghost" size="sm" data-action="bob-todos">Add ${plural(todos.length, "to-do")}${icon("plus", 16, { slot: "icon" })}</cds-button>` : nothing}
+          ${spec.input ? html`<cds-button kind="ghost" size="sm" data-action="bob-new-thread" ?disabled=${loading}>New thread${icon("message", 16, { slot: "icon" })}</cds-button>` : nothing}
+          ${spec.regenerate === false ? nothing : html`<cds-button kind="ghost" size="sm" class="bob-btn" data-action="bob-regenerate" ?disabled=${loading}>Regenerate${icon("refresh", 16, { slot: "icon" })}</cds-button>`}
+          <span class="bob__meta">${first.label || "Answered"} ${agoText(first.at)}</span>
         </div>
         <form class="bob__follow" data-form="bob-follow">
-          <input class="input" name="q" placeholder=${isDraft(s) ? "Ask for changes: shorter, friendlier, add the PR links…" : "Ask a follow-up"} autocomplete="off" aria-label="Follow-up" ?disabled=${loading}>
-          <button class="icon-btn" type="submit" aria-label="Send" ?disabled=${loading}>${icon("send", 16)}</button>
+          <cds-text-input name="q" hide-label label="Follow-up" placeholder=${isDraft(s) ? "Ask for changes: shorter, friendlier, add the PR links…" : "Ask a follow-up"} autocomplete="off" ?disabled=${loading}></cds-text-input>
+          <cds-icon-button type="submit" kind="primary" align="top-right" aria-label="Send" ?disabled=${loading}>${icon("send", 16, { slot: "icon" })}<span slot="tooltip-content">Send</span></cds-icon-button>
         </form>
       </footer>`
     : nothing;
 
   render(
     html`
-      <header class="sheet__head bob__head">
-        <span class="chip-icon tone-info ${loading ? "is-thinking" : ""}">${icon("sparkle", 20)}</span>
-        <div class="bob__title">
-          <h2>${spec.title}</h2>
-          ${spec.subtitle ? (spec.url ? html`<a class="bob__subtitle" href=${spec.url} target="_blank">${spec.subtitle}</a>` : html`<p class="bob__subtitle">${spec.subtitle}</p>`) : nothing}
-        </div>
-        <button class="icon-btn" data-action="bob-hide" aria-label=${loading ? "Minimise" : "Close"} data-tooltip=${loading ? "Minimise. Bob keeps working" : "Close"}>${icon(loading ? "minus" : "x", 18)}</button>
-      </header>
-      ${spec.head ? spec.head() : nothing}
-      <div class="sheet__body bob__body">${input}${thread}${waiting}${failure}</div>
+      <cds-modal-header class="bob__head">
+        <cds-modal-close-button></cds-modal-close-button>
+        ${spec.subtitle ? html`<cds-modal-label>${spec.url ? html`<cds-link inline href=${spec.url} target="_blank">${spec.subtitle}</cds-link>` : spec.subtitle}</cds-modal-label>` : nothing}
+        <cds-modal-heading><span class="bob__title">${spec.title}${AI_NOTE}</span></cds-modal-heading>
+        ${spec.head ? spec.head() : nothing}
+      </cds-modal-header>
+      <cds-modal-body class="bob__body">${input}${thread}${waiting}${failure}</cds-modal-body>
       ${tools}`,
     sheet()
   );
@@ -272,59 +286,14 @@ export function renderBob(ticking = false) {
   markTriggers();
 }
 
-/**
- * Bob buttons (.bob-btn) light up under the pointer: a ripple where it comes in (a brighter one on press) and
- * a glow that follows it. Skipped when the system asks for reduced motion.
- */
-export function bindBobEffects() {
-  const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const button = (e) => {
-    const btn = e.target.closest?.(".bob-btn");
-    return btn && !btn.disabled ? btn : null;
-  };
-  function ripple(btn, e, press = false) {
-    if (calm()) return;
-    const fx = btn.querySelector(":scope > .bob-fx") || btn.appendChild(Object.assign(document.createElement("span"), { className: "bob-fx" }));
-    const r = btn.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
-    // Big enough to reach the farthest corner.
-    const size = 2 * Math.hypot(Math.max(x, r.width - x), Math.max(y, r.height - y));
-    const dot = Object.assign(document.createElement("span"), { className: `bob-ripple${press ? " bob-ripple--press" : ""}` });
-    dot.style.cssText = `left: ${x}px; top: ${y}px; width: ${size}px; height: ${size}px`;
-    dot.onanimationend = () => dot.remove();
-    fx.append(dot);
-  }
-  // The glow only shows once the pointer has placed it (data-glow), so a button re-rendered under a still pointer doesn't light up at its centre.
-  function glow(btn, e) {
-    const r = btn.getBoundingClientRect();
-    btn.style.setProperty("--mx", `${e.clientX - r.left}px`);
-    btn.style.setProperty("--my", `${e.clientY - r.top}px`);
-    btn.dataset.glow = "";
-  }
-  // pointerenter doesn't bubble, but a capturing listener on the document still sees it.
-  document.addEventListener(
-    "pointerenter",
-    (e) => {
-      if (!e.target.classList?.contains("bob-btn") || e.target.disabled) return;
-      glow(e.target, e);
-      ripple(e.target, e);
-    },
-    true
-  );
-  document.addEventListener("pointerdown", (e) => button(e) && ripple(button(e), e, true));
-  document.addEventListener("pointermove", (e) => button(e) && glow(button(e), e));
-}
-
 /** Typing in a draft keeps the edits on its turn, so re-renders and revisions start from them. */
 export function bindBobSheet() {
   sheet().addEventListener("input", (e) => {
     if (e.target.matches("[data-draft]") && shown) firstAnswer(shown).draft = e.target.value;
   });
-  // Escape closes the dialog natively; tidy up the same way as the close button. The event arrives
+  // Escape, the close button and a click outside close the modal; tidy up the same way. The event arrives
   // late, so skip it if a session was shown again meanwhile.
-  sheet().addEventListener("close", () => !sheet().open && hideSheet());
-  sheet().addEventListener("click", (e) => e.target === sheet() && hideSheet());
+  sheet().addEventListener("cds-modal-closed", () => !sheet().open && hideSheet());
   bindReview(sheet());
 }
 
@@ -369,9 +338,9 @@ function bobItem(key) {
   });
 }
 
-export const bobAsk = (q) => openBob({ title: "Ask Bob", subtitle: q, trigger: "#search .search__icon", prompt: askPrompt(q, state.settings, repoList()) });
+export const bobAsk = (q) => openBob({ title: "Ask Bob", subtitle: q, trigger: "#search-icon", prompt: askPrompt(q, state.settings, repoList()) });
 
-export const bobFind = (q) => openBob({ title: "Find on GitHub", subtitle: q, format: "query", trigger: "#search .search__icon", prompt: findPrompt(q, state.settings, repoList()) });
+export const bobFind = (q) => openBob({ title: "Find on GitHub", subtitle: q, format: "query", trigger: "#search-icon", prompt: findPrompt(q, state.settings, repoList()) });
 
 export function bobSlack() {
   openBob({
@@ -406,7 +375,7 @@ export function bobCatchUp() {
   let entries = all.filter((a) => a.createdAt > (state.lastSeenAt || ""));
   if (entries.length < 3) entries = all.filter((a) => Date.now() - Date.parse(a.createdAt) < 86400000);
   if (entries.length < 3) entries = all.slice(0, 30);
-  $("#activity").hidePopover();
+  toggleActivity(false);
   openBob({ title: "Catch me up", subtitle: plural(entries.length, "update"), trigger: '[data-action="bob-catchup"]', prompt: catchUpPrompt(entries) });
 }
 
@@ -434,7 +403,7 @@ export const bobActions = {
   "bob-triage": bobTriage,
   "bob-slack": bobSlack,
   "bob-test": () => {
-    $("#settings").close();
+    $("#settings").open = false;
     bobTest();
   },
   "bob-hide": hideSheet,
@@ -469,10 +438,6 @@ export const bobActions = {
     hideSheet();
     openBob(spec, { fresh: true });
   },
-  "copy-quote": async (el) => {
-    if (await copyText(el.closest("[data-copy]").dataset.copy, null)) el.textContent = "Copied";
-  },
-  "copy-code": async (el) => {
-    if (await copyText(el.closest(".code").querySelector("code").textContent, null)) el.textContent = "Copied";
-  },
+  // Carbon's copy button says "Copied" itself.
+  "copy-quote": (el) => copyText(el.closest("[data-copy]").dataset.copy, null),
 };

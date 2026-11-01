@@ -1,27 +1,30 @@
-// The Settings sheet. Sections fold like an accordion: opening one closes the others.
+// The Settings sheet: a Carbon modal whose sections are an accordion, opening one closes the others.
 
 import { bobStatus } from "../bob.js";
 import { NOTIFY_LABELS, plural, saveSettings, storage, uid } from "../core.js";
 import { fetchViewer } from "../github.js";
 import { repos } from "../repos.js";
-import { requestSync } from "./header.js";
+import { requestSync, toggleActivity } from "./header.js";
 import { icon } from "./icons.js";
 import { html, live, nothing, render, repeat } from "./lit.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, armed, confirmed, state, toast, toggle } from "./ui.js";
+import { $, $$, CLASSIC_TOKEN_URL, armed, confirmed, iconChip, state, toast, toggle } from "./ui.js";
 
 const sheet = () => $("#settings");
 let openSection = "github";
 
-const section = (id, title, body) =>
-  html`<details class="setting-section" id="set-${id}" name="settings" ?open=${openSection === id}><summary><h3>${title}</h3>${icon("chevronDown", 16)}</summary>${body}</details>`;
+const section = (id, title, body) => html`<cds-accordion-item class="setting-section" id="set-${id}" title=${title} ?open=${openSection === id}>${body}</cds-accordion-item>`;
 
-const select = (setting, value, options) => html`<select class="input input--select" data-setting=${setting}>${options.map(([v, text]) => html`<option value=${v} ?selected=${+value === v}>${text}</option>`)}</select>`;
+const select = (setting, label, value, options) =>
+  html`<cds-select size="md" label-text=${label} data-setting=${setting} value=${String(value)}>${options.map(([v, text]) => html`<cds-select-item value=${String(v)}>${text}</cds-select-item>`)}</cds-select>`;
 
 /** A destructive button: the first click arms it (see confirmed() in ui.js), the second does it. */
-const danger = (action, label, sm = false) => html`<button class="btn btn--danger ${sm ? "btn--sm" : ""}" type="button" data-action=${action}>${armed.get(action) || label}</button>`;
+const danger = (action, label, sm = false) => html`<cds-button kind="danger" size=${sm ? "sm" : "md"} type="button" data-action=${action}>${armed.get(action) || label}</cds-button>`;
 
-const classicToken = html`<a href=${CLASSIC_TOKEN_URL}>classic token</a>`;
+const status = (tone, text) => html`<p class="status-line">${iconChip(STATUS_ICON[tone], tone)}<span>${text}</span></p>`;
+const STATUS_ICON = { success: "checkmarkFilled", warning: "warningFilled", error: "errorFilled", neutral: "circleDash" };
+
+const classicToken = html`<cds-link inline href=${CLASSIC_TOKEN_URL}>classic token</cds-link>`;
 
 function githubSection(s) {
   const rate = state.cache?.data?.rateLimit;
@@ -30,21 +33,21 @@ function githubSection(s) {
     s.tokenScopes === null
       ? "Fine-grained token — the GitHub inbox won't work and org policy may block it. A classic token is recommended."
       : s.tokenScopes !== undefined && s.token
-        ? html`Classic token · scopes: <code>${s.tokenScopes || "none"}</code>`
-        : html`Use a ${classicToken} with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.`;
+        ? html`Classic token · scopes: <cds-code-snippet type="inline">${s.tokenScopes || "none"}</cds-code-snippet>`
+        : html`Use a ${classicToken} with <cds-code-snippet type="inline">repo</cds-code-snippet>, <cds-code-snippet type="inline">notifications</cds-code-snippet> and <cds-code-snippet type="inline">read:org</cds-code-snippet>.`;
   return section(
     "github",
     "GitHub",
-    html`<p class="status-line"><span class="dot dot--${s.token ? "success" : "neutral"}"></span>${s.token ? html`Connected${s.login ? html` as <b>${s.login}</b>` : nothing}` : "Not connected"}</p>
+    html`${status(s.token ? "success" : "neutral", s.token ? html`Connected${s.login ? html` as <b>${s.login}</b>` : nothing}` : "Not connected")}
       <form class="field-row" data-form="connect">
-        <input class="input" type="password" name="token" placeholder=${s.token ? "Paste a new token to replace it" : "ghp_…"} autocomplete="off" aria-label="GitHub token">
-        <button class="btn btn--primary" type="submit">${s.token ? "Replace" : "Connect"}</button>
+        <cds-password-input name="token" label="GitHub token" hide-label placeholder=${s.token ? "Paste a new token to replace it" : "ghp_…"} autocomplete="off"></cds-password-input>
+        <cds-button type="submit">${s.token ? "Replace" : "Connect"}</cds-button>
         ${s.token ? danger("disconnect", "Disconnect") : nothing}
       </form>
       <p class="hint">${tokenInfo}${expires ? ` · Expires ${new Date(expires).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}.` : ""}${rate ? ` · API budget: ${rate.remaining}/${rate.limit} this hour.` : ""}</p>
       <div class="fields">
-        <label class="field"><span>Check GitHub every</span>${select("pollMinutes", s.pollMinutes, [1, 2, 3, 5, 10, 15].map((m) => [m, `${m} min`]))}</label>
-        <label class="field"><span>Reviews are overdue after</span>${select("staleReviewDays", s.staleReviewDays, [1, 2, 3, 5].map((d) => [d, plural(d, "day")]))}</label>
+        ${select("pollMinutes", "Check GitHub every", s.pollMinutes, [1, 2, 3, 5, 10, 15].map((m) => [m, `${m} min`]))}
+        ${select("staleReviewDays", "Reviews are overdue after", s.staleReviewDays, [1, 2, 3, 5].map((d) => [d, plural(d, "day")]))}
       </div>
       ${toggle({ data: ["setting", "includeTeamReviews"], checked: s.includeTeamReviews, label: "Include team review requests", hint: "Otherwise only reviews requested from you directly" })}`
   );
@@ -53,30 +56,30 @@ function githubSection(s) {
 function bobSection(s) {
   const st = state.bobStatus || {};
   const helper = st.checking
-    ? html`<span class="dot dot--neutral"></span>Looking for the Bob helper…`
+    ? html`<cds-inline-loading status="active">Looking for the Bob helper…</cds-inline-loading>`
     : st.ok
-      ? html`<span class="dot dot--success"></span><span>Helper ready · <b>Bob Shell ${st.version}</b></span>`
-      : html`<span class="dot dot--${st.code === "missing" ? "warning" : "error"}"></span><span>${st.error || "Not checked yet"}</span>`;
+      ? status("success", html`Helper ready · <b>Bob Shell ${st.version}</b>`)
+      : status(st.code === "missing" ? "warning" : "error", st.error || "Not checked yet");
   const setup =
     st.code === "missing"
-      ? html`<ol class="steps"><li>Install <a href="https://bob.ibm.com/docs/shell">Bob Shell</a> (it needs Node.js).</li><li>In Terminal, from the extension folder, run <code>sh ai-helper/install.sh</code></li><li>Click <b>Check again</b>.</li></ol>`
+      ? html`<cds-ordered-list class="steps"><cds-list-item>Install <cds-link inline href="https://bob.ibm.com/docs/shell">Bob Shell</cds-link> (it needs Node.js).</cds-list-item><cds-list-item>In Terminal, from the extension folder, run <cds-code-snippet type="inline">sh ai-helper/install.sh</cds-code-snippet></cds-list-item><cds-list-item>Click <b>Check again</b>.</cds-list-item></cds-ordered-list>`
       : nothing;
   return section(
     "bob",
     "Bob",
     html`${toggle({ data: ["setting", "ai"], checked: s.ai, label: "Bob actions", hint: "Review briefs, CI explanations, day plans, standups and answers from IBM Bob, when you ask. Only when you click a Bob action, your question and the item's link are sent to IBM through Bob Shell on this computer" })}
       ${s.ai
-        ? html`<p class="status-line">${helper}<button class="btn btn--ghost btn--sm" data-action="bob-check">Check again</button><button class="btn btn--ghost btn--sm" data-action="bob-test" ?disabled=${!(s.bobKey && st.ok)}>Send a test prompt</button></p>
+        ? html`<div class="status-row">${helper}<cds-button kind="ghost" size="sm" data-action="bob-check">Check again</cds-button><cds-button kind="ghost" size="sm" data-action="bob-test" ?disabled=${!(s.bobKey && st.ok)}>Send a test prompt</cds-button></div>
             ${setup}
             <form class="field-row" data-form="bob-key">
-              <input class="input" type="password" name="key" placeholder=${s.bobKey ? "Paste a new key to replace it" : "Bob API key"} autocomplete="off" aria-label="Bob API key">
-              <button class="btn btn--primary" type="submit">${s.bobKey ? "Replace" : "Save"}</button>
+              <cds-password-input name="key" label="Bob API key" hide-label placeholder=${s.bobKey ? "Paste a new key to replace it" : "Bob API key"} autocomplete="off"></cds-password-input>
+              <cds-button type="submit">${s.bobKey ? "Replace" : "Save"}</cds-button>
               ${s.bobKey ? danger("bob-key-remove", "Remove") : nothing}
             </form>
-            <p class="hint">${s.bobKey ? "Key saved. " : ""}Create an <b>Inference</b> key at <a href="https://bob.ibm.com">bob.ibm.com</a> under Settings → API keys. It stays in this browser and is only handed to Bob Shell on this computer.</p>
+            <p class="hint">${s.bobKey ? "Key saved. " : ""}Create an <b>Inference</b> key at <cds-link inline href="https://bob.ibm.com">bob.ibm.com</cds-link> under Settings → API keys. It stays in this browser and is only handed to Bob Shell on this computer.</p>
             <p class="hint">Nothing goes to Bob until you click a Bob action. Bob then works in agent mode, using gh, the web and your local clones, and counts toward your Bob usage.</p>
             ${toggle({ data: ["setting", "bugHunt"], checked: s.bugHunt, label: "Daily bug hunt", hint: "Bob reads one clone a day, taking turns, and reports the most obvious easy-to-fix bug it can find" })}
-            <div class="fields"><label class="field"><span>Hunt at</span><input class="input" type="time" data-setting="bugHuntTime" .value=${live(s.bugHuntTime)} ?disabled=${!s.bugHunt}></label></div>
+            <div class="fields"><cds-text-input type="time" label="Hunt at" data-setting="bugHuntTime" .value=${live(s.bugHuntTime)} ?disabled=${!s.bugHunt}></cds-text-input></div>
             <p class="hint">If the computer is asleep then, it runs when Chrome is next open. A hunt can take several minutes and uses your Bob quota.</p>`
         : nothing}`
   );
@@ -87,11 +90,11 @@ function reposSection(s) {
     "repos",
     "Repositories",
     html`<p class="hint">Turned-off repos are hidden from the bar, search and your work list.</p>
-      ${repos.map((r) => toggle({ data: ["repo", r.id], checked: !s.disabledRepos.includes(r.id), disabled: !r.slug, label: r.name, hint: html`<span class="mono">${r.slug || "no GitHub repo found"}</span>` }))}
-      <p class="field-row editor-actions">
-        <button class="btn btn--sm" data-action="repo-editor">${icon("edit", 14)}Edit repositories</button>
-        <button class="btn btn--ghost btn--sm" data-action="repo-export">Export JSON</button>
-      </p>`
+      <div class="toggles">${repos.map((r) => toggle({ data: ["repo", r.id], checked: !s.disabledRepos.includes(r.id), disabled: !r.slug, label: r.name, hint: r.slug || "no GitHub repo found" }))}</div>
+      <div class="field-row">
+        <cds-button kind="tertiary" size="sm" data-action="repo-editor">Edit repositories${icon("edit", 16, { slot: "icon" })}</cds-button>
+        <cds-button kind="ghost" size="sm" data-action="repo-export">Export JSON</cds-button>
+      </div>`
   );
 }
 
@@ -100,11 +103,10 @@ function notificationsSection(s) {
     "notifications",
     "Notifications",
     html`${toggle({ data: ["setting", "notifications"], checked: s.notifications, label: "Desktop notifications", hint: "Shown by Chrome, even when no new tab is open" })}
-      <fieldset class="checks" ?disabled=${!s.notifications}>
-        <legend>Notify me about</legend>
-        ${Object.entries(NOTIFY_LABELS).map(([k, text]) => html`<label class="check"><input type="checkbox" data-notify=${k} .checked=${live(!!s.notifyOn[k])}><span>${text}</span></label>`)}
-      </fieldset>
-      <button class="btn btn--sm" data-action="test-notification" ?disabled=${!s.notifications}>Send a test notification</button>`
+      <cds-form-group legend-text="Notify me about">
+        <div class="checks">${Object.entries(NOTIFY_LABELS).map(([k, text]) => html`<cds-checkbox label-text=${text} data-notify=${k} .checked=${!!s.notifyOn[k]} ?disabled=${!s.notifications}></cds-checkbox>`)}</div>
+      </cds-form-group>
+      <cds-button kind="tertiary" size="sm" data-action="test-notification" ?disabled=${!s.notifications}>Send a test notification</cds-button>`
   );
 }
 
@@ -118,28 +120,27 @@ function meetingsSection(s) {
           s.meetings,
           (m) => m.id,
           (m) => html`<li data-id=${m.id}>
-            <input class="input input--sm" type="time" .value=${live(m.time)} data-meeting="time" aria-label="Start time">
-            <input class="input input--sm" .value=${live(m.title)} data-meeting="title" aria-label="Title">
-            <label class="minutes"><input class="input input--sm" type="number" min="5" step="5" .value=${live(String(m.minutes))} data-meeting="minutes" aria-label="Length in minutes"><span>min</span></label>
-            <button class="icon-btn icon-btn--sm" data-action="meeting-remove" aria-label="Remove ${m.title}">${icon("trash", 16)}</button>
+            <cds-text-input type="time" size="sm" hide-label label="Start time" .value=${live(m.time)} data-meeting="time"></cds-text-input>
+            <cds-text-input size="sm" hide-label label="Title" .value=${live(m.title)} data-meeting="title"></cds-text-input>
+            <cds-number-input size="sm" hide-label label="Length in minutes" min="5" step="5" .value=${live(String(m.minutes))} data-meeting="minutes"></cds-number-input>
+            <cds-icon-button kind="ghost" size="sm" data-action="meeting-remove" align="left" aria-label="Remove ${m.title}">${icon("trash", 16, { slot: "icon" })}<span slot="tooltip-content">Remove</span></cds-icon-button>
           </li>`
         )}
       </ul>
-      <button class="btn btn--sm" data-action="meeting-add">${icon("plus", 14)}Add meeting</button>`
+      <cds-button kind="tertiary" size="sm" data-action="meeting-add">Add meeting${icon("plus", 16, { slot: "icon" })}</cds-button>`
   );
 }
 
-const kbd = (...keys) => keys.map((k) => html`<kbd>${k}</kbd>`);
 const KEYS = [
-  [html`${kbd("/")} or ${kbd("⌘", "K")}`, "Search"],
-  [html`${kbd("1")}–${kbd("4")}`, "Switch work tabs"],
-  [html`${kbd("J", "K")} or ${kbd("↓", "↑")}`, "Move through your work"],
-  [kbd("S"), "Snooze the selected item"],
-  [kbd("B"), "Ask Bob about the selected item"],
-  [kbd("E"), "Run the selected item's button, such as Ready to merge or Re-run"],
-  [kbd("R"), "Sync now"],
-  [kbd("A"), "Activity"],
-  [kbd("?"), "This list"],
+  ["/ or ⌘ K", "Search"],
+  ["1 – 4", "Switch work tabs"],
+  ["J K or ↓ ↑", "Move through your work"],
+  ["S", "Snooze the selected item"],
+  ["B", "Ask Bob about the selected item"],
+  ["E", "Run the selected item's button, such as Ready to merge or Re-run"],
+  ["R", "Sync now"],
+  ["A", "Activity"],
+  ["?", "This list"],
 ];
 
 const THEMES = [
@@ -152,20 +153,26 @@ export function renderSettings() {
   const s = state.settings;
   render(
     html`
-      <header class="sheet__head">
-        <h2>Settings</h2>
-        <button class="icon-btn" data-action="close-settings" aria-label="Close settings">${icon("x", 18)}</button>
-      </header>
-      <div class="sheet__body">
-        ${githubSection(s)}
-        ${bobSection(s)}
-        ${reposSection(s)}
-        ${notificationsSection(s)}
-        ${meetingsSection(s)}
-        ${section("appearance", "Appearance", html`<div class="segmented" role="radiogroup" aria-label="Theme">${THEMES.map(([v, t]) => html`<button class="segmented__opt" role="radio" aria-checked=${s.theme === v} data-action="theme" data-theme=${v}>${t}</button>`)}</div>`)}
-        ${section("keys", "Keyboard", html`<dl class="keys">${KEYS.map(([k, what]) => html`<div><dt>${k}</dt><dd>${what}</dd></div>`)}</dl>`)}
-        ${section("reset", "Reset", html`<p class="hint">Removes the token, settings, to-dos and activity from this browser.</p>${danger("reset", "Reset everything", true)}`)}
-      </div>`,
+      <cds-modal-header>
+        <cds-modal-close-button></cds-modal-close-button>
+        <cds-modal-heading>Settings</cds-modal-heading>
+      </cds-modal-header>
+      <cds-modal-body class="settings">
+        <cds-accordion size="lg">
+          ${githubSection(s)}
+          ${bobSection(s)}
+          ${reposSection(s)}
+          ${notificationsSection(s)}
+          ${meetingsSection(s)}
+          ${section("appearance", "Appearance", html`<cds-content-switcher class="theme-switch" size="md" value=${s.theme} aria-label="Theme">${THEMES.map(([v, t]) => html`<cds-content-switcher-item value=${v}>${t}</cds-content-switcher-item>`)}</cds-content-switcher>`)}
+          ${section(
+            "keys",
+            "Keyboard",
+            html`<cds-structured-list condensed flush><cds-structured-list-body>${KEYS.map(([k, what]) => html`<cds-structured-list-row><cds-structured-list-cell class="keys__key mono">${k}</cds-structured-list-cell><cds-structured-list-cell>${what}</cds-structured-list-cell></cds-structured-list-row>`)}</cds-structured-list-body></cds-structured-list>`
+          )}
+          ${section("reset", "Reset", html`<p class="hint">Removes the token, settings, to-dos and activity from this browser.</p>${danger("reset", "Reset everything", true)}`)}
+        </cds-accordion>
+      </cds-modal-body>`,
     sheet()
   );
 }
@@ -174,14 +181,18 @@ export function openSettings(id) {
   if (id) openSection = id;
   if (!state.bobStatus?.ok) checkBob();
   renderSettings();
-  if (!sheet().open) sheet().showModal();
-  if (id) $(`#set-${id}`)?.scrollIntoView({ block: "start" });
+  sheet().open = true;
+  if (id) requestAnimationFrame(() => $(`#set-${id}`)?.scrollIntoView({ block: "start" }));
 }
 
-/** Remembers which section is open across re-renders. */
+/** One section open at a time, remembered across re-renders; the theme switch. */
 export function bindSettings() {
-  sheet().addEventListener("toggle", (e) => e.target.matches(".setting-section") && e.target.open && (openSection = e.target.id.slice(4)), true);
-  sheet().addEventListener("click", (e) => e.target === sheet() && sheet().close());
+  sheet().addEventListener("cds-accordion-item-toggled", (e) => {
+    if (!e.target.matches(".setting-section")) return;
+    openSection = e.target.open ? e.target.id.slice(4) : null;
+    renderSettings();
+  });
+  sheet().addEventListener("cds-content-switcher-selected", (e) => setTheme(e.detail.item.value));
 }
 
 /** Asks the Bob helper whether it's installed; also learns the home folder for VS Code links. */
@@ -205,7 +216,7 @@ export async function connect(token, form) {
     Object.assign(state, { cache: null, status: {}, activity: [], seenAt: null, clearedAt: null });
     state.settings = await saveSettings({ token, login: viewer.login, tokenScopes: viewer.scopes });
     toast(`Connected as ${viewer.login}`, "success");
-    sheet().close();
+    sheet().open = false;
     renderAll();
     requestSync();
   } catch (err) {
@@ -215,12 +226,12 @@ export async function connect(token, form) {
 }
 
 export function applyTheme() {
-  const t = state.settings.theme;
-  if (t === "system") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = t;
   // theme.js reads this before the stylesheet loads, so a forced theme never flashes the other one.
-  localStorage.setItem("devdash-theme", t);
+  localStorage.setItem("devdash-theme", state.settings.theme);
+  dispatchEvent(new Event("devdash-theme"));
 }
+
+export const isDark = () => document.documentElement.classList.contains("cds--g100");
 
 async function setTheme(theme) {
   state.settings = await saveSettings({ theme });
@@ -228,10 +239,7 @@ async function setTheme(theme) {
   if (sheet().open) renderSettings();
 }
 
-export function toggleTheme() {
-  const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
-  setTheme(dark ? "light" : "dark");
-}
+export const toggleTheme = () => setTheme(isDark() ? "light" : "dark");
 
 /** Changing what's tracked resets the comparison baseline, so the next sync doesn't announce everything as new. */
 async function resetBaseline() {
@@ -247,12 +255,9 @@ async function saveMeetings(meetings) {
 
 export const settingsActions = {
   settings: (el) => {
-    $("#activity").hidePopover();
-    $("#sync-error").hidePopover();
+    toggleActivity(false);
     openSettings(el.dataset.section);
   },
-  "close-settings": () => sheet().close(),
-  theme: (el) => setTheme(el.dataset.theme),
   "bob-check": checkBob,
   "test-notification": async () => {
     const res = await chrome.runtime.sendMessage({ type: "test-notification" }).catch((err) => ({ ok: false, error: err.message }));
@@ -279,7 +284,7 @@ export const settingsActions = {
   },
   "meeting-add": async () => {
     await saveMeetings([...state.settings.meetings, { id: uid(), title: "New meeting", time: "15:00", minutes: 30, days: [1, 2, 3, 4, 5] }]);
-    $$('[data-meeting="title"]', sheet()).at(-1)?.select();
+    $$('[data-meeting="title"]', sheet()).at(-1)?.focus();
   },
   "meeting-remove": (el) => saveMeetings(state.settings.meetings.filter((m) => m.id !== el.closest("[data-id]").dataset.id)),
 };
@@ -289,13 +294,14 @@ export async function onSettingsChange(el) {
   const s = state.settings;
   if (el.dataset.repoToggle) {
     const off = new Set(s.disabledRepos);
-    el.checked ? off.delete(el.dataset.repoToggle) : off.add(el.dataset.repoToggle);
+    on ? off.delete(el.dataset.repoToggle) : off.add(el.dataset.repoToggle);
     state.settings = await saveSettings({ disabledRepos: [...off] });
     renderAll();
     return resetBaseline();
   }
+  const on = el.matches("cds-toggle") ? el.toggled : el.checked;
   if (el.dataset.notify) {
-    state.settings = await saveSettings({ notifyOn: { ...s.notifyOn, [el.dataset.notify]: el.checked } });
+    state.settings = await saveSettings({ notifyOn: { ...s.notifyOn, [el.dataset.notify]: on } });
     return;
   }
   if (el.dataset.meeting) {
@@ -306,7 +312,7 @@ export async function onSettingsChange(el) {
   }
   const key = el.dataset.setting;
   if (!key) return;
-  state.settings = await saveSettings({ [key]: el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? Number(el.value) : el.value });
+  state.settings = await saveSettings({ [key]: el.matches("cds-toggle") ? on : el.matches("cds-select") ? Number(el.value) : el.value });
   if (key === "includeTeamReviews") resetBaseline();
   if (key === "ai") checkBob();
   if (["notifications", "ai", "bugHunt"].includes(key)) renderSettings();

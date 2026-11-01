@@ -7,65 +7,50 @@
     <title>New Tab</title>
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <script src="src/page/theme.js"></script>
+    <link rel="stylesheet" href="src/vendor/carbon/carbon.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
 
   <body>
-    <a class="skip" href="#work">Skip to your work</a>
+    <cds-header aria-label="Dev Dashboard">
+      <cds-skip-to-content href="#work"></cds-skip-to-content>
+      <cds-header-name prefix="Carbon">Dev Dashboard</cds-header-name>
+      <div class="cds--header__global" id="tools"></div>
+      <cds-header-panel id="activity" aria-label="Activity"></cds-header-panel>
+    </cds-header>
 
-    <div class="page">
-      <header class="masthead">
+    <cds-grid class="page" full-width>
+      <cds-column class="masthead" sm="4" md="8" lg="16">
         <div class="hello">
-          <p class="hello__date" id="date">&nbsp;</p>
-          <h1 class="hello__greeting" id="greeting">&nbsp;</h1>
-          <p class="hello__summary" id="summary">&nbsp;</p>
+          <p class="cds--type-label-01 hello__date" id="date">&nbsp;</p>
+          <h1 class="cds--type-heading-05 hello__greeting" id="greeting">&nbsp;</h1>
+          <p class="cds--type-body-01 hello__summary" id="summary">&nbsp;</p>
           <p class="hello__ai" id="hello-ai" hidden></p>
         </div>
-        <div class="tools" id="tools"></div>
-      </header>
+        <div class="masthead__sync" id="sync"></div>
+      </cds-column>
 
-      <div class="search" id="search">
-        <label class="search__box">
-          <span class="search__icon" data-icon="search"></span>
-          <input
-            id="search-input"
-            type="text"
-            role="combobox"
-            aria-label="Search PRs, issues, links and actions"
-            aria-expanded="false"
-            aria-controls="search-results"
-            aria-autocomplete="list"
-            placeholder="Search your PRs, issues and links"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <kbd class="search__kbd" aria-hidden="true">/</kbd>
-        </label>
-        <ul class="search__results" id="search-results" role="listbox" aria-label="Search results" hidden></ul>
-      </div>
+      <cds-column class="search" id="search" sm="4" md="8" lg="16">
+        <cds-search id="search-input" size="lg" label-text="Search your PRs, issues and links" placeholder="Search your PRs, issues and links" autocomplete="off"></cds-search>
+        <cds-layer class="search__results" id="search-results" hidden></cds-layer>
+      </cds-column>
 
-      <nav class="repos" id="repos" aria-label="Repositories and links"></nav>
+      <cds-column class="repos" sm="4" md="8" lg="16">
+        <nav class="repos__bar" id="repos" aria-label="Repositories and links"></nav>
+      </cds-column>
 
-      <main class="layout">
-        <section class="panel work" id="work" tabindex="-1" aria-label="Your work"></section>
-        <aside class="side">
-          <section class="panel today" id="today" aria-label="Today"></section>
-        </aside>
-      </main>
-    </div>
+      <cds-column class="work-column" sm="4" md="8" lg="11">
+        <cds-layer class="panel work" with-background id="work" tabindex="-1" aria-label="Your work"></cds-layer>
+      </cds-column>
+      <cds-column class="side" sm="4" md="8" lg="5">
+        <cds-layer class="panel today" with-background id="today" aria-label="Today"></cds-layer>
+      </cds-column>
+    </cds-grid>
 
-    <div id="repo-menus"></div>
-    <div class="menu snooze-menu" id="snooze-menu" popover style="position-anchor: --snooze">
-      <button class="snooze-menu__opt" data-action="snooze-for" data-until="tomorrow">Until tomorrow<small>Back first thing in the morning</small></button>
-      <button class="snooze-menu__opt" data-action="snooze-for" data-until="change">Until there's new activity<small>A push, comment or review brings it back</small></button>
-    </div>
-    <div class="menu sync-pop" id="sync-error" popover style="position-anchor: --sync"></div>
-    <aside class="drawer" id="activity" popover aria-label="Activity"></aside>
-    <dialog class="sheet" id="settings" aria-label="Settings"></dialog>
-    <dialog class="sheet sheet--wide" id="repo-editor" aria-label="Edit repositories"></dialog>
-    <dialog class="sheet bob" id="ai" aria-label="Bob"></dialog>
+    <cds-modal id="settings" size="md" aria-label="Settings"></cds-modal>
+    <cds-modal id="repo-editor" size="lg" aria-label="Edit repositories"></cds-modal>
+    <cds-modal id="ai" size="lg" aria-label="Bob"></cds-modal>
     <div class="toasts" id="toasts" aria-live="polite"></div>
-    <div class="tooltip" id="tooltip" popover="manual" role="tooltip"></div>
 
     <script src="src/vendor/prism.js" data-manual></script>
     <script type="module" src="src/page/main.js"></script>

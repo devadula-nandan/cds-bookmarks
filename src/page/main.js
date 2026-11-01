@@ -4,17 +4,14 @@
 import { ANSWERS } from "../bob.js";
 import { dayKey, loadDay, normalizeSettings, saveSettings, storage } from "../core.js";
 import { reposReady } from "../repos.js";
-import { bindBobEffects, bindBobSheet, bobActions, hasMinimised, markTriggers, openFromTrigger, renderBob, submitBobForm } from "./bob.js";
-import { bindActivity, headerActions, maybeSync, renderActivity, renderMasthead, renderRepos, renderTools, requestSync } from "./header.js";
-import { icon } from "./icons.js";
-import { render } from "./lit.js";
+import { bindBobSheet, bobActions, hasMinimised, markTriggers, openFromTrigger, renderBob, submitBobForm } from "./bob.js";
+import { activityOpen, bindActivity, headerActions, maybeSync, renderActivity, renderMasthead, renderRepos, renderTools, requestSync, toggleActivity } from "./header.js";
 import { bindEditor, editorActions } from "./repo-editor.js";
 import { reviewActions } from "./review.js";
 import { bindSearch, focusSearch } from "./search.js";
-import { bindTooltips } from "./tooltip.js";
 import { applyTheme, bindSettings, checkBob, connect, onSettingsChange, openSettings, renderSettings, settingsActions } from "./settings.js";
 import { renderToday, toggleTodo, todayActions, addTodos } from "./today.js";
-import { $, $$, connected, state, toast } from "./ui.js";
+import { $, connected, go, state, toast } from "./ui.js";
 import { bindWork, moveInList, renderWork, selectTab, workActions } from "./work.js";
 
 /** Every `data-action` on the page, by name. */
@@ -32,14 +29,20 @@ export function renderAll() {
 
 function onClick(e) {
   // A button showing a minimised Bob's status opens that session instead (tabs still switch, though).
-  const marked = e.target.closest("[data-bob-status]:not([data-tab])");
+  const marked = e.target.closest("[data-bob-status]:not(cds-tab)");
   if (marked) return openFromTrigger(marked);
-  const tab = e.target.closest("[data-tab]");
-  if (tab) return selectTab(tab.dataset.tab);
+  // A Carbon button's own <button> is in its shadow DOM, outside the form: submit the form for it.
+  const submit = e.target.closest("cds-button[type=submit], cds-icon-button[type=submit]");
+  if (submit) {
+    e.preventDefault();
+    return submit.disabled || submit.closest("form")?.requestSubmit();
+  }
+  // Menu items that open a link (the repo menus).
+  const link = e.target.closest("[data-href]");
+  if (link) return go(link.dataset.href, e.metaKey || e.ctrlKey);
   const el = e.target.closest("[data-action]");
-  if (!el || el.type === "checkbox" || !actions[el.dataset.action]) return;
-  // Buttons with popovertarget still need their default action to open the popover.
-  if (!el.hasAttribute("popovertarget")) e.preventDefault();
+  if (!el || !actions[el.dataset.action]) return;
+  e.preventDefault();
   actions[el.dataset.action](el);
 }
 
@@ -51,7 +54,7 @@ async function onSubmit(e) {
   const value = String(new FormData(form).values().next().value || "").trim();
   if (name === "connect") connect(value, form);
   if (name === "todo" && value) {
-    form.reset();
+    form.querySelector("cds-text-input").value = "";
     await addTodos([value]);
   }
   if (name === "bob-key" && value) {
@@ -63,11 +66,17 @@ async function onSubmit(e) {
   if (name.startsWith("bob-")) submitBobForm(name, value);
 }
 
+/** Carbon's toggles, checkboxes and selects say they changed with their own events; text fields with `change`. */
+const CHANGES = ["change", "cds-toggle-changed", "cds-checkbox-changed", "cds-select-selected"];
+
 function onChange(e) {
   const el = e.target;
+  if (e.type === "change" && !el.matches("cds-text-input, cds-number-input, cds-textarea")) return;
   if (el.dataset.action === "todo-toggle") toggleTodo(el.dataset.id, el.checked);
   else if (el.closest("#settings")) onSettingsChange(el);
 }
+
+const FIELDS = "input, textarea, select, [contenteditable], cds-text-input, cds-password-input, cds-textarea, cds-number-input, cds-search, cds-select";
 
 /** Keyboard shortcuts (the list is in Settings → Keyboard). */
 function onKey(e) {
@@ -75,20 +84,18 @@ function onKey(e) {
     e.preventDefault();
     return focusSearch();
   }
-  // Enter in a repo menu's version field opens that version.
-  if (e.key === "Enter" && e.target.matches(".menu__version")) return actions["open-version"](e.target);
-  // Arrow keys move between work tabs, and between rows.
-  if (e.target.matches("[role=tab]") && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
-    const tabs = $$("[role=tab]");
-    const next = tabs[(tabs.indexOf(e.target) + (e.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
-    return selectTab(next.dataset.tab, true);
+  // Enter in a Carbon field submits its form (the field's own <input> is in its shadow DOM, outside the form).
+  if (e.key === "Enter" && e.target.matches("cds-text-input, cds-password-input") && e.target.closest("form[data-form]")) {
+    e.preventDefault();
+    return e.target.closest("form").requestSubmit();
   }
+  // Arrow keys move between rows (Carbon's tabs handle their own).
   if (e.target.matches(".item__title") && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
     e.preventDefault();
     return moveInList(e.key === "ArrowDown" ? 1 : -1);
   }
-  const typing = e.target.matches("input, textarea, select, [contenteditable]");
-  if (typing || e.metaKey || e.ctrlKey || e.altKey || $("dialog[open]") || $("#snooze-menu:popover-open")) return;
+  const typing = e.target.matches(FIELDS);
+  if (typing || e.metaKey || e.ctrlKey || e.altKey || $("cds-modal[open]") || $("cds-overflow-menu[open]")) return;
   const key = e.key.toLowerCase();
   if (key === "/") {
     e.preventDefault();
@@ -96,11 +103,11 @@ function onKey(e) {
   } else if (key === "?") openSettings("keys");
   else if (key === "j") moveInList(1);
   else if (key === "k") moveInList(-1);
-  else if (key === "s") document.activeElement.closest("#work .item")?.querySelector("[data-action=snooze-menu]")?.click();
+  else if (key === "s") document.activeElement.closest("#work .item")?.querySelector(".snooze")?.click();
   else if (key === "b") document.activeElement.closest("#work .item")?.querySelector("[data-action=bob-item]")?.click();
-  else if (key === "e") document.activeElement.closest("#work .item")?.querySelector(".item__cta:not(:disabled)")?.click();
+  else if (key === "e") document.activeElement.closest("#work .item")?.querySelector("cds-button.item__cta")?.click();
   else if (key === "r") requestSync(true);
-  else if (key === "a") $("#activity").togglePopover();
+  else if (key === "a") toggleActivity();
   else if (/^[1-4]$/.test(key) && connected()) selectTab(["focus", "issues", "prs", "following"][key - 1], true);
 }
 
@@ -132,7 +139,7 @@ function onStorage(changes) {
     state.huntState = value("huntState", {});
     if (was.running && !state.huntState.running) toast(state.huntState.error ? `Bug hunt failed: ${state.huntState.error}` : "Bug hunt finished. See Bug of the day.", state.huntState.error ? "error" : "success");
   }
-  if (changes.activity && $("#activity:popover-open")) renderActivity();
+  if (changes.activity && activityOpen()) renderActivity();
   requestAnimationFrame(renderAll);
 }
 
@@ -162,34 +169,29 @@ async function tick() {
     state.day = await loadDay();
   }
   renderAll();
-  if ($("#activity:popover-open")) renderActivity();
+  if (activityOpen()) renderActivity();
   if ($("#ai").open) renderBob();
 }
 
 async function start() {
-  $$("[data-icon]").forEach((el) => render(icon(el.dataset.icon, 18), el));
   await reposReady;
   await load();
   applyTheme();
 
   document.addEventListener("click", onClick);
   document.addEventListener("submit", onSubmit);
-  document.addEventListener("change", onChange);
+  CHANGES.forEach((type) => document.addEventListener(type, onChange));
   document.addEventListener("keydown", onKey);
   document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && maybeSync());
   chrome.storage.onChanged.addListener(onStorage);
   // Re-renders replace the buttons that started Bob sessions; put their status back on the new ones.
   new MutationObserver(() => hasMinimised() && markTriggers()).observe(document.body, { childList: true, subtree: true });
-  // Repo menus live apart from their buttons, so mark the button whose menu is open (its chevron turns).
-  $("#repo-menus").addEventListener("toggle", (e) => $(`[popovertarget="${e.target.id}"]`)?.classList.toggle("is-open", e.newState === "open"), true);
   bindSearch();
   bindWork();
   bindActivity();
   bindSettings();
   bindEditor();
   bindBobSheet();
-  bindBobEffects();
-  bindTooltips();
 
   renderAll();
   document.body.classList.add("is-ready");

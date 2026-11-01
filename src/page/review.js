@@ -47,10 +47,10 @@ export function reviewFacts(id) {
         ${pr.myReview ? fact(fresh ? "refresh" : "eye", `${MY_REVIEW[pr.myReview.state] || "You reviewed"} ${timeAgo(pr.myReview.at)} ago${fresh ? " · new commits since" : ""}`, { tone: fresh ? "warning" : "" }) : nothing}
       </div>
       <div class="facts__row">
-        ${pr.labels.slice(0, 4).map((l) => html`<span class="chip">${l}</span>`)}
+        ${pr.labels.slice(0, 4).map((l) => html`<cds-tag size="sm" type="gray">${l}</cds-tag>`)}
         <span class="facts__links">
-          <a class="btn btn--ghost btn--sm" href="${pr.url}/files" target="_blank" rel="noopener">${icon("code", 14)}Files changed</a>
-          <a class="btn btn--ghost btn--sm" href="${pr.url}/checks" target="_blank" rel="noopener">${icon("check", 14)}Checks</a>
+          <cds-button kind="ghost" size="sm" href="${pr.url}/files" target="_blank" rel="noopener">Files changed${icon("code", 16, { slot: "icon" })}</cds-button>
+          <cds-button kind="ghost" size="sm" href="${pr.url}/checks" target="_blank" rel="noopener">Checks${icon("check", 16, { slot: "icon" })}</cds-button>
         </span>
       </div>
     </div>`;
@@ -92,18 +92,15 @@ export function reviewForm(id, rerender) {
   const pr = findItem(id);
   if (!pr) return nothing;
   const busy = sending.get(id);
-  const button = (event, primary = false) => {
+  const button = (event, kind) => {
     const e = EVENTS[event];
-    return html`<button class="btn btn--sm ${primary ? "btn--primary" : ""}" type="button" data-action="review-submit" data-id=${id} data-event=${event} ?disabled=${!!busy}>${busy === event ? e.busy : armed.get(`review:${event}:${id}`) || e.label}</button>`;
+    if (busy === event) return html`<cds-inline-loading status="active">${e.busy}</cds-inline-loading>`;
+    return html`<cds-button size="sm" kind=${kind} data-action="review-submit" data-id=${id} data-event=${event} ?disabled=${!!busy}>${armed.get(`review:${event}:${id}`) || e.label}</cds-button>`;
   };
   return html`
     <section class="review-box" aria-label="Your review">
-      <p class="bob__label">Your review on #${pr.number}</p>
-      <textarea class="input review-box__body" rows="3" placeholder="Leave a comment (needed to request changes or comment; optional to approve). Markdown works." data-review-body=${id} .value=${live(drafts.get(id) || "")} ?disabled=${!!busy}></textarea>
-      <div class="review-box__actions">
-        ${button("APPROVE", true)}${button("REQUEST_CHANGES")}${button("COMMENT")}
-        <span class="quiet-inline">Posts as you on GitHub.</span>
-      </div>
+      <cds-textarea class="review-box__body" rows="3" label="Your review on #${pr.number}" helper-text="Needed to request changes or comment; optional to approve. Markdown works, and it posts as you on GitHub." data-review-body=${id} .value=${live(drafts.get(id) || "")} ?disabled=${!!busy}></cds-textarea>
+      <div class="review-box__actions">${button("APPROVE", "primary")}${button("REQUEST_CHANGES", "tertiary")}${button("COMMENT", "ghost")}</div>
     </section>`;
 }
 

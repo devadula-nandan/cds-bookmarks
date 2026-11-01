@@ -6,7 +6,7 @@ import { focusQueue, isSnoozed } from "../insights.js";
 import { enabledRepos, repoLabel, repos } from "../repos.js";
 import DOMPurify from "../vendor/purify.es.js";
 import { icon } from "./icons.js";
-import { html, live, nothing, repeat, unsafeHTML } from "./lit.js";
+import { html, nothing, repeat, unsafeHTML } from "./lit.js";
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -86,9 +86,21 @@ export function go(url, newTab) {
 
 export const agoText = (at) => (timeAgo(at) === "now" ? "just now" : `${timeAgo(at)} ago`);
 
-export const iconChip = (name, tone = "neutral") => html`<span class="chip-icon tone-${tone}">${icon(name, 16)}</span>`;
+/** A Carbon icon in a status colour (tone: error, warning, success, info or neutral). */
+export const iconChip = (name, tone = "neutral", slot = "") => html`<span class="status-icon tone-${tone}" slot=${slot || nothing}>${icon(name, 16)}</span>`;
 
-export const timeEl = (at) => (at ? html`<time class="item__time" data-tooltip=${new Date(at).toLocaleString()}>${timeAgo(at)}</time>` : nothing);
+let tips = 0;
+/**
+ * A Carbon tooltip on `content`. Plain text becomes focusable so keyboard users can reach the tooltip too;
+ * a control (`control: true`), such as a button, is the trigger as it is.
+ */
+export function tip(text, content, { align = "top", control = false } = {}) {
+  if (!text) return content;
+  const id = `tip-${++tips}`;
+  return html`<cds-tooltip class="tip" align=${align} autoalign enter-delay-ms="300">${control ? content : html`<span class="tip__trigger" tabindex="0" aria-describedby=${id}>${content}</span>`}<cds-tooltip-content id=${id}>${text}</cds-tooltip-content></cds-tooltip>`;
+}
+
+export const timeEl = (at) => (at ? tip(new Date(at).toLocaleString(), html`<time class="item__time">${timeAgo(at)}</time>`, { align: "left" }) : nothing);
 
 /** "Carbon #123". */
 export const ref = (item) => html`${repoLabel(item.repo)} <span class="mono">#${item.number}</span>`;
@@ -100,11 +112,14 @@ export function logo(markup) {
   return unsafeHTML(logos.get(markup));
 }
 
-/** One fact in a sheet's facts strip (the review brief, the bug of the day): an icon and a few words, coloured by `tone` (success, error or warning). */
-export const fact = (iconName, content, { tone = "", tooltip = "" } = {}) =>
-  html`<span class="fact ${tone ? `fact--${tone}` : ""}" data-tooltip=${tooltip || nothing}>${icon(iconName, 14)}<span>${content}</span></span>`;
+/** Carbon's status icons, for facts with a tone. */
+const STATUS = { error: "errorFilled", warning: "warningFilled", success: "checkmarkFilled", info: "informationFilled" };
 
-/** Row key → what Bob should look at for that row's ✦ button. Rebuilt on every work render. */
+/** One fact in a sheet's facts strip (the review brief, the bug of the day): an icon and a few words; a `tone` (success, error or warning) shows Carbon's status icon in its colour. */
+export const fact = (iconName, content, { tone = "", tooltip = "" } = {}) =>
+  html`<span class="fact">${tip(tooltip, html`<span class="fact__body">${tone ? html`<span class="status-icon tone-${tone}">${icon(STATUS[tone], 16)}</span>` : icon(iconName, 16)}<span>${content}</span></span>`)}</span>`;
+
+/** Row key → what Bob should look at for that row's Bob button. Rebuilt on every work render. */
 export const bobTargets = new Map();
 
 /**
@@ -117,60 +132,73 @@ export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, un
   if (bob && aiOn()) {
     bobTargets.set(key, bob);
     const { label, verb } = MODES[modeFor(bob.item, bob.kind)];
-    // Bob already answered this version of the item: the ✦ turns blue.
+    // Bob already answered this version of the item: the button shows it's ready.
     const ready = state.answered.has(answerKey(bob));
-    buttons.push(html`<button class="icon-btn icon-btn--sm bob-btn ${ready ? "bob-made" : ""}" data-action="bob-item" data-key=${key} data-tooltip=${ready ? `${label} · answer ready` : verb} aria-label=${verb}>${icon("sparkle", 16)}</button>`);
+    buttons.push(html`<cds-icon-button kind="ghost" size="sm" class="bob-btn ${ready ? "bob-made" : ""}" data-action="bob-item" data-key=${key} aria-label=${verb}>${icon("sparkle", 16, { slot: "icon" })}<span slot="tooltip-content">${ready ? `${label} · answer ready` : verb}</span></cds-icon-button>`);
   }
-  if (snooze) buttons.push(html`<button class="icon-btn icon-btn--sm" data-action="snooze-menu" data-key=${snooze} popovertarget="snooze-menu" data-tooltip="Snooze" aria-label="Snooze ${title}">${icon("snooze", 16)}</button>`);
-  if (unfollow) buttons.push(html`<button class="icon-btn icon-btn--sm" data-action="unfollow" data-id=${unfollow} data-tooltip="Hide until there's a new reply" aria-label="Hide ${title}">${icon("x", 16)}</button>`);
+  if (snooze) buttons.push(snoozeMenu(snooze, title));
+  if (unfollow) buttons.push(html`<cds-icon-button kind="ghost" size="sm" data-action="unfollow" data-id=${unfollow} aria-label="Hide ${title}">${icon("x", 16, { slot: "icon" })}<span slot="tooltip-content">Hide until there's a new reply</span></cds-icon-button>`);
   const busy = cta && state.fixing.get(`${cta.action}:${cta.id}`);
+  const fix = !cta
+    ? nothing
+    : busy
+      ? html`<cds-inline-loading class="item__cta" status=${busy === "Done" ? "finished" : "active"}>${busy}</cds-inline-loading>`
+      : tip(cta.tooltip, html`<cds-button class="item__cta" size="sm" kind=${cta.primary ? "primary" : "tertiary"} data-action=${cta.action} data-id=${cta.id}>${cta.label}${cta.iconName ? icon(cta.iconName, 16, { slot: "icon" }) : nothing}</cds-button>`, { control: true });
   return html`
-    <li class="item">
-      ${iconChip(iconName, tone)}
+    <cds-contained-list-item class="item">
+      ${iconChip(iconName, tone, "icon")}
       <div class="item__body">
-        <a class="item__title" href=${url}>${title}</a>
+        <cds-link class="item__title" href=${url}>${title}</cds-link>
         <p class="item__meta">${meta}</p>
       </div>
-      ${cta
-        ? html`<button class="btn btn--sm ${cta.primary ? "btn--primary" : ""} item__cta" data-action=${cta.action} data-id=${cta.id} data-tooltip=${cta.tooltip || ""} ?disabled=${!!busy}>${busy || html`${cta.iconName ? icon(cta.iconName, 14) : nothing}${cta.label}`}</button>`
-        : nothing}
-      <div class="item__end">${timeEl(at)}${buttons.length ? html`<span class="item__actions">${buttons}</span>` : nothing}</div>
-    </li>`;
+      <div class="item__end" slot="action">${fix}${timeEl(at)}${buttons.length ? html`<span class="item__actions">${buttons}</span>` : nothing}</div>
+    </cds-contained-list-item>`;
 }
+
+/** A row's snooze button: a Carbon overflow menu with the two ways to snooze. */
+const snoozeMenu = (key, title) => html`
+  <cds-overflow-menu size="sm" class="snooze" aria-label="Snooze ${title}" align="left">
+    ${icon("snooze", 16, { slot: "icon" })}<span slot="tooltip-content">Snooze</span>
+    <cds-menu label="Snooze">
+      <cds-menu-item label="Until tomorrow" data-action="snooze-for" data-key=${key} data-until="tomorrow"></cds-menu-item>
+      <cds-menu-item label="Until there's new activity" data-action="snooze-for" data-key=${key} data-until="change"></cds-menu-item>
+    </cds-menu>
+  </cds-overflow-menu>`;
 
 /** Rows keyed by `key`, so a row (and focus in it) moves with its item when the list changes. */
 const rows = (items, render, key) => repeat(items, key, render);
 
-/** A titled list whose heading pins while its rows scroll. */
+const listLabel = (title, count, hint) => html`<span class="list-label" slot="label">${title}<cds-tag size="sm" type="gray">${count}</cds-tag>${hint ? html`<span class="list-label__hint">${hint}</span>` : nothing}</span>`;
+
+/** A titled Carbon contained list; its heading pins while its rows scroll. */
 export function listSection(id, title, items, render, key, hint = "") {
   if (!items.length) return nothing;
-  return html`<div class="section"><h3 class="group">${title} <span>${items.length}</span>${hint ? html`<small>${hint}</small>` : nothing}</h3><ul class="items items--${id}">${rows(items, render, key)}</ul></div>`;
+  return html`<cds-contained-list class="section items--${id}" kind="on-page" size="lg">${listLabel(title, items.length, hint)}${rows(items, render, key)}</cds-contained-list>`;
 }
 
 /** Folded groups the user opened, kept open when a tab switch rebuilds the list. */
 export const openFolds = new Set();
 
-/** Like listSection, but folded until opened: for what can wait, such as stale items and dependency bumps. */
+/** Like listSection, but folded in a Carbon accordion until opened: for what can wait, such as stale items and dependency bumps. */
 export function foldSection(id, title, items, render, key, hint = "") {
   if (!items.length) return nothing;
-  return html`<details class="section section--fold" data-fold=${id} ?open=${openFolds.has(id)}><summary class="group">${title} <span>${items.length}</span>${hint ? html`<small>${hint}</small>` : nothing}${icon("chevronDown", 14)}</summary><ul class="items items--${id}">${rows(items, render, key)}</ul></details>`;
+  return html`<cds-accordion class="fold" size="lg"><cds-accordion-item data-fold=${id} ?open=${openFolds.has(id)} title="${title} (${items.length})">
+    ${hint ? html`<p class="fold__hint">${hint[0].toUpperCase()}${hint.slice(1)}</p>` : nothing}
+    <cds-contained-list class="items--${id}" size="lg">${rows(items, render, key)}</cds-contained-list>
+  </cds-accordion-item></cds-accordion>`;
 }
 
 /** A plain list of rows, keyed like listSection's. */
-export const itemList = (items, render, key) => html`<ul class="items">${rows(items, render, key)}</ul>`;
+export const itemList = (items, render, key) => html`<cds-contained-list size="lg">${rows(items, render, key)}</cds-contained-list>`;
 
-const SKELETON_ROW = html`<li class="item item--skeleton"><span class="sk sk--icon"></span><div class="item__body"><span class="sk sk--line"></span><span class="sk sk--short"></span></div></li>`;
-export const skeleton = () => html`<ul class="items" aria-hidden="true">${[1, 2, 3, 4, 5].map(() => SKELETON_ROW)}</ul>`;
+export const skeleton = () => html`<div class="skeleton" aria-hidden="true">${[1, 2, 3, 4, 5].map(() => html`<div class="skeleton__row"><cds-skeleton-text heading></cds-skeleton-text><cds-skeleton-text width="60%"></cds-skeleton-text></div>`)}</div>`;
 
-export const emptyState = (iconName, title, text = "") => html`<div class="empty">${iconChip(iconName, "success")}<p class="empty__title">${title}</p>${text ? html`<p class="empty__text">${text}</p>` : nothing}</div>`;
+export const emptyState = (iconName, title, text = "") =>
+  html`<div class="empty">${iconChip(iconName, "success")}<p class="empty__title">${title}</p>${text ? html`<p class="empty__text">${text}</p>` : nothing}</div>`;
 
-/** A switch. `data` is its data-* attribute, as [name, value]. */
+/** A Carbon toggle. `data` is its data-* attribute, as [name, value]. */
 export const toggle = ({ data: [name, value], checked, label, hint = "", disabled = false }) => html`
-  <label class="switch">
-    <input type="checkbox" role="switch" data-setting=${name === "setting" ? value : nothing} data-repo-toggle=${name === "repo" ? value : nothing} .checked=${live(checked)} ?disabled=${disabled}>
-    <span class="switch__track" aria-hidden="true"></span>
-    <span class="switch__text">${label}${hint ? html`<small>${hint}</small>` : nothing}</span>
-  </label>`;
+  <cds-toggle class="setting-toggle" size="sm" label-text=${label} helper-text=${hint || nothing} label-a="On" label-b="Off" data-setting=${name === "setting" ? value : nothing} data-repo-toggle=${name === "repo" ? value : nothing} .toggled=${checked} ?disabled=${disabled}></cds-toggle>`;
 
 /** "45m", "1h", "1h 20m". */
 export const duration = (mins) => (mins >= 60 ? `${Math.floor(mins / 60)}h${mins % 60 ? ` ${mins % 60}m` : ""}` : `${mins}m`);
@@ -211,15 +239,17 @@ export function findItem(id) {
 
 // ---------- feedback ----------
 
-/** A short message at the bottom. `action` ({ label, run }) adds a button, such as Undo. Returns the element. */
+const KINDS = { neutral: "info", success: "success", error: "error", warning: "warning" };
+
+/** A Carbon toast at the bottom. `action` ({ label, run }) makes it actionable, such as Undo. Returns the element. */
 export function toast(text, tone = "neutral", action = null) {
-  const el = document.createElement("div");
-  el.className = `toast toast--${tone}`;
-  el.setAttribute("role", tone === "error" ? "alert" : "status");
-  el.textContent = text;
+  const el = document.createElement(action ? "cds-actionable-notification" : "cds-toast-notification");
+  // An actionable toast would take focus from whatever the user is doing.
+  Object.assign(el, { kind: KINDS[tone] || "info", title: text, statusIconDescription: tone, hasFocus: false });
+  el.addEventListener("cds-notification-closed", () => el.remove());
   if (action) {
-    const btn = document.createElement("button");
-    btn.className = "toast__action";
+    const btn = document.createElement("cds-actionable-notification-button");
+    btn.slot = "action";
     btn.textContent = action.label;
     btn.onclick = () => {
       el.remove();

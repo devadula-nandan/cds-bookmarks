@@ -1,0 +1,29 @@
+{
+  "name": "dev-dashboard-carbon",
+  "private": true,
+  "description": "Builds src/vendor/carbon/ (Carbon web components, lit, icons, styles and IBM Plex). Run sh build.sh.",
+  "dependencies": {
+    "@carbon/web-components": "3.0.0-alpha.3",
+    "@carbon/styles": "2.0.0-alpha.3",
+    "@carbon/icons": "12.0.0-alpha.1",
+    "@carbon/icon-helpers": "10.47.0",
+    "lit": "3.3.3",
+    "@ibm/plex-sans": "1.1.0",
+    "@ibm/plex-mono": "1.1.0",
+    "esbuild": "0.24.2",
+    "sass": "1.105.1"
+  },
+  "overrides": {
+    "@carbon/styles": "2.0.0-alpha.3",
+    "@carbon/icons": "12.0.0-alpha.1",
+    "lit": "3.3.3",
+    "@carbon/themes": "12.0.0-alpha.3",
+    "@carbon/colors": "12.0.0-alpha.1",
+    "@carbon/grid": "12.0.0-alpha.2",
+    "@carbon/layout": "12.0.0-alpha.2",
+    "@carbon/motion": "12.0.0-alpha.2",
+    "@carbon/type": "12.0.0-alpha.2",
+    "@carbon/feature-flags": "2.0.0-alpha.1",
+    "tslib": "2.8.1"
+  }
+}

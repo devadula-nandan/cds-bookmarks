@@ -1,0 +1,37 @@
+// The page's Carbon foundations (src/vendor/carbon/carbon.css): the reset, IBM Plex, the type classes, the grid's
+// tokens (gutters and margins for cds-grid), the White and Gray 100 themes as zones (theme.js puts one on <html>;
+// a zone carries the component tokens the web components read) and the layer tokens. Everything on the page is
+// a Carbon web component; this is what they and the page's layout stand on.
+
+@use '@carbon/styles/scss/config' with (
+  $css--font-face: false,
+  $css--default-type: true,
+  $css--reset: true
+);
+@use '@carbon/styles/scss/reset';
+@use '@carbon/styles/scss/zone';
+@use '@carbon/styles/scss/layer';
+@use '@carbon/styles/scss/type';
+@use '@carbon/styles/scss/grid';
+
+@include type.type-classes();
+
+// IBM Plex, from @ibm/plex-sans and @ibm/plex-mono (copied next to this file by build.sh).
+$faces: (
+  ('IBM Plex Sans', 'IBMPlexSans-Light', 300, normal),
+  ('IBM Plex Sans', 'IBMPlexSans-Regular', 400, normal),
+  ('IBM Plex Sans', 'IBMPlexSans-Italic', 400, italic),
+  ('IBM Plex Sans', 'IBMPlexSans-SemiBold', 600, normal),
+  ('IBM Plex Mono', 'IBMPlexMono-Regular', 400, normal),
+  ('IBM Plex Mono', 'IBMPlexMono-SemiBold', 600, normal)
+);
+
+@each $family, $file, $weight, $style in $faces {
+  @font-face {
+    font-family: $family;
+    font-style: $style;
+    font-weight: $weight;
+    font-display: swap;
+    src: url('fonts/#{$file}.woff2') format('woff2');
+  }
+}

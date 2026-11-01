@@ -99,13 +99,13 @@ Choose which events notify you in **Settings → Notifications**; everything is 
 
 ## Code
 
-Plain ES modules with no build step and no dependencies. Edit a file, then reload the extension.
+Plain ES modules with no build step: edit a file, then reload the extension. The page is built from [Carbon](https://carbondesignsystem.com) web components (the v12 alpha, `@carbon/web-components` 3.0.0-alpha.3), prebuilt into `src/vendor/carbon/`; only rebuilding that bundle needs Node.
 
 ```
 manifest.json     the extension: new tab page, background worker, permissions
 background.js     background worker: sync timer, notifications, toolbar badge, bug hunts
 index.html        the new tab page
-style.css         its styles, light and dark
+style.css         layout and spacing around the Carbon components
 bookmarks.json    the repos and their links
 src/              shared by the worker and the page
   core.js         helpers, storage, settings, per-day to-dos and snoozes
@@ -117,9 +117,9 @@ src/              shared by the worker and the page
   hunt.js         the daily bug hunt
 src/page/         the new tab page only
   main.js         entry point: loads state, wires events and shortcuts, re-renders on storage changes
-  ui.js           page state and shared view helpers (rows, lists, switches)
-  lit.js          the lit-html pieces the views use
-  header.js       greeting, tool buttons, repo bar, Activity drawer
+  ui.js           page state and shared view helpers (rows, lists, toggles, tooltips, toasts)
+  lit.js          the lit-html pieces the views use (from the Carbon bundle)
+  header.js       the UI shell header and its actions, greeting, repo menus, Activity panel
   work.js         the work tabs, row fixes (ready to merge, re-run, remove me, close), snoozing, unfollowing
   today.js        meetings, bug of the day (and its verdicts), to-dos
   bob.js          the Bob sheet and every Bob button
@@ -127,17 +127,18 @@ src/page/         the new tab page only
   search.js       the search box
   settings.js     the Settings sheet
   repo-editor.js  the repo editor
-  markdown.js     renders Bob's answers (marked, DOMPurify and Prism, with the dashboard's code blocks and diffs)
-  icons.js        line icons
-  tooltip.js      the page's one tooltip, for every [data-tooltip]
-  theme.js        applies a forced light or dark theme before the page paints
-src/vendor/       third-party code, copied as published: lit-html 3.3.3, marked 18.1.1, DOMPurify 3.4.17,
-                  Prism 1.30.0 (with the languages Bob uses), uFuzzy 1.0.19 (search), jsonrepair 3.15.0
+  markdown.js     renders Bob's answers as Carbon components (marked, DOMPurify and Prism, with diffs tinted)
+  icons.js        Carbon icons by the dashboard's names for them
+  theme.js        puts Carbon's White or Gray 100 theme on the page before it paints
+src/vendor/       third-party code: carbon/ (built by scripts/carbon), and, copied as published, marked 18.1.1,
+                  DOMPurify 3.4.17, Prism 1.30.0 (with the languages Bob uses), uFuzzy 1.0.19 (search), jsonrepair 3.15.0
 ai-helper/        the native messaging host that runs Bob Shell, and its installer
 scripts/package.sh  builds dist/dev-dashboard.zip
+scripts/carbon/   builds src/vendor/carbon/: the Carbon web components, lit-html, icons, Carbon's foundation CSS
+                  and IBM Plex, from pinned versions (sh scripts/carbon/build.sh)
 ```
 
-Data flows one way: the background worker syncs GitHub into `chrome.storage.local`; the page loads storage into `state` and re-renders whenever it changes. Views are lit-html templates, so a re-render only touches what changed (focus, typed text, scroll and open sections stay put) and every value is escaped. Anything a view shows lives in `state` or its module, never in the DOM alone: change the state, then render. Clicks are routed by `data-action` attributes to the `…Actions` object of the part that owns them.
+Data flows one way: the background worker syncs GitHub into `chrome.storage.local`; the page loads storage into `state` and re-renders whenever it changes. Views are lit-html templates of Carbon components, so a re-render only touches what changed (focus, typed text, scroll and open sections stay put) and every value is escaped. Anything a view shows lives in `state` or its module, never in the DOM alone: change the state, then render. Clicks are routed by `data-action` attributes to the `…Actions` object of the part that owns them; Carbon's own events (a toggle or checkbox changing, a tab or menu item chosen, a modal closing) are handled by the part that renders the component.
 
 ## Releasing
 

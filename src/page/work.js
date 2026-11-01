@@ -9,7 +9,7 @@ import { requestSync, syncNotice, tokenNotice } from "./header.js";
 import { icon } from "./icons.js";
 import { html, nothing, render } from "./lit.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, foldSection, issueItems, itemList, listSection, openFolds, ref, repoScope, row, saveView, searchUrl, skeleton, state, toast, view, visibleTasks } from "./ui.js";
+import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, foldSection, issueItems, itemList, listSection, openFolds, ref, repoScope, row, saveView, searchUrl, skeleton, state, tip, toast, view, visibleTasks } from "./ui.js";
 
 // ---------- rows ----------
 
@@ -31,7 +31,7 @@ const TASK_LOOK = {
 
 /** The failing checks, linked to their logs: "avt and test", or "avt, test and 3 more". */
 function checkLinks(checks) {
-  const link = (c) => (c.url ? html`<a class="item__link" href=${c.url} data-tooltip="Open the ${c.name} log">${c.name}</a>` : c.name);
+  const link = (c) => (c.url ? html`<cds-link class="item__link" size="sm" inline href=${c.url}>${c.name}</cds-link>` : c.name);
   if (checks.length > 2) return html`${link(checks[0])}, ${link(checks[1])} and ${checks.length - 2} more`;
   return checks.length === 2 ? html`${link(checks[0])} and ${link(checks[1])}` : checks.map(link);
 }
@@ -139,7 +139,7 @@ function reviewRow(pr) {
   const days = ageDays(askedAt(pr));
   const stale = days >= STALE_DAYS;
   const overdue = !stale && !isBot(pr.author) && days >= state.settings.staleReviewDays;
-  const size = pr.additions != null ? html` · <span data-tooltip="${plural(pr.files || 0, "file")} changed">${reviewSize(pr)} <span class="mono"><span class="t-add">+${pr.additions}</span> <span class="t-del">−${pr.deletions}</span></span></span>` : nothing;
+  const size = pr.additions != null ? html` · ${tip(`${plural(pr.files || 0, "file")} changed`, html`${reviewSize(pr)} <span class="mono"><span class="t-add">+${pr.additions}</span> <span class="t-del">−${pr.deletions}</span></span>`)}` : nothing;
   const age = stale ? ` · requested ${ageText(days)} ago` : overdue ? html` · ${warn(`waiting ${Math.floor(days)}d`)}` : nothing;
   return row({
     key: pr.id,
@@ -230,17 +230,17 @@ function forYouTab() {
     ? html`${listSection("now", "Now", groups.now, taskRow, byKey)}${listSection("next", "Next", groups.next, taskRow, byKey)}${listSection("later", onlyLater ? "When you have time" : "Later", groups.later, taskRow, byKey, onlyLater ? "" : "Can wait")}${folded}`
     : html`${emptyState("check", "You're all caught up", "Nothing needs you right now.")}${folded}`;
   const snoozed = all.length - tasks.length;
-  const foot = snoozed ? html`<span>${plural(snoozed, "item")} snoozed</span><button class="btn btn--ghost btn--sm" data-action="unsnooze">Restore</button>` : null;
+  const foot = snoozed ? html`<span>${plural(snoozed, "item")} snoozed</span><cds-button kind="ghost" size="sm" data-action="unsnooze">Restore</cds-button>` : null;
   return { body, foot };
 }
 
 function issuesTab(d, login) {
   const triage = `is:issue is:open label:"status: needs triage 🕵️‍♀️" ${repoScope()}`;
-  const bob = aiOn() && d.triage.items.length ? html`<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-triage">${icon("sparkle", 14)}Triage with Bob</button>` : nothing;
+  const bob = aiOn() && d.triage.items.length ? html`<cds-button kind="ghost" size="sm" class="bob-btn" data-action="bob-triage">Triage with Bob${icon("sparkle", 16, { slot: "icon" })}</cds-button>` : nothing;
   const items = issueItems(d);
   return {
     body: items.length ? itemList(items, issueRow, ({ item }) => item.id) : emptyState("check", "Nothing assigned and no new mentions"),
-    foot: html`<span class="work__foot-group"><a class="link" href=${searchUrl(triage)}>${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a>${bob}</span><a class="link" href=${searchUrl(`is:open assignee:${login} ${repoScope()}`)}>Open on GitHub</a>`,
+    foot: html`<span class="work__foot-group"><cds-link inline href=${searchUrl(triage)}>${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</cds-link>${bob}</span><cds-link inline href=${searchUrl(`is:open assignee:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
   };
 }
 
@@ -264,14 +264,14 @@ function pullRequestsTab(d, login) {
       requested.length || mine.length || reviewed.length
         ? html`${listSection("requested", "Review requested", requested, reviewRow, byId)}${listSection("mine", "Yours", mine, myPrRow, byId)}${listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, byId, "still open")}`
         : emptyState("check", "No open pull requests"),
-    foot: html`${weekLine(d)}<a class="link" href=${searchUrl(`is:pr is:open involves:${login} ${repoScope()}`)}>Open on GitHub</a>`,
+    foot: html`${weekLine(d)}<cds-link inline href=${searchUrl(`is:pr is:open involves:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
   };
 }
 
 /** "This week: 3 merged · 7 reviewed · first reviews in ~1.5d". */
 function weekLine(d) {
   const w = weekStats(d);
-  const wait = w.firstReviewHours != null ? html` · <span data-tooltip="Median time from ready for review to the first review, on your PRs merged this week">first reviews in ~${hours(w.firstReviewHours)}</span>` : nothing;
+  const wait = w.firstReviewHours != null ? html` · ${tip("Median time from ready for review to the first review, on your PRs merged this week", `first reviews in ~${hours(w.firstReviewHours)}`)}` : nothing;
   return html`<span>This week: ${w.merged} merged · ${plural(w.reviewed, "PR")} reviewed${wait}</span>`;
 }
 
@@ -282,7 +282,7 @@ function followingTab(d, login) {
     body: items.length
       ? html`${listSection("replies", "New replies", fresh, followingRow, byId)}${listSection("following", fresh.length ? "Following" : "All threads", items.filter((i) => !i.follow.newReply), followingRow, byId)}`
       : emptyState("eyes", "Not following anything yet", "Issues and PRs you comment on or react to with 👀 show up here."),
-    foot: html`<span>👀 threads are picked up when they next get activity</span><a class="link" href=${searchUrl(`is:open commenter:${login} ${repoScope()}`)}>Open on GitHub</a>`,
+    foot: html`<span>👀 threads are picked up when they next get activity</span><cds-link inline href=${searchUrl(`is:open commenter:${login} ${repoScope()}`)}>Open on GitHub</cds-link>`,
   };
 }
 
@@ -295,18 +295,18 @@ const TABS = [
 
 const CONNECT = html`
   <div class="connect">
-    <span class="connect__mark">${icon("github", 28)}</span>
-    <h2>Connect GitHub</h2>
+    <span class="connect__mark">${icon("github", 32)}</span>
+    <h2 class="connect__title">Connect GitHub</h2>
     <p class="connect__lead">See review requests, your PRs, CI status, mentions and main-branch health for your Carbon repos — on every new tab.</p>
-    <ol class="connect__steps">
-      <li>Create a <a href=${CLASSIC_TOKEN_URL}>classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.</li>
-      <li>Paste it below. Your username is detected automatically.</li>
-    </ol>
+    <cds-ordered-list class="connect__steps">
+      <cds-list-item>Create a <cds-link inline href=${CLASSIC_TOKEN_URL}>classic token</cds-link> with <cds-code-snippet type="inline">repo</cds-code-snippet>, <cds-code-snippet type="inline">notifications</cds-code-snippet> and <cds-code-snippet type="inline">read:org</cds-code-snippet>.</cds-list-item>
+      <cds-list-item>Paste it below. Your username is detected automatically.</cds-list-item>
+    </cds-ordered-list>
     <form class="connect__form" data-form="connect">
-      <input class="input" type="password" name="token" placeholder="ghp_…" autocomplete="off" aria-label="GitHub token" required>
-      <button class="btn btn--primary" type="submit">Connect</button>
+      <cds-password-input name="token" label="GitHub token" placeholder="ghp_…" autocomplete="off" required></cds-password-input>
+      <cds-button type="submit">Connect</cds-button>
     </form>
-    <p class="connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to api.github.com. <a href=${PRIVACY_URL}>Privacy policy</a></p>
+    <p class="connect__note">By connecting, you let Dev Dashboard read your GitHub pull requests, issues, reviews, comments and notifications with this token. The token and that data stay in this browser and are only sent to api.github.com. <cds-link inline href=${PRIVACY_URL}>Privacy policy</cds-link></p>
   </div>`;
 
 export function renderWork() {
@@ -319,12 +319,12 @@ export function renderWork() {
   const login = state.settings.login || "@me";
   const { body, foot } = d ? tab.render(d, login) : { body: state.status.error ? nothing : skeleton(), foot: null };
   render(
-    html`<div class="tabs" role="tablist" aria-label="Work">
+    html`<cds-tabs class="work__tabs" value=${tab.id} aria-label="Work">
         ${TABS.map((t) => {
           const count = d && t.count?.(d);
-          return html`<button class="tab" role="tab" id="tab-${t.id}" data-tab=${t.id} aria-selected=${t === tab} tabindex=${t === tab ? 0 : -1}>${t.label}${count != null ? html`<span class="tab__count">${count}</span>` : nothing}</button>`;
+          return html`<cds-tab id="tab-${t.id}" value=${t.id}>${t.label}${count != null ? html`<cds-tag class="tab__count" size="sm" type="gray">${count}</cds-tag>` : nothing}</cds-tab>`;
         })}
-      </div>
+      </cds-tabs>
       <div class="work__panel" role="tabpanel" aria-labelledby="tab-${tab.id}">${syncNotice()}${tokenNotice()}${body}</div>
       ${foot ? html`<footer class="work__foot">${foot}</footer>` : nothing}`,
     el
@@ -381,13 +381,10 @@ export async function unsnooze(key) {
   await storage.set({ snoozedUntilChange: state.untilChange });
 }
 
-// The snooze button whose menu is open: the menu is anchored to it.
-let snoozeButton = null;
-
-/** While a row's snooze menu is open, its buttons stay visible (the menu is anchored to one of them). Folded groups remember being open. */
+/** Carbon's tabs switch the view; folded groups remember being open. */
 export function bindWork() {
-  $("#snooze-menu").addEventListener("toggle", (e) => snoozeButton?.closest(".item")?.classList.toggle("is-active", e.newState === "open"));
-  $("#work").addEventListener("toggle", (e) => e.target.dataset?.fold && (e.target.open ? openFolds.add(e.target.dataset.fold) : openFolds.delete(e.target.dataset.fold)), true);
+  $("#work").addEventListener("cds-tabs-selected", (e) => e.detail.item.value !== view.tab && selectTab(e.detail.item.value));
+  $("#work").addEventListener("cds-accordion-item-toggled", (e) => e.target.dataset.fold && (e.target.open ? openFolds.add(e.target.dataset.fold) : openFolds.delete(e.target.dataset.fold)));
 }
 
 // ---------- one-click fixes ----------
@@ -456,17 +453,7 @@ const fixActions = {
 
 export const workActions = {
   ...fixActions,
-  // The button opens the menu (popovertarget); pin the menu to it and remember which row it's for.
-  "snooze-menu": (el) => {
-    snoozeButton?.style.removeProperty("anchor-name");
-    snoozeButton = el;
-    el.style.anchorName = "--snooze";
-    $("#snooze-menu").dataset.key = el.dataset.key;
-  },
-  "snooze-for": (el) => {
-    $("#snooze-menu").hidePopover();
-    snooze($("#snooze-menu").dataset.key, el.dataset.until);
-  },
+  "snooze-for": (el) => snooze(el.dataset.key, el.dataset.until),
   unsnooze: () => unsnooze(),
   unfollow: async (el) => {
     state.followHidden = { ...state.followHidden, [el.dataset.id]: new Date().toISOString() };
