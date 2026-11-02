@@ -27,6 +27,8 @@ Or load it unpacked:
 
 The token stays in the extension's storage and is only sent to `api.github.com`. See the [privacy policy](PRIVACY.md).
 
+GitHub Enterprise works too, alongside github.com. Add a repo whose Issues or Pulls link is on your host (say `https://github.ibm.com/org/repo/issues`), then connect a token for that host in **Settings → GitHub**. Chrome asks once for permission to reach the host.
+
 To update an unpacked install, replace the folder's files with a newer release and click the reload icon on the extension's card. Don't remove the extension: that erases your token, settings and to-dos. To track `main` instead, load a clone of this repo and `git pull` to update.
 
 ## Bob
@@ -76,7 +78,7 @@ The repos come from [`bookmarks.json`](bookmarks.json):
 }
 ```
 
-- The GitHub repo is read from a GitHub issues or pulls link, and the sprint board from a link labelled "Board".
+- The GitHub repo is read from a GitHub issues or pulls link, on github.com or any GitHub Enterprise host, and the sprint board from a link labelled "Board".
 - A link can have a `versionedHref` with `<v>` and a default `version`, to open a specific version.
 - `clone` is optional; without it, the repo gets no VS Code link or bug hunts.
 

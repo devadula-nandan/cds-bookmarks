@@ -213,5 +213,33 @@
         }
       ]
     }
+  },
+  {
+    "id": "selfservice-ui",
+    "name": "Self Service UI",
+    "short": "Self Service",
+    "clone": "~/Source/selfservice-ui",
+    "icon": "<svg focusable=\"false\" preserveAspectRatio=\"xMidYMid meet\" fill=\"currentColor\" width=\"48\" height=\"48\" viewBox=\"0 0 32 32\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\">\n      <path d=\"M28 4H4a2 2 0 0 0-2 2v20a2 2 0 0 0 2 2h24a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Zm0 2v4H4V6ZM4 26V12h24v14Z\"></path>\n      <title>Self Service UI</title>\n    </svg>",
+    "github": {
+      "title": "GitHub",
+      "buttons": [
+        {
+          "label": "Issues",
+          "href": "https://github.ibm.com/WCE-SCBN/selfservice-ui/issues"
+        },
+        {
+          "label": "Issues - commented",
+          "href": "https://github.ibm.com/WCE-SCBN/selfservice-ui/issues?q=is%3Aissue%20state%3Aopen%20commenter%3A%40me"
+        },
+        {
+          "label": "Pull Requests - assigned to me",
+          "href": "https://github.ibm.com/WCE-SCBN/selfservice-ui/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me"
+        },
+        {
+          "label": "Pull Requests - opened by me",
+          "href": "https://github.ibm.com/WCE-SCBN/selfservice-ui/pulls/@me"
+        }
+      ]
+    }
   }
 ]

@@ -7,7 +7,7 @@ import { prettyLabel, requestSync } from "./header.js";
 import { icon } from "./icons.js";
 import { openSettings, toggleTheme } from "./settings.js";
 import { openReport, todayActions } from "./today.js";
-import { $, aiOn, connected, data, go, searchUrl, shownRepos, state } from "./ui.js";
+import { $, aiOn, connected, data, go, hosts, repoScope, searchUrl, shownRepos, state } from "./ui.js";
 import { unsnooze } from "./work.js";
 
 const input = () => $("#search-input");
@@ -33,7 +33,7 @@ function workEntries() {
 
 function linkEntries() {
   return shownRepos().flatMap((r) => [
-    ...(r.slug ? [{ group: "Repos", label: r.name, hint: r.slug, iconName: "book", url: `https://github.com/${r.slug}`, terms: `${r.short} ${r.id}` }] : []),
+    ...(r.slug ? [{ group: "Repos", label: r.name, hint: r.slug, iconName: "book", url: r.url, terms: `${r.short} ${r.id}` }] : []),
     ...r.groups.flatMap((g) => g.links.map((l) => ({ group: "Links", label: `${r.short} · ${prettyLabel(l.label)}`, hint: g.title, iconName: "link", url: l.href, terms: `${r.name} ${r.id}` }))),
   ]);
 }
@@ -65,7 +65,7 @@ function jumpEntry(q) {
   const alias = (m[1] || "").toLowerCase();
   const repos = enabledRepos(state.settings);
   const repo = alias ? repos.find((r) => [r.id, r.short, r.name, repoShort(r.slug)].some((n) => n.toLowerCase().replace(/\s+/g, "-").startsWith(alias))) : repos[0];
-  return repo && { group: "Go to", label: `${repoShort(repo.slug)}#${m[2]}`, hint: "Open on GitHub", iconName: "arrowRight", url: `https://github.com/${repo.slug}/issues/${m[2]}` };
+  return repo && { group: "Go to", label: `${repoShort(repo.slug)}#${m[2]}`, hint: "Open on GitHub", iconName: "arrowRight", url: `${repo.url}/issues/${m[2]}` };
 }
 
 const isQuestion = (q) => q.split(/\s+/).length >= 3 && (/\?$/.test(q) || /^(what|how|why|which|where|when|who|can|could|should|is|are|do|does|did|any|summari[sz]e|explain|list|show me|tell me|help)\b/i.test(q));
@@ -103,7 +103,12 @@ function update() {
     ...(jump ? [jump] : []),
     ...matched,
     ...bob,
-    { group: "Search", label: `Search GitHub for “${q}”`, iconName: "github", url: searchUrl(`org:carbon-design-system ${q}`) },
+    ...(hosts().length ? hosts() : ["github.com"]).map((h, _, all) => ({
+      group: "Search",
+      label: `Search ${all.length > 1 ? h : "GitHub"} for “${q}”`,
+      iconName: "github",
+      url: searchUrl(`${h === "github.com" ? "org:carbon-design-system" : repoScope(h)} ${q}`, h),
+    })),
     { group: "Search", label: `Search the web for “${q}”`, iconName: "globe", web: q },
   ].sort((a, b) => ORDER[a.group] - ORDER[b.group]);
   // A question goes to Bob on Enter; anything else lands on the best match.

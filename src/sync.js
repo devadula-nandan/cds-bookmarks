@@ -1,10 +1,10 @@
 // Syncing runs in the background worker: fetch GitHub, compare with the last sync, log what changed
 // to Activity and raise a desktop notification for the changes the user asked to hear about.
 
-import { fmtTime, itemRef as ref, loadSettings, parseTime, repoShort, saveSettings, storage, todayKey, uid } from "./core.js";
+import { connectedHosts, fmtTime, itemRef as ref, loadSettings, parseTime, repoShort, saveSettings, storage, todayKey, uid } from "./core.js";
 import { fetchDashboard, fetchInbox, fetchViewer } from "./github.js";
 import { hasConflict } from "./insights.js";
-import { enabledRepos } from "./repos.js";
+import { enabledRepos, repoHosts } from "./repos.js";
 
 /** Every kind of activity: its icon and tone in the Activity drawer, and the notification setting it obeys. */
 export const EVENT_TYPES = {
@@ -139,40 +139,98 @@ async function setStatus(patch) {
   await storage.set({ status: { ...status, ...patch } });
 }
 
-/** One full sync. Results land in storage (`cache`, `status`, `activity`), where the page picks them up. */
+/** One host's dashboard and inbox. */
+async function syncHost(host, account, settings, watching) {
+  const login = account.login || (await fetchViewer(host, account.token)).login;
+  const repos = enabledRepos(settings).filter((r) => r.host === host);
+  const [data, inbox] = await Promise.all([
+    fetchDashboard({ host, token: account.token, login, repos, includeTeamReviews: settings.includeTeamReviews, watching }),
+    fetchInbox(host, account.token, repos).catch((err) => err),
+  ]);
+  const inboxOk = Array.isArray(inbox) ? inbox : null;
+  const inboxError = inboxOk ? null : [401, 403, 404].includes(inbox.status) ? `This token can't read ${host} notifications.` : inbox.message;
+  return { login, data, inbox: inboxOk, inboxError };
+}
+
+const LISTS = ["reviews", "mine", "assigned", "mentions", "triage", "merged", "reviewed", "reviewedOpen"];
+
+/** Every host's dashboard as one, the shape the page and the badge read. */
+function merge(byHost) {
+  const all = Object.values(byHost);
+  const first = byHost["github.com"] || all[0];
+  return {
+    ...first,
+    ...Object.fromEntries(LISTS.map((k) => [k, { total: all.reduce((n, d) => n + d[k].total, 0), items: all.flatMap((d) => d[k].items) }])),
+    following: all.flatMap((d) => d.following),
+    eyesSeen: all.flatMap((d) => d.eyesSeen),
+    repos: Object.assign({}, ...all.map((d) => d.repos)),
+    warnings: all.flatMap((d) => d.warnings),
+    failed: [...new Set(all.flatMap((d) => d.failed))],
+    sso: all.find((d) => d.sso)?.sso || null,
+  };
+}
+
+/**
+ * One full sync of every connected host that has enabled repos. Results land in storage (`cache`,
+ * `status`, `activity`), where the page picks them up. A host that fails (say, off VPN) keeps its last
+ * data and doesn't hold back the others.
+ */
 export async function sync() {
   const settings = await loadSettings();
-  if (!settings.token) return { skipped: true };
+  const hosts = repoHosts(settings).filter((h) => connectedHosts(settings).includes(h));
+  if (!hosts.length) return { skipped: true };
   const { status = {} } = await storage.get("status");
   if (status.syncing && Date.now() - Date.parse(status.startedAt || 0) < 60000) return { skipped: true };
   await setStatus({ syncing: true, startedAt: new Date().toISOString() });
 
   try {
-    let login = settings.login;
-    if (!login) {
-      ({ login } = await fetchViewer(settings.token));
-      await saveSettings({ login });
-    }
-    const repos = enabledRepos(settings);
-    const { watching = {}, snapshot: prev } = await storage.get(["watching", "snapshot"]);
-    const [data, inbox] = await Promise.all([
-      fetchDashboard({ token: settings.token, login, repos, includeTeamReviews: settings.includeTeamReviews, watching }),
-      fetchInbox(settings.token, repos).catch((err) => err),
-    ]);
-    const inboxOk = Array.isArray(inbox) ? inbox : null;
-    const inboxError = inboxOk ? null : [401, 403, 404].includes(inbox.status) ? "This token can't read GitHub notifications." : inbox.message;
+    const { watching = {}, snapshot: prevAll = {}, cache } = await storage.get(["watching", "snapshot", "cache"]);
+    const results = await Promise.all(hosts.map((h) => syncHost(h, settings.accounts[h], settings, watching).catch((err) => err)));
+    const failures = results.map((r, i) => r instanceof Error && { host: hosts[i], err: r }).filter(Boolean);
+    if (failures.length === hosts.length) throw failures[0].err;
 
-    const next = snapshot(data, inboxOk);
-    // The first sync only records a baseline; after that, differences become activity.
-    const events = prev ? changes({ ...next, ...prev, inbox: prev.inbox || next.inbox }, data, inboxOk) : [];
-    await storage.set({ cache: { data }, snapshot: next, watching: updateWatching(watching, data.eyesSeen) });
-    await setStatus({ syncing: false, at: new Date().toISOString(), error: null, errorSso: null, inboxError });
-    if (data.scopes !== settings.tokenScopes) await saveSettings({ tokenScopes: data.scopes });
+    const byHost = {};
+    const snapshots = {};
+    const events = [];
+    // Re-read: the page may have connected or removed an account while this sync ran.
+    const { accounts } = await loadSettings();
+    let accountsChanged = false;
+    hosts.forEach((host, i) => {
+      const r = results[i];
+      if (r instanceof Error) {
+        if (cache?.byHost?.[host]) byHost[host] = cache.byHost[host];
+        if (prevAll[host]) snapshots[host] = prevAll[host];
+        return;
+      }
+      byHost[host] = r.data;
+      const next = snapshot(r.data, r.inbox);
+      const prev = prevAll[host];
+      // The first sync only records a baseline; after that, differences become activity.
+      if (prev) events.push(...changes({ ...next, ...prev, inbox: prev.inbox || next.inbox }, r.data, r.inbox));
+      snapshots[host] = next;
+      const account = accounts[host];
+      if (account?.token === settings.accounts[host].token && (account.login !== r.login || account.scopes !== r.data.scopes)) {
+        accounts[host] = { ...account, login: r.login, scopes: r.data.scopes };
+        accountsChanged = true;
+      }
+    });
+
+    const data = merge(byHost);
+    await storage.set({ cache: { data, byHost }, snapshot: snapshots, watching: updateWatching(watching, data.eyesSeen) });
+    await setStatus({
+      syncing: false,
+      at: new Date().toISOString(),
+      error: failures.length ? failures.map((f) => f.err.message).join(" ") : null,
+      errorSso: failures.find((f) => f.err.sso)?.err.sso || null,
+      partial: failures.length > 0,
+      inboxError: results.map((r) => !(r instanceof Error) && r.inboxError).filter(Boolean).join(" ") || null,
+    });
+    if (accountsChanged) await saveSettings({ accounts });
     await record(events, await loadSettings());
-    return { ok: true };
+    return { ok: !failures.length };
   } catch (err) {
     console.error("Sync failed", err);
-    await setStatus({ syncing: false, at: new Date().toISOString(), error: err.message, errorSso: err.sso || null });
+    await setStatus({ syncing: false, at: new Date().toISOString(), error: err.message, errorSso: err.sso || null, partial: false });
     return { ok: false, error: err.message };
   }
 }

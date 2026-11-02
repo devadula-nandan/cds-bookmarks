@@ -1,16 +1,15 @@
 // The page's state (a copy of what's in storage) and small helpers shared by every part of the page.
 
 import { MODES, answerKey, modeFor } from "../bob.js";
-import { esc, defaultSettings, timeAgo, todayKey } from "../core.js";
+import { connectedHosts, esc, defaultSettings, timeAgo, todayKey } from "../core.js";
 import { focusQueue, isSnoozed } from "../insights.js";
-import { enabledRepos, repoLabel, repos } from "../repos.js";
+import { enabledRepos, repoHosts, repoLabel, repos } from "../repos.js";
 import { icon } from "./icons.js";
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 export const PRIVACY_URL = "https://github.com/devadula-nandan/cds-bookmarks/blob/main/PRIVACY.md";
-export const CLASSIC_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo,notifications,read:org&description=Dev%20Dashboard";
 
 /** Everything the page shows. main.js loads it from storage and keeps it current as storage changes. */
 export const state = {
@@ -36,15 +35,24 @@ export const saveView = () => localStorage.setItem("devdash-tab", view.tab);
 // ---------- derived state ----------
 
 export const data = () => state.cache?.data || null;
-export const connected = () => !!state.settings.token;
+export const connected = () => connectedHosts(state.settings).length > 0;
 export const aiOn = () => state.settings.ai;
 export const allTasks = () => focusQueue(data(), state.settings);
 export const visibleTasks = () => allTasks().filter((t) => !isSnoozed(t, state.day.snoozed, state.untilChange));
 export const activityList = () => state.activity.filter((a) => !state.clearedAt || a.createdAt > state.clearedAt);
 export const unread = () => activityList().filter((a) => !state.seenAt || a.createdAt > state.seenAt).length;
 export const shownRepos = () => repos.filter((r) => !state.settings.disabledRepos.includes(r.id));
-export const repoScope = () => enabledRepos(state.settings).map((r) => `repo:${r.slug}`).join(" ");
-export const searchUrl = (q) => `https://github.com/search?type=issues&q=${encodeURIComponent(q)}`;
+/** The GitHub hosts the enabled repos are on, github.com first. */
+export const hosts = () => repoHosts(state.settings);
+export const repoScope = (host = hosts()[0]) => enabledRepos(state.settings).filter((r) => r.host === host).map((r) => `repo:${r.slug}`).join(" ");
+export const searchUrl = (q, host = hosts()[0] || "github.com") => `https://${host}/search?type=issues&q=${encodeURIComponent(q)}`;
+
+/** "Open on GitHub" links, one per host: `query(login, host)` builds each host's search. */
+export const searchLinks = (query, label = "Open on GitHub") => {
+  const all = hosts();
+  const links = all.map((h) => `<a class="link" href="${esc(searchUrl(query(state.settings.accounts[h]?.login || "@me", h), h))}">${all.length > 1 ? `Open on ${esc(h)}` : label}</a>`);
+  return links.length > 1 ? `<span class="work__foot-group">${links.join("")}</span>` : links.join("");
+};
 
 /** Assigned issues and mentions that aren't already under Pull requests. */
 export function issueItems(d) {

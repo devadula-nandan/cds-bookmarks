@@ -2,8 +2,9 @@
 // runs Bob Shell on this computer. Prompts are plain questions plus links: Bob looks things up itself
 // with gh, the web and the local clone. Nothing is sent until the user clicks a Bob action.
 
-import { ageDays, fmtTime, itemRef, parseTime, previousWorkday, storage, todayKey, uid } from "./core.js";
+import { ageDays, fmtTime, itemRef, logins, parseTime, previousWorkday, storage, todayKey, uid } from "./core.js";
 import { prState } from "./insights.js";
+import { repoName } from "./repos.js";
 
 export class BobError extends Error {
   constructor(message, code = "failed", log = null) {
@@ -68,7 +69,7 @@ export async function askBob(prompt, settings, { signal, workspace } = {}) {
 export const gitInfo = (path) => call({ type: "git-info", path });
 
 /** Fetches the latest main of `slug` into the bug hunter's own worktree of the clone at `path`. */
-export const huntCheckout = (path, slug) => call({ type: "hunt-checkout", path, slug });
+export const huntCheckout = (path, slug, host) => call({ type: "hunt-checkout", path, slug, host });
 
 // ---------- saved answers ----------
 // Opening answers are kept, so asking again (or reopening) is instant. The page marks rows that have one.
@@ -135,8 +136,8 @@ export function itemPrompt({ item, kind, task }) {
   return `${MODES[mode].ask}\n${link}\n\n${HOW}`;
 }
 
-const me = (settings) => `I'm ${settings.login || "a developer"} on GitHub, working on IBM's Carbon Design System`;
-const repoList = (repos) => repos.map((r) => r.slug).join(", ");
+const me = (settings) => `I'm ${logins(settings) || "a developer"} on GitHub, working on IBM's Carbon Design System`;
+const repoList = (repos) => repos.map(repoName).join(", ");
 const now = () => new Date().toLocaleString(undefined, { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export const askPrompt = (question, settings, repos) => `${question}\n\n${me(settings)} (repos: ${repoList(repos)}). It's ${now()}.\n${HOW}`;
@@ -203,7 +204,7 @@ ${thread}`;
 }
 
 export function findPrompt(request, settings, repos) {
-  return `Turn this request into a single GitHub issues/PR search query. Today is ${todayKey()}; my login is ${settings.login || "@me"}; my repos are ${repoList(repos)}.
+  return `Turn this request into a single GitHub issues/PR search query. Today is ${todayKey()}; my login is ${logins(settings) || "@me"}; my repos are ${repoList(repos)}.
 Use qualifiers like repo:, org:, is:pr, is:issue, is:open, author:, assignee:, involves:, review-requested:, label:"…", created:>=YYYY-MM-DD, updated: and sort:updated-desc. With no repo named, scope it with org:carbon-design-system.
 Reply with only the query on one line.
 

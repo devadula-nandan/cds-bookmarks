@@ -1,7 +1,7 @@
 // The background service worker: syncs GitHub every minute or so, raises desktop notifications,
 // keeps the toolbar badge current, and runs the daily bug hunt.
 
-import { loadDay, normalizeSettings, plural, storage } from "./src/core.js";
+import { connectedHosts, loadDay, normalizeSettings, plural, storage } from "./src/core.js";
 import { hunt, canHunt, maybeHunt } from "./src/hunt.js";
 import { bucket, focusQueue, isSnoozed } from "./src/insights.js";
 import { reloadRepos, reposReady } from "./src/repos.js";
@@ -16,7 +16,7 @@ async function openTab(url) {
 async function updateBadge() {
   const { cache, settings, snoozedUntilChange } = await storage.get(["cache", "settings", "snoozedUntilChange"]);
   const s = normalizeSettings(settings);
-  const data = s.token ? cache?.data : null;
+  const data = connectedHosts(s).length ? cache?.data : null;
   const { snoozed } = await loadDay();
   const now = data ? focusQueue(data, s).filter((t) => bucket(t) === "now" && !isSnoozed(t, snoozed, snoozedUntilChange)) : [];
   await chrome.action.setBadgeText({ text: now.length ? String(now.length) : "" });

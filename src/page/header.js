@@ -2,16 +2,16 @@
 // the Activity drawer, and asking the background worker to sync.
 
 import { planKey } from "../bob.js";
-import { esc, fmtTime, repoShort, timeAgo } from "../core.js";
+import { connectedHosts, esc, fmtTime, repoShort, timeAgo, tokenUrl } from "../core.js";
 import { greeting, summary } from "../insights.js";
 import { EVENT_TYPES } from "../sync.js";
 import { icon } from "./icons.js";
-import { $, CLASSIC_TOKEN_URL, activityList, agoText, aiOn, connected, data, dayLabel, go, iconChip, mainTone, setHtml, shownRepos, state, timeEl, toast, unread, visibleTasks, vscodeUrl } from "./ui.js";
+import { $, activityList, agoText, aiOn, connected, data, dayLabel, go, iconChip, mainTone, setHtml, shownRepos, state, timeEl, toast, unread, visibleTasks, vscodeUrl } from "./ui.js";
 
 export function renderMasthead() {
   const now = new Date();
   const d = data();
-  const name = (d?.viewer?.name || state.settings.login || "").split(" ")[0];
+  const name = (d?.viewer?.name || state.settings.accounts[connectedHosts(state.settings)[0]]?.login || "").split(" ")[0];
   $("#date").textContent = `${now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })} · ${fmtTime(now)}`;
   $("#greeting").textContent = `${greeting(now)}${name ? `, ${name}` : ""}`;
   $("#summary").textContent = !connected()
@@ -32,7 +32,7 @@ export function renderTools() {
   const count = unread();
   let status = "";
   if (connected() && st.syncing) status = `<span class="sync">Syncing…</span>`;
-  else if (connected() && st.error) status = `<button class="sync sync--error" popovertarget="sync-error" style="anchor-name: --sync" data-tooltip="See what went wrong">${icon("alert", 14)}Sync failed</button>`;
+  else if (connected() && st.error) status = `<button class="sync sync--error" popovertarget="sync-error" style="anchor-name: --sync" data-tooltip="See what went wrong">${icon("alert", 14)}${st.partial ? "Partly synced" : "Sync failed"}</button>`;
   else if (connected() && st.at) status = `<span class="sync" data-tooltip="Last synced ${esc(new Date(st.at).toLocaleString())}">Updated <span data-ago="${esc(st.at)}">${agoText(st.at)}</span></span>`;
 
   $("#search-input").placeholder = aiOn() ? "Search your PRs, issues and links, or ask Bob" : "Search your PRs, issues and links";
@@ -54,17 +54,19 @@ export function syncNotice(failed = false) {
   if (!connected() || !messages.length) return "";
   const text = messages.join(" ");
   const sso = errorSso || d?.sso;
+  // The host the message names (every error from github.js does), else github.com.
+  const host = connectedHosts(state.settings).find((h) => text.includes(h)) || "github.com";
   const tips = [
-    (sso || /SAML|SSO/i.test(text)) && `The organization requires SSO. On <a href="https://github.com/settings/tokens">your tokens page</a>, choose <b>Configure SSO</b> next to this token and authorize <b>carbon-design-system</b>.`,
-    (/personal access token|fine-grained|not accessible/i.test(text) || state.settings.tokenScopes === null) && `Fine-grained tokens can be blocked by org policy. A <a href="${CLASSIC_TOKEN_URL}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code> is most reliable.`,
-    /401|rejected/i.test(text) && `Create a new <a href="${CLASSIC_TOKEN_URL}">classic token</a> on github.com and paste it in Settings.`,
-    /reach api\.github\.com/i.test(text) && "On a corporate network or VPN, a proxy may be blocking api.github.com.",
+    (sso || /SAML|SSO/i.test(text)) && `The organization requires SSO. On <a href="https://${esc(host)}/settings/tokens">your tokens page</a>, choose <b>Configure SSO</b> next to this token and authorize <b>carbon-design-system</b>.`,
+    (/personal access token|fine-grained|not accessible/i.test(text) || state.settings.accounts[host]?.scopes === null) && `Fine-grained tokens can be blocked by org policy. A <a href="${esc(tokenUrl(host))}">classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code> is most reliable.`,
+    /401|rejected/i.test(text) && `Create a new <a href="${esc(tokenUrl(host))}">classic token</a> on ${esc(host)} and paste it in Settings.`,
+    /Couldn't reach/i.test(text) && `On a corporate network or VPN, a proxy may be blocking ${esc(host)}${host === "github.com" ? "" : ", or you may need to be on the VPN"}.`,
   ].filter(Boolean);
   return `
     <div class="notice notice--${failed ? "error" : "warning"}">
       ${icon("alert", 16)}
       <div class="notice__body">
-        <p class="notice__title">${failed ? "Couldn't sync with GitHub" : `Some data couldn't load${d?.failed?.length ? ` (${esc(d.failed.join(", "))})` : ""}`}</p>
+        <p class="notice__title">${failed ? (state.status.partial ? "Couldn't sync some of your GitHub hosts" : "Couldn't sync with GitHub") : `Some data couldn't load${d?.failed?.length ? ` (${esc(d.failed.join(", "))})` : ""}`}</p>
         <p class="notice__text">${esc(messages.slice(0, 2).join(" · "))}</p>
         ${tips.length ? `<ul class="notice__hints">${tips.map((t) => `<li>${t}</li>`).join("")}</ul>` : ""}
         <div class="notice__actions">
@@ -102,7 +104,7 @@ function repoMenu(repo) {
       <span class="menu__logo">${repo.logo}</span>
       <div>
         <p class="menu__title">${esc(repo.name)}</p>
-        ${repo.slug ? `<a class="menu__slug mono" href="https://github.com/${esc(repo.slug)}">${esc(repoShort(repo.slug))}</a>` : ""}
+        ${repo.slug ? `<a class="menu__slug mono" href="${esc(repo.url)}">${esc(repoShort(repo.slug))}</a>` : ""}
       </div>
     </header>
     ${main ? `<a class="menu__status" href="${esc(main.url)}" data-tooltip="${esc(main.message || "")}"><span class="dot dot--${tone || "neutral"}"></span><span><b>${esc(main.branch)}</b> ${{ error: "failing", warning: "running", success: "passing" }[tone] || "status unknown"}</span><span class="menu__status-meta mono">${esc(main.sha)} · ${timeAgo(main.committedAt)}</span></a>` : ""}

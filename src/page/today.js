@@ -4,6 +4,7 @@ import { askBob, issueFormPrompt, todaysAnswer } from "../bob.js";
 import { esc, fmtTime, parseTime, plural, repoShort, storage, todayKey, uid, updateDay } from "../core.js";
 import { huntableRepos, isHunting } from "../hunt.js";
 import { standup } from "../insights.js";
+import { repoBySlug } from "../repos.js";
 import { todaysMeetings } from "../sync.js";
 import { openBob } from "./bob.js";
 import { icon } from "./icons.js";
@@ -137,7 +138,7 @@ function issueUrl(report) {
   const full = `${where}\n\n${report.markdown.replace(/^##[^\n]*\n+/, "")}`;
   // carbon-charts' form calls the field "what-happened"; the other Carbon repos call it "description".
   const field = report.repo.endsWith("/carbon-charts") ? "what-happened" : "description";
-  const url = (text) => `https://github.com/${report.repo}/issues/new?${new URLSearchParams({ ...report.issue, template: "BUG_REPORT.yaml", title: `[Bug]: ${report.title}`, [field]: text })}`;
+  const url = (text) => `${repoBySlug(report.repo)?.url || `https://github.com/${report.repo}`}/issues/new?${new URLSearchParams({ ...report.issue, template: "BUG_REPORT.yaml", title: `[Bug]: ${report.title}`, [field]: text })}`;
   let body = full;
   while (url(body).length > 7000) body = `${full.slice(0, Math.floor(body.length * 0.85))}\n\n…`;
   return url(body);
