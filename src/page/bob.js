@@ -59,6 +59,8 @@ let timer = 0;
  *   format                      "edit", "reply" or "query": the answer is a draft to edit and revise
  *   input                       ask for text first (the Slack thread); spec.makePrompt(text) builds the prompt
  *   answer, extra, regenerate   a ready-made answer (bug reports), a function for what goes under it, and whether Regenerate shows
+ *   thread                      the follow-ups saved with a ready-made answer, shown after it
+ *   followUp, answered          a follow-up's prompt from (turns so far, question), and a callback once it's answered (to save it)
  *   head                        a function for what goes under the title (a PR's facts)
  *   files, transform            where links to files in the repo go, and a reshaping of the answer (see markdown())
  */
@@ -69,7 +71,7 @@ export async function openBob(spec, { fresh = false } = {}) {
   const s = { id: uid(), spec, prompt: spec.prompt, turns: [], revisions: [], minimised: true };
   sessions.push(s);
   if (spec.answer && !fresh) {
-    s.turns.push({ role: "bob", ...spec.answer });
+    s.turns.push({ role: "bob", ...spec.answer }, ...(spec.thread || []));
     return show(s);
   }
   if (spec.input && !spec.text) return show(s);
@@ -122,7 +124,13 @@ async function run(s, question) {
   if (question) s.turns.push({ role: "user", text: question });
   paint(s);
   try {
-    const prompt = !question ? s.prompt : draft ? revisePrompt(s.prompt, draftText(s), question) : followUpPrompt(s.prompt, s.turns.slice(0, -1), question);
+    const prompt = !question
+      ? s.prompt
+      : s.spec.followUp
+        ? s.spec.followUp(s.turns.slice(0, -1), question)
+        : draft
+          ? revisePrompt(s.prompt, draftText(s), question)
+          : followUpPrompt(s.prompt, s.turns.slice(0, -1), question);
     const { text, log } = await askBob(prompt, state.settings, { ...s.spec.opts, signal: controller.signal });
     const at = new Date().toISOString();
     if (draft && question) {
@@ -131,6 +139,7 @@ async function run(s, question) {
       s.revisions.push({ ask: question, text: draft.text, draft: draft.draft });
       Object.assign(draft, { text, log, at, label: "Revised", draft: undefined });
     } else s.turns.push({ role: "bob", text, log, at });
+    if (question) s.spec.answered?.(s.turns);
     if (!question || draft) saveAnswer(s.spec.key, { text: firstAnswer(s).text, log: SHOW_LOGS ? log : undefined });
   } catch (err) {
     if (err.code !== "cancelled") s.error = err;
@@ -419,7 +428,7 @@ function bobTriage() {
     trigger: '[data-action="bob-triage"]',
     fallback: "#tab-issues",
     key: todaysAnswer("triage"),
-    prompt: triagePrompt(state.settings, repoList()),
+    prompt: triagePrompt(state.settings, data().triage.items),
     opts: { workspace: clone },
   });
 }

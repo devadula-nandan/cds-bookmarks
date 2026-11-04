@@ -2,7 +2,7 @@
 
 import { askBob, issueFormPrompt, jsonReply, todaysAnswer, withoutSteps } from "../bob.js";
 import { fmtTime, parseTime, plural, repoShort, storage, todayKey, uid, updateDay } from "../core.js";
-import { huntableRepos, isHunting } from "../hunt.js";
+import { followUpPrompt, followUpReply, huntableRepos, isHunting } from "../hunt.js";
 import { standup } from "../insights.js";
 import { todaysMeetings } from "../sync.js";
 import { openBob, renderBob } from "./bob.js";
@@ -197,6 +197,9 @@ function reportFacts(id) {
           </div>`
         : nothing}
       ${issuePicks(report)}
+      ${report.revisedFor
+        ? html`<p class="bob__revised">${icon("sparkle", 14)}<span data-tooltip=${report.revisedFor}>Version ${(report.versions?.length || 0) + 1}, revised after “${report.revisedFor}”</span><button class="btn btn--ghost btn--sm" data-action="hunt-undo" data-id=${report.id}>Undo</button></p>`
+        : nothing}
     </div>`;
 }
 
@@ -239,18 +242,49 @@ function reportMore(id) {
     </details>`;
 }
 
-/** A hunt report in the Bob sheet. Follow-ups ("draft the fix", "write the issue") run in the same clone. */
+/** The report with this id. Read fresh each time: a storage change replaces the objects in state.bugHunts. */
+const reportById = (id) => state.bugHunts.find((h) => h.id === id);
+
+/** What a revision changes, kept as a version so Undo can go back to it. */
+const VERSIONED = ["markdown", "found", "incomplete", "title", "file", "line", "severity", "effort", "confidence", "related", "revisedFor", "revisedAt"];
+const snapshot = (report) => Object.fromEntries(VERSIONED.map((k) => [k, report[k] ?? null]));
+
+const sheetTitle = (report) => (report.found ? report.title : "Bug hunt: nothing found");
+const sheetSubtitle = (report) => `Bug of the day · ${repoShort(report.repo)}${report.file ? ` · ${report.file.split("/").pop()}${report.line ? `:${report.line}` : ""}` : ""}`;
+
+/**
+ * A hunt report in the Bob sheet. Follow-ups ("draft the fix", "is this really a bug?") run in the same
+ * clone and are saved on the report, so reopening it brings them back. When a follow-up changes what
+ * the report says, Bob rewrites it: the new version replaces the report, and the old one is kept for Undo.
+ */
 export function openReport(report) {
   if (!report) return;
-  const where = report.file ? ` · ${report.file.split("/").pop()}${report.line ? `:${report.line}` : ""}` : "";
-  openBob({
-    title: report.found ? report.title : "Bug hunt: nothing found",
-    subtitle: `Bug of the day · ${repoShort(report.repo)}${where}`,
+  const spec = {
+    title: sheetTitle(report),
+    subtitle: sheetSubtitle(report),
     trigger: `[data-action="hunt-open"][data-id="${CSS.escape(report.id)}"]`,
-    prompt: `You found this bug earlier in a local clone of ${report.repo} at ${report.branch}:\n\n${report.markdown}`,
     // The hunt's own worktree: follow-ups such as "draft the fix" may edit files there.
     opts: { workspace: report.path, edit: true },
-    answer: { text: report.markdown, at: report.at, label: "Reported", log: report.log },
+    answer: { text: report.markdown, at: report.revisedAt || report.at, label: report.revisedFor ? "Revised" : "Reported", log: report.log },
+    thread: report.thread,
+    // The turns after the report itself, which the prompt has as it stands now.
+    followUp: (turns, question) => followUpPrompt(reportById(report.id), turns.slice(1), question),
+    answered: ([first, ...thread]) => {
+      const current = reportById(report.id);
+      if (!current) return; // deleted meanwhile
+      const reply = thread.at(-1);
+      const { answer, revision } = followUpReply(reply.text);
+      reply.text = answer || "I've revised the report.";
+      if (revision) {
+        current.versions = [...(current.versions || []), snapshot(current)];
+        // The issue form was filled in from the old text, so it's filled in again.
+        Object.assign(current, revision, { revisedFor: thread.at(-2).text, revisedAt: reply.at, issue: null });
+        Object.assign(first, { text: current.markdown, at: reply.at, label: "Revised" });
+        Object.assign(spec, { title: sheetTitle(current), subtitle: sheetSubtitle(current) });
+      }
+      current.thread = thread;
+      saveHunts();
+    },
     head: () => reportFacts(report.id),
     transform: reportBody,
     extra: () => reportMore(report.id),
@@ -260,7 +294,8 @@ export function openReport(report) {
       return href ? { href } : null;
     },
     regenerate: false,
-  });
+  };
+  openBob(spec);
 }
 
 async function saveHunts() {
@@ -273,7 +308,7 @@ export const todayActions = {
   "copy-standup": () => copyText(standup(data()), "Standup update copied"),
   "todo-remove": (el) => changeTodo(el.dataset.id, (todos) => todos.filter((t) => t.id !== el.dataset.id)),
   "hunt-run": huntNow,
-  "hunt-open": (el) => openReport(state.bugHunts.find((h) => h.id === el.dataset.id)),
+  "hunt-open": (el) => openReport(reportById(el.dataset.id)),
   // The first time, Bob fills in the form's fields from the repo's template; they're saved on the report.
   // Forms filled by an older version of the prompt (`form` below FORM_VERSION) are filled again.
   "hunt-issue": async (el) => {
@@ -300,6 +335,13 @@ export const todayActions = {
     const report = state.bugHunts.find((h) => h.id === el.dataset.id);
     report.verdict = report.verdict === el.dataset.verdict ? null : el.dataset.verdict;
     return saveHunts();
+  },
+  // Back to the version before the latest revision; the conversation stays. The sheet reopens to show it.
+  "hunt-undo": (el) => {
+    const report = reportById(el.dataset.id);
+    Object.assign(report, report.versions.pop(), { issue: null });
+    saveHunts();
+    openReport(report);
   },
   "hunt-delete": (el) => {
     state.bugHunts = state.bugHunts.filter((h) => h.id !== el.dataset.id);

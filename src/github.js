@@ -107,7 +107,9 @@ const CHECKS = `checks: commits(last: 1) { nodes { commit { statusCheckRollup { 
 /** Whether I may turn on auto-merge, for Ready to merge. Slow (50 PRs take over 10 seconds), so only my own PRs ask. */
 const CAN_AUTO_MERGE = "viewerCanEnableAutoMerge";
 
-const TRIAGE_LABELS = ["status: needs triage 🕵️‍♀️", "status: needs triage :female_detective:"];
+/** Carbon spells it with the emoji's shortcode, other repos with the emoji itself. */
+export const TRIAGE_LABELS = ["status: needs triage 🕵️‍♀️", "status: needs triage :female_detective:"];
+const triageQuery = (scope) => `is:issue is:open label:${TRIAGE_LABELS.map((l) => `"${l}"`).join(",")} ${scope}`;
 
 const search = (name, first, extra = "", prExtra = "") => `
   ${name}: search(type: ISSUE, query: $${name}, first: ${first}) {
@@ -127,15 +129,19 @@ const SEARCHES = {
   commented: [30, FOLLOW_FIELDS],
   eyes: [30, FOLLOW_FIELDS],
   reviewedOpen: [30, "", MY_REVIEW],
+  // The rest are only for the tabs, which follow GitHub's own views.
+  teamReviews: [30, "", READY + REQUESTS],
+  created: [30],
+  mentioning: [30],
 };
 
 /**
- * The dashboard is fetched as four queries side by side. One query for everything took about as long as
+ * The dashboard is fetched as five queries side by side. One query for everything took about as long as
  * GitHub allows (10 seconds) and failed with a 502 when it ran over. Parts are quicker, and if one part
- * fails the rest still show. Review requests (up to 50 PRs with team requests on) and the 👀 scan are the
- * slowest, so each gets a part of its own; each part takes about 3–6 seconds.
+ * fails the rest still show. Review requests (up to 50 PRs with team requests on), team review requests and
+ * the 👀 scan are the slowest, so each gets a part of its own; each part takes about 3–6 seconds.
  */
-const PARTS = [["reviews"], ["mine", "mentions"], ["eyes"], ["assigned", "triage", "merged", "reviewed", "commented", "reviewedOpen"]];
+const PARTS = [["reviews"], ["mine", "mentions"], ["eyes"], ["assigned", "triage", "merged", "reviewed", "commented", "reviewedOpen", "created", "mentioning"], ["teamReviews"]];
 // The lightest part also brings the viewer, repo health and the threads remembered by id.
 const EXTRAS_PART = PARTS[3];
 
@@ -146,6 +152,7 @@ function dashboardQuery(names, repos) {
       return `
       repo${i}: repository(owner: "${owner}", name: "${name}") {
         viewerDefaultMergeMethod
+        readyLabels: labels(first: 5, query: "ready to merge") { nodes { name } }
         releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) { nodes { tagName publishedAt url isPrerelease } }
         defaultBranchRef { name target { ... on Commit { oid committedDate url messageHeadline statusCheckRollup { state ${CONTEXTS} } } } }
       }`;
@@ -245,6 +252,7 @@ function toItem(node, ctx) {
       // When it was marked ready for review (its creation, if it never was a draft): reviews wait from here.
       readyAt: node.readyEvents?.nodes?.[0]?.createdAt || node.createdAt,
       requestedAt: requestedAt(node, login),
+      askedMe: !!node.requests?.nodes?.some((e) => e.requestedReviewer?.login === login),
       reviewDecision: node.reviewDecision,
       mergeable: node.mergeable,
       additions: node.additions,
@@ -289,7 +297,8 @@ function following(commented, eyed, watching) {
     if (!entry.reasons.includes(reason)) entry.reasons.push(reason);
     out.set(item.id, entry);
   };
-  eyed.filter((i) => i.follow?.eyes).forEach((i) => add(i, "eyes"));
+  // Threads I commented on come with their reactions too, so a 👀 on one counts however long it's been quiet.
+  [...eyed, ...commented].filter((i) => i.follow?.eyes).forEach((i) => add(i, "eyes"));
   commented.forEach((i) => add(i, "commented"));
   const now = new Date().toISOString();
   return [...out.values()].map((i) => {
@@ -297,6 +306,39 @@ function following(commented, eyed, watching) {
     const reply = i.follow.lastReply;
     return { ...i, follow: { ...i.follow, newReply: !!reply && (!since || reply.at > since) } };
   });
+}
+
+// ---------- triage on the repos' boards ----------
+
+/** ["carbon-design-system", "39"] from a board link like github.com/orgs/carbon-design-system/projects/39/views/12. */
+const boardOf = (url) => url?.match(/github\.com\/orgs\/([^/]+)\/projects\/(\d+)/)?.slice(1);
+
+const onBoard = (i, body) => `b${i}: organization(login: $org${i}) { projectV2(number: $n${i}) { ${body} } }`;
+
+/**
+ * Open issues in these repos whose Status on the repo's board is a triage one (Carbon's is "🕵️‍♀️ Triage").
+ * A board's filter needs a status's exact name, so the first query reads each board's statuses and the
+ * second asks for the items. Needs the token's `read:project` scope; without it this throws.
+ */
+async function fetchBoardTriage(token, repos, ctx) {
+  const boards = [...new Map(repos.map((r) => boardOf(r.board)).filter(Boolean).map(([org, n]) => [`${org}/${n}`, { org, n: Number(n) }])).values()];
+  if (!boards.length) return [];
+  const vars = (list) => Object.assign({}, ...list.map((b, i) => ({ [`org${i}`]: b.org, [`n${i}`]: b.n })));
+  const params = (list, extra = "") => list.map((_, i) => `$org${i}: String!, $n${i}: Int!${extra && `, $${extra}${i}: String!`}`).join(", ");
+  const statusField = 'field(name: "Status") { ... on ProjectV2SingleSelectField { options { name } } }';
+  const { data } = await graphql(token, `query(${params(boards)}) { ${boards.map((_, i) => onBoard(i, statusField)).join(" ")} }`, vars(boards));
+  const triage = boards
+    .map((b, i) => ({ ...b, statuses: (data[`b${i}`]?.projectV2?.field?.options || []).map((o) => o.name).filter((name) => /triage/i.test(name)) }))
+    .filter((b) => b.statuses.length);
+  if (!triage.length) return [];
+  const items = (i) => `items(first: 100, query: $q${i}) { nodes { content { ... on Issue { ${ISSUE_FIELDS} } } } }`;
+  const queries = Object.fromEntries(triage.map((b, i) => [`q${i}`, `is:issue is:open status:${b.statuses.map((s) => `"${s}"`).join(",")}`]));
+  const res = await graphql(token, `query(${params(triage, "q")}) { ${triage.map((_, i) => onBoard(i, items(i))).join(" ")} }`, { ...vars(triage), ...queries });
+  const slugs = new Set(repos.map((r) => r.slug.toLowerCase()));
+  return triage
+    .flatMap((_, i) => res.data[`b${i}`]?.projectV2?.items?.nodes || [])
+    .map((n) => toItem(n.content, ctx))
+    .filter((i) => i && slugs.has(i.repo.toLowerCase()));
 }
 
 export async function fetchDashboard({ token, login, repos, includeTeamReviews, watching = {} }) {
@@ -307,7 +349,7 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
     mine: `is:pr is:open author:${login} ${scope}`,
     assigned: `is:open assignee:${login} archived:false ${scope}`,
     mentions: `is:open mentions:${login} -author:${login} updated:>=${daysAgo(7)} ${scope}`,
-    triage: `is:issue is:open label:${TRIAGE_LABELS.map((l) => `"${l}"`).join(",")} ${scope}`,
+    triage: triageQuery(scope),
     merged: `is:pr is:merged author:${login} merged:>=${daysAgo(7)} ${scope}`,
     // A week of reviews: the standup takes the ones since the last workday, the Pull requests tab the week.
     reviewed: `is:pr reviewed-by:${login} -author:${login} updated:>=${daysAgo(7)} ${scope}`,
@@ -315,11 +357,20 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
     // There's no "reacted by me" search, so scan what changed lately for the viewer's 👀.
     eyes: `is:open updated:>=${daysAgo(3)} ${scope} sort:updated-desc`,
     reviewedOpen: `is:pr is:open reviewed-by:${login} -author:${login} ${scope}`,
+    // GitHub's own views: the pull requests inbox's "Needs your teams' review", and the issues dashboard's
+    // "Created by me" and "Mentioning me".
+    teamReviews: `is:pr is:open draft:false archived:false team-review-requested-user:${login} ${scope} sort:updated-desc`,
+    created: `is:issue is:open author:${login} archived:false ${scope} sort:updated-desc`,
+    mentioning: `is:issue is:open mentions:${login} archived:false ${scope} sort:updated-desc`,
   };
+  if (!includeTeamReviews) delete queries.teamReviews;
 
+  const ctx = { login, approvals: Object.fromEntries(repos.map((r) => [r.slug, r.approvals])) };
+  // Board statuses are extra: a token without `read:project` still gets the triage label.
+  const boardTriage = fetchBoardTriage(token, repos, ctx).catch(() => []);
   const watched = Object.keys(watching).slice(0, 60);
   const results = await Promise.allSettled(
-    PARTS.map((names) => {
+    PARTS.filter((names) => names.every((n) => queries[n])).map((names) => {
       const vars = Object.fromEntries(names.map((n) => [n, queries[n]]));
       const query = dashboardQuery(names, repos);
       return graphql(token, query, { ...vars, ...(query.includes("$login") && { login }), ...(names === EXTRAS_PART && { watched }) });
@@ -333,7 +384,6 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
   const failed = Object.keys(queries).filter((k) => !data[k]);
   if (failed.length === Object.keys(queries).length) throw new GitHubError(errors[0] || "GitHub returned no data for your searches.", 200, sso);
 
-  const ctx = { login, approvals: Object.fromEntries(repos.map((r) => [r.slug, r.approvals])) };
   const health = {};
   repos.forEach((r, i) => {
     const node = data[`repo${i}`];
@@ -344,6 +394,8 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
     health[r.slug] = {
       release: node.releases?.nodes?.[0] || null,
       mergeMethod: node.viewerDefaultMergeMethod || "SQUASH",
+      // The label Ready to merge adds, if the repo has one (Carbon: "status: ready to merge 🎉").
+      readyLabel: node.readyLabels?.nodes?.find((l) => /ready.to.merge/i.test(l.name))?.name || null,
       main: head && {
         branch: node.defaultBranchRef.name,
         state: ci?.state || head.statusCheckRollup?.state || null,
@@ -356,7 +408,14 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
     };
   });
 
+  // Needs triage: the label, or a triage status on the board. The label search's count covers the first.
+  const labelled = list(data.triage, ctx);
+  const triageLabel = (i) => i.labels.some((l) => TRIAGE_LABELS.includes(l));
+  const fromBoard = (await boardTriage).filter((i, n, all) => !labelled.items.some((l) => l.id === i.id) && all.findIndex((o) => o.id === i.id) === n);
+  const triage = { total: labelled.total + fromBoard.filter((i) => !triageLabel(i)).length, items: [...labelled.items, ...fromBoard] };
+
   const eyed = [...list(data.eyes, ctx).items, ...(data.watched || []).map((n) => toItem(n, ctx)).filter(Boolean)];
+  const commented = list(data.commented, ctx).items;
   return {
     fetchedAt: new Date().toISOString(),
     viewer: data.viewer,
@@ -366,13 +425,16 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
     mine: list(data.mine, ctx),
     assigned: list(data.assigned, ctx),
     mentions: list(data.mentions, ctx),
-    triage: list(data.triage, ctx),
+    triage,
     merged: list(data.merged, ctx),
     reviewed: list(data.reviewed, ctx),
     reviewedOpen: list(data.reviewedOpen, ctx),
-    following: following(list(data.commented, ctx).items, eyed, watching),
+    teamReviews: list(data.teamReviews, ctx),
+    created: list(data.created, ctx),
+    mentioning: list(data.mentioning, ctx),
+    following: following(commented, eyed, watching),
     // Every thread seen this sync, with or without the viewer's 👀, to keep the watch list current.
-    eyesSeen: eyed.map((i) => ({ id: i.id, eyes: !!i.follow?.eyes && !i.follow.closed })),
+    eyesSeen: [...eyed, ...commented].map((i) => ({ id: i.id, eyes: !!i.follow?.eyes && !i.follow.closed })),
     repos: health,
     warnings: errors,
     failed,
@@ -383,7 +445,7 @@ export async function fetchDashboard({ token, login, repos, includeTeamReviews, 
 
 // ---------- the notifications inbox ----------
 
-/** GitHub's own notifications for these repos. Needs a classic token with the `notifications` or `repo` scope. */
+/** GitHub's own unread notifications for these repos. Needs a classic token with the `notifications` or `repo` scope. */
 export async function fetchInbox(token, repos) {
   const slugs = new Set(repos.map((r) => r.slug.toLowerCase()));
   const { json } = await request("/notifications?per_page=50", token);

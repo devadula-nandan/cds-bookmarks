@@ -1,15 +1,14 @@
-// The work panel: the For you / Issues / Pull requests / Following tabs, snoozing, unfollowing, and the
-// one-click fixes on rows (ready to merge, re-run CI, step off a stale review, close a stale PR).
+// The work panel: the For you tab, the Issues and Pull requests tabs (GitHub's own views of them), snoozing, and the one-click fixes on rows (ready to merge, re-run CI, step off a stale review, close a stale PR).
 
 import { ageDays, plural, storage, updateDay } from "../core.js";
-import { addLabels, enableAutoMerge, removeReviewer, requestReviewers, rerunFailedJobs, setPrState } from "../github.js";
+import { TRIAGE_LABELS, addLabels, enableAutoMerge, removeReviewer, requestReviewers, rerunFailedJobs, setPrState } from "../github.js";
 import { STALE_DAYS, ageText, askedAt, bucket, checkHint, isBot, isSnoozed, prState, reviewSize, weekStats } from "../insights.js";
 import { repoBySlug } from "../repos.js";
 import { requestSync, syncNotice, tokenNotice } from "./header.js";
 import { icon } from "./icons.js";
 import { html, nothing, render } from "./lit.js";
 import { renderAll } from "./main.js";
-import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, foldSection, issueItems, itemList, listSection, openFolds, ref, repoScope, row, saveView, searchUrl, skeleton, state, toast, view, visibleTasks } from "./ui.js";
+import { $, $$, CLASSIC_TOKEN_URL, PRIVACY_URL, aiOn, allTasks, bobTargets, connected, data, emptyState, foldSection, listSection, openFolds, ref, row, saveView, skeleton, state, toast, view, visibleTasks } from "./ui.js";
 
 // ---------- rows ----------
 
@@ -47,7 +46,7 @@ function ciMeta(pr) {
 
 /** Ready to merge: adds the repo's ready label and turns on auto-merge, whichever of the two apply. */
 function readyCta(pr) {
-  const label = repoBySlug(pr.repo)?.readyLabel;
+  const label = data().repos?.[pr.repo]?.readyLabel;
   const addsLabel = label && !pr.labels.includes(label);
   const merges = pr.canAutoMerge && !pr.autoMerge;
   if (!addsLabel && !merges) return null;
@@ -135,7 +134,7 @@ function myPrRow(pr) {
   });
 }
 
-function reviewRow(pr) {
+function reviewRow(pr, team = false) {
   const days = ageDays(askedAt(pr));
   const stale = days >= STALE_DAYS;
   const overdue = !stale && !isBot(pr.author) && days >= state.settings.staleReviewDays;
@@ -150,9 +149,12 @@ function reviewRow(pr) {
     meta: html`${ref(pr)} · ${pr.author}${age}${size}`,
     at: askedAt(pr),
     bob: { item: pr, kind: "review" },
-    cta: stale ? unrequestCta(pr) : null,
+    // "Remove me" can't take a request off a team.
+    cta: stale && !team ? unrequestCta(pr) : null,
   });
 }
+
+const teamReviewRow = (pr) => reviewRow(pr, true);
 
 const MY_REVIEW = { APPROVED: "You approved", CHANGES_REQUESTED: "You requested changes", COMMENTED: "You commented", DISMISSED: "Your review was dismissed" };
 
@@ -170,20 +172,43 @@ function reviewedRow(pr) {
   });
 }
 
-function issueRow({ item, why }) {
-  const isPR = item.kind === "pr";
+const ISSUE_LOOK = {
+  assigned: ["issue", "neutral", "Assigned"],
+  mentioning: ["at", "info", "Mentioned"],
+  created: ["issue", "neutral", "Opened by you"],
+};
+
+/** A row for one of the issues dashboard's views. */
+const issueRow = (list) => (item) => {
+  const [iconName, tone, why] = ISSUE_LOOK[list];
   return row({
     key: item.id,
     url: item.url,
     title: item.title,
-    iconName: why === "mention" ? "at" : isPR ? "pr" : "issue",
-    tone: why === "mention" ? "info" : "neutral",
-    meta: html`${ref(item)} · ${why === "mention" ? `Mentioned${isPR ? " on a PR" : ""}` : `Assigned${isPR ? " PR" : ""}`} · ${item.author}`,
+    iconName,
+    tone,
+    meta: html`${ref(item)} · ${why}${list === "created" ? nothing : html` · ${item.author}`}`,
     at: item.updatedAt,
-    bob: { item, kind: why === "mention" ? "mention" : null },
+    bob: { item, kind: list === "mentioning" ? "mention" : null },
+  });
+};
+
+/** An issue waiting for triage: labelled for it, or in a triage status on the repo's board. */
+function triageRow(item) {
+  const labelled = item.labels.some((l) => TRIAGE_LABELS.includes(l));
+  return row({
+    key: `triage:${item.id}`,
+    url: item.url,
+    title: item.title,
+    iconName: "issue",
+    tone: "neutral",
+    meta: html`${ref(item)} · ${labelled ? "Needs triage label" : "Triage on the board"} · ${item.author}`,
+    at: item.updatedAt,
+    bob: { item },
   });
 }
 
+/** A thread I follow: I reacted 👀 to it or commented on it. Opens on the newest reply when there's one I haven't answered. */
 function followingRow(item) {
   const f = item.follow;
   const eyes = item.reasons.includes("eyes");
@@ -198,15 +223,7 @@ function followingRow(item) {
     meta: html`${ref(item)} · ${why} · ${reply}`,
     at: f.lastReply?.at || item.updatedAt,
     bob: { item, kind: f.newReply ? "reply" : null },
-    unfollow: item.id,
   });
-}
-
-/** Followed threads, minus ones hidden until their next reply; new replies first. */
-function followingItems(d) {
-  return d.following
-    .filter((i) => !state.followHidden[i.id] || i.follow.lastReply?.at > state.followHidden[i.id])
-    .sort((a, b) => b.follow.newReply - a.follow.newReply || (b.follow.lastReply?.at || b.updatedAt).localeCompare(a.follow.lastReply?.at || a.updatedAt));
 }
 
 // ---------- tabs ----------
@@ -234,39 +251,78 @@ function forYouTab() {
   return { body, foot };
 }
 
-function issuesTab(d, login) {
-  const triage = `is:issue is:open label:"status: needs triage 🕵️‍♀️" ${repoScope()}`;
+const items = (d, key) => d[key]?.items || [];
+const newestFirst = (a, b) => b.updatedAt.localeCompare(a.updatedAt);
+
+/** GitHub's issues dashboard: Assigned to me, Mentioning me and Created by me, open issues only, each issue once. */
+function issueViews(d) {
+  const seen = new Set();
+  const open = (key) => items(d, key).filter((i) => i.kind === "issue" && !seen.has(i.id) && seen.add(i.id)).sort(newestFirst);
+  return { assigned: open("assigned"), mentioning: open("mentioning"), created: open("created") };
+}
+
+/** Not one of GitHub's views either: every thread of this kind I follow, folded at the bottom; new replies first. */
+function followingFold(d, kind) {
+  const threads = (d.following || [])
+    .filter((i) => i.kind === kind)
+    .sort((a, b) => b.follow.newReply - a.follow.newReply || (b.follow.lastReply?.at || b.updatedAt).localeCompare(a.follow.lastReply?.at || a.updatedAt));
+  const fresh = threads.filter((i) => i.follow.newReply).length;
+  return foldSection(`following-${kind}`, "Following", threads, followingRow, byId, fresh ? `${fresh} new ${fresh === 1 ? "reply" : "replies"}` : "you reacted 👀 or commented");
+}
+
+function issuesTab(d) {
   const bob = aiOn() && d.triage.items.length ? html`<button class="btn btn--ghost btn--sm bob-btn" data-action="bob-triage">${icon("sparkle", 14)}Triage with Bob</button>` : nothing;
-  const items = issueItems(d);
+  const { assigned, mentioning, created } = issueViews(d);
+  // Not one of GitHub's views: GitHub can't search labels and board statuses together.
+  const triage = foldSection("triage", "Needs triage", [...d.triage.items].sort(newestFirst), triageRow, byId, "labelled, or Triage on the board");
+  const folds = html`${triage}${followingFold(d, "issue")}`;
   return {
-    body: items.length ? itemList(items, issueRow, ({ item }) => item.id) : emptyState("check", "Nothing assigned and no new mentions"),
-    foot: html`<span class="work__foot-group"><a class="link" href=${searchUrl(triage)}>${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a>${bob}</span><a class="link" href=${searchUrl(`is:open assignee:${login} ${repoScope()}`)}>Open on GitHub</a>`,
+    body:
+      assigned.length || mentioning.length || created.length
+        ? html`${listSection("assigned", "Assigned to me", assigned, issueRow("assigned"), byId)}${listSection("mentioning", "Mentioning me", mentioning, issueRow("mentioning"), byId)}${listSection("created", "Created by me", created, issueRow("created"), byId)}${folds}`
+        : html`${emptyState("check", "No open issues assigned to you, mentioning you or created by you")}${folds}`,
+    foot: html`<span class="work__foot-group"><a class="link" href="#" data-action="show-triage">${plural(d.triage.total, "issue")} ${d.triage.total === 1 ? "needs" : "need"} triage</a>${bob}</span><a class="link" href="https://github.com/issues/assigned">Open on GitHub</a>`,
   };
 }
 
-const PR_ORDER = ["ciFailed", "conflict", "changes", "ready", "oneMore", "design", "waiting", "ciRunning", "autoMerge", "queued", "draft"];
+/**
+ * GitHub's pull requests inbox, section by section. My PRs are sorted by the dashboard's own reading of them
+ * (CI from the newest runs, the repo's approval rule), so a PR waiting on design review waits, though GitHub
+ * calls it approved. PRs in the merge queue or with auto-merge on count as ready to merge.
+ */
+function inboxSections(d) {
+  // With team requests on, the review list has them too.
+  const yours = d.reviews.items.filter((p) => !state.settings.includeTeamReviews || p.askedMe).sort(newestFirst);
+  const asked = new Set(yours.map(byId));
+  const team = (state.settings.includeTeamReviews ? items(d, "teamReviews") : []).filter((p) => !asked.has(p.id)).sort(newestFirst);
+  const mine = [...d.mine.items].sort(newestFirst);
+  const where = (pr) => {
+    if (pr.draft) return "drafts";
+    const st = prState(pr);
+    if (["conflict", "ciFailed", "changes"].includes(st)) return "action";
+    return ["ready", "autoMerge", "queued"].includes(st) ? "ready" : "waiting";
+  };
+  const of = (section) => mine.filter((p) => where(p) === section);
+  // Not one of GitHub's: PRs I've already reviewed that are still open, ones with new commits first.
+  const fresh = (p) => p.lastCommitAt > p.myReview?.at;
+  const reviewed = d.reviewedOpen.items.filter((p) => !asked.has(p.id)).sort((a, b) => fresh(b) - fresh(a) || (b.lastCommitAt || "").localeCompare(a.lastCommitAt || ""));
+  return { yours, team, drafts: of("drafts"), waiting: of("waiting"), action: of("action"), ready: of("ready"), reviewed };
+}
+
+function pullRequestsTab(d) {
+  const s = inboxSections(d);
+  const any = Object.values(s).some((l) => l.length);
+  const following = followingFold(d, "pr");
+  return {
+    body: any
+      ? html`${listSection("yours", "Needs your review", s.yours, reviewRow, byId)}${listSection("team", "Needs your teams' review", s.team, teamReviewRow, byId)}${listSection("drafts", "Your drafts", s.drafts, myPrRow, byId)}${listSection("waiting", "Waiting for review or checks", s.waiting, myPrRow, byId)}${listSection("action", "Needs action", s.action, myPrRow, byId)}${listSection("ready", "Ready to merge", s.ready, myPrRow, byId)}${foldSection("reviewed", "Reviewed by you", s.reviewed, reviewedRow, byId, "still open")}${following}`
+      : html`${emptyState("check", "No open pull requests")}${following}`,
+    foot: html`${weekLine(d)}<a class="link" href="https://github.com/pulls/inbox">Open on GitHub</a>`,
+  };
+}
 
 /** "5h", "1.5d". */
 const hours = (h) => (h < 24 ? `${Math.max(1, Math.round(h))}h` : `${(h / 24).toFixed(1).replace(/\.0$/, "")}d`);
-
-function pullRequestsTab(d, login) {
-  // People before bots, stale requests last, and otherwise the longest waiting first.
-  const stale = (p) => ageDays(askedAt(p)) >= STALE_DAYS;
-  const requested = [...d.reviews.items].sort((a, b) => stale(a) - stale(b) || isBot(a.author) - isBot(b.author) || askedAt(a).localeCompare(askedAt(b)));
-  const quiet = (p) => ageDays(p.updatedAt) >= STALE_DAYS;
-  const mine = [...d.mine.items].sort((a, b) => quiet(a) - quiet(b) || PR_ORDER.indexOf(prState(a)) - PR_ORDER.indexOf(prState(b)));
-  // PRs I've already reviewed that are still open; ones with new commits first.
-  const asked = new Set(requested.map((i) => i.id));
-  const fresh = (p) => p.lastCommitAt > p.myReview?.at;
-  const reviewed = d.reviewedOpen.items.filter((p) => !asked.has(p.id)).sort((a, b) => fresh(b) - fresh(a) || (b.lastCommitAt || "").localeCompare(a.lastCommitAt || ""));
-  return {
-    body:
-      requested.length || mine.length || reviewed.length
-        ? html`${listSection("requested", "Review requested", requested, reviewRow, byId)}${listSection("mine", "Yours", mine, myPrRow, byId)}${listSection("reviewed", "Reviewed by you", reviewed, reviewedRow, byId, "still open")}`
-        : emptyState("check", "No open pull requests"),
-    foot: html`${weekLine(d)}<a class="link" href=${searchUrl(`is:pr is:open involves:${login} ${repoScope()}`)}>Open on GitHub</a>`,
-  };
-}
 
 /** "This week: 3 merged · 7 reviewed · first reviews in ~1.5d". */
 function weekLine(d) {
@@ -275,22 +331,10 @@ function weekLine(d) {
   return html`<span>This week: ${w.merged} merged · ${plural(w.reviewed, "PR")} reviewed${wait}</span>`;
 }
 
-function followingTab(d, login) {
-  const items = followingItems(d);
-  const fresh = items.filter((i) => i.follow.newReply);
-  return {
-    body: items.length
-      ? html`${listSection("replies", "New replies", fresh, followingRow, byId)}${listSection("following", fresh.length ? "Following" : "All threads", items.filter((i) => !i.follow.newReply), followingRow, byId)}`
-      : emptyState("eyes", "Not following anything yet", "Issues and PRs you comment on or react to with 👀 show up here."),
-    foot: html`<span>👀 threads are picked up when they next get activity</span><a class="link" href=${searchUrl(`is:open commenter:${login} ${repoScope()}`)}>Open on GitHub</a>`,
-  };
-}
-
 const TABS = [
   { id: "focus", label: "For you", render: forYouTab, count: () => visibleTasks().filter((t) => bucket(t) === "now").length || null },
-  { id: "issues", label: "Issues", render: issuesTab, count: (d) => issueItems(d).length },
-  { id: "prs", label: "Pull requests", render: pullRequestsTab, count: (d) => d.mine.total + d.reviews.total },
-  { id: "following", label: "Following", render: followingTab, count: (d) => followingItems(d).filter((i) => i.follow.newReply).length || null },
+  { id: "issues", label: "Issues", render: issuesTab, count: (d) => issueViews(d).assigned.length },
+  { id: "prs", label: "Pull requests", render: pullRequestsTab, count: (d) => d.mine.total + inboxSections(d).yours.length },
 ];
 
 const CONNECT = html`
@@ -299,7 +343,7 @@ const CONNECT = html`
     <h2>Connect GitHub</h2>
     <p class="connect__lead">See review requests, your PRs, CI status, mentions and main-branch health for your Carbon repos — on every new tab.</p>
     <ol class="connect__steps">
-      <li>Create a <a href=${CLASSIC_TOKEN_URL}>classic token</a> with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.</li>
+      <li>Create a <a href=${CLASSIC_TOKEN_URL}>classic token</a> with <code>repo</code>, <code>notifications</code>, <code>read:org</code> and <code>read:project</code>.</li>
       <li>Paste it below. Your username is detected automatically.</li>
     </ol>
     <form class="connect__form" data-form="connect">
@@ -316,8 +360,7 @@ export function renderWork() {
   const d = data();
   if (!TABS.some((t) => t.id === view.tab)) view.tab = "focus";
   const tab = TABS.find((t) => t.id === view.tab);
-  const login = state.settings.login || "@me";
-  const { body, foot } = d ? tab.render(d, login) : { body: state.status.error ? nothing : skeleton(), foot: null };
+  const { body, foot } = d ? tab.render(d) : { body: state.status.error ? nothing : skeleton(), foot: null };
   render(
     html`<div class="tabs" role="tablist" aria-label="Work">
         ${TABS.map((t) => {
@@ -424,7 +467,7 @@ async function change(el, busy, run, done, undo = null) {
 const fixActions = {
   "pr-ready": (el) => {
     const pr = findPr(el.dataset.id);
-    const label = repoBySlug(pr.repo)?.readyLabel;
+    const label = data().repos?.[pr.repo]?.readyLabel;
     const token = state.settings.token;
     const merges = pr.canAutoMerge && !pr.autoMerge;
     change(
@@ -468,9 +511,10 @@ export const workActions = {
     snooze($("#snooze-menu").dataset.key, el.dataset.until);
   },
   unsnooze: () => unsnooze(),
-  unfollow: async (el) => {
-    state.followHidden = { ...state.followHidden, [el.dataset.id]: new Date().toISOString() };
+  // The footer's "N need triage" opens the Needs triage group.
+  "show-triage": () => {
+    openFolds.add("triage");
     renderWork();
-    await storage.set({ followHidden: state.followHidden });
+    $('[data-fold="triage"]')?.scrollIntoView({ block: "start", behavior: "smooth" });
   },
 };

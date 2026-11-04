@@ -6,19 +6,19 @@ A Chrome new tab page for Carbon developers: what needs you on GitHub, ranked, p
 
 - **For you**: one ranked list of broken `main`, failing CI, merge conflicts, change requests, PRs ready to merge, overdue reviews, mentions and new replies, grouped into Now, Next and Later. Dependency bumps wait in their own folded group, and anything quiet for 30 days moves to **Stale**. Snooze an item until tomorrow or until it has new activity.
 - **One-click fixes** on rows: **Ready to merge** (adds the repo's ready label and turns on auto-merge), **Re-run** failed or stuck CI jobs, **Remove me** from a stale review request, and **Close** a stale PR. Remove me and Close can be undone from the toast.
-- **Issues, Pull requests, Following**: issues assigned to you and mentions; review requests (with a Quick, Standard or Deep size), your PRs and PRs you've reviewed (new commits flagged), and your week in numbers; threads you commented on or reacted to with 👀.
+- **Issues, Pull requests**: GitHub's own views of them, for your repos. Issues: assigned to you, mentioning you and created by you, as on [github.com/issues](https://github.com/issues/assigned). Pull requests: the sections of GitHub's [pull requests inbox](https://github.com/pulls/inbox) (needs your review, needs your teams' review, your drafts, waiting for review or checks, needs action, ready to merge), with review sizes (Quick, Standard or Deep), PRs you've reviewed (new commits flagged) and your week in numbers. Your PRs are placed by the dashboard's own reading of CI and approvals, so one with only a Netlify or Mend failure isn't under Needs action. At the bottom of each tab, folded: **Following**, every issue or PR you reacted to with 👀 or commented on, new replies first; and on Issues, **Needs triage**.
 - **Repo bar**: each repo's GitHub, website and Storybook links, `main` status, latest release and **Open in VS Code** for your local clone.
 - **Search** (`/` or `⌘K`): your PRs, issues, links and actions. `carbon 23717` jumps to an issue or PR.
 - **Today**: recurring meetings, the bug of the day, and to-dos that carry over to the next day.
-- **Activity** (bell): everything that changed since you last looked.
+- **Activity** (bell): everything that changed since you last looked, including your unread [GitHub notifications](https://github.com/notifications).
 - **In the background**: syncs every few minutes, sends desktop notifications, and shows the count of urgent items on the toolbar icon.
 
-Shortcuts: `J`/`K` move through your work, `S` snoozes, `B` asks Bob, `E` runs the row's button, `R` syncs, `A` opens Activity, `1`–`4` switch tabs, `?` lists them all.
+Shortcuts: `J`/`K` move through your work, `S` snoozes, `B` asks Bob, `E` runs the row's button, `R` syncs, `A` opens Activity, `1`–`3` switch tabs, `?` lists them all.
 
 ### How it reads GitHub
 
 - **CI** is judged from the newest run of each GitHub Actions workflow. A run that was cancelled and started again leaves a stale failure in GitHub's own status, so that's ignored, and so are other apps' checks (on Carbon, the Netlify previews and the Mend scan fail often without blocking a merge). A job still running after 6 hours is shown as stuck. A row names the failing checks and links to their logs.
-- **Ready to merge** follows the repo's rule, set per repo in `bookmarks.json` or the repo editor: Carbon needs 2 approvals, and a PR with `status: visual review 🔍` waits for design review. PRs in the merge queue or with auto-merge on need nothing from you; one that leaves the queue notifies you.
+- **Ready to merge** follows the repo's rule, set per repo in `bookmarks.json` or the repo editor (Carbon needs 2 approvals), adds the repo's own "ready to merge" label if it has one, and a PR with `status: visual review 🔍` waits for design review. PRs in the merge queue or with auto-merge on need nothing from you; one that leaves the queue notifies you.
 - **Review age** counts from when you were asked (or when the PR was marked ready), not from when the PR was opened.
 - **Bots** are apps and machine users named like one (`*-bot`, `*-agent`, `svc-*`), so their comments don't count as replies.
 - A warning shows a week before your GitHub token expires.
@@ -32,7 +32,7 @@ Or load it unpacked:
 1. Download `dev-dashboard.zip` from the [latest release](https://github.com/devadula-nandan/cds-bookmarks/releases/latest), unzip it and keep the `dev-dashboard` folder somewhere permanent.
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose that folder.
 3. Open a new tab and choose **Keep it** if Chrome asks.
-4. Create a [classic GitHub token](https://github.com/settings/tokens/new?scopes=repo,notifications,read:org&description=Dev%20Dashboard) with `repo`, `notifications` and `read:org`, authorize it for the `carbon-design-system` org's SSO, and paste it into the new tab.
+4. Create a [classic GitHub token](https://github.com/settings/tokens/new?scopes=repo,notifications,read:org,read:project&description=Dev%20Dashboard) with `repo`, `notifications`, `read:org` and `read:project` (for triage statuses on the repo's board), authorize it for the `carbon-design-system` org's SSO, and paste it into the new tab.
 
 The token stays in the extension's storage and is only sent to `api.github.com`. See the [privacy policy](PRIVACY.md).
 
@@ -66,32 +66,32 @@ How it works:
 - Answers about code (review briefs, CI, conflicts) are kept until the next commit, not the next comment. An answer from before the latest changes still opens, marked as out of date.
 - Requests count toward your Bob usage. Nothing is sent until you click a Bob action.
 
-**Bug of the day**: turn on **Daily bug hunt** in Settings → Bob. At the chosen time (9:00 by default) Bob checks out the latest `main` of one clone into its own worktree under `~/.dev-dashboard/hunts/` (your clone isn't touched), finds the most obvious easy-to-fix bug, and reports it with a fix, its confidence and any matching GitHub issue. Repos take turns; a missing clone is skipped. Mark a report **Real bug** or **Not a bug** and Bob sees that on the next hunt in that repo. A hunt stops at 10 units of Bob usage, and a report that ends without its summary says so instead of "No obvious bug found".
+**Bug of the day**: turn on **Daily bug hunt** in Settings → Bob. At the chosen time (9:00 by default) Bob checks out the latest `main` of one clone into its own worktree under `~/.dev-dashboard/hunts/` (your clone isn't touched), finds the most obvious easy-to-fix bug, and reports it with a fix, its confidence and any matching GitHub issue. Repos take turns; a missing clone is skipped. Mark a report **Real bug** or **Not a bug** and Bob sees that on the next hunt in that repo. A hunt stops at 10 units of Bob usage, and a report that ends without its summary says so instead of "No obvious bug found". Follow-ups on a report are saved with it, so closing the sheet keeps the conversation. When an answer changes what the report says, Bob rewrites the report (title, file, confidence and all) as a new version, which the next follow-up and the GitHub issue start from; **Undo** goes back to the version before.
 
 ## Repos and links
 
-The repos come from [`bookmarks.json`](bookmarks.json):
+The repos come from [`bookmarks.json`](bookmarks.json). An entry holds only what can't be worked out:
 
 ```json
 {
-  "id": "cds",
-  "name": "Carbon Design System",
-  "short": "Carbon",
+  "repo": "carbon-design-system/carbon",
+  "name": "Carbon",
   "clone": "~/Source/carbon",
+  "approvals": 2,
   "icon": "<svg …>",
-  "github": { "title": "GitHub", "buttons": [{ "label": "Issues", "href": "https://github.com/carbon-design-system/carbon/issues" }] },
-  "website": { "title": "Website", "buttons": [] },
-  "storybooks": { "title": "Storybooks", "buttons": [] },
-  "others": { "title": "Playgrounds", "buttons": [] }
+  "links": {
+    "GitHub": { "Board": "https://github.com/orgs/carbon-design-system/projects/39/views/12" },
+    "Storybooks": { "React": "https://react.carbondesignsystem.com/" }
+  }
 }
 ```
 
-- The GitHub repo is read from a GitHub issues or pulls link, and the sprint board from a link labelled "Board".
-- A link can have a `versionedHref` with `<v>` and a default `version`, to open a specific version.
+- Only `repo` is required. `name` defaults to the repo's name, and `approvals` (how many a PR needs before it's ready to merge) to 1.
+- Every repo gets its Issues and Pull Requests links. A link to a GitHub project is the sprint board.
+- **Ready to merge** adds the repo's own "ready to merge" label, if it has one (Carbon's is `status: ready to merge 🎉`).
 - `clone` is optional; without it, the repo gets no VS Code link or bug hunts.
-- `approvals` (default 1) is how many approvals a PR needs before it's ready to merge, and `readyLabel` the label **Ready to merge** adds. Carbon's entry has `2` and `status: ready to merge 🎉`. If you edited the list in the browser, set them in the repo editor.
 
-You can also edit the list in **Settings → Repositories → Edit repositories**. That saves your list in the browser, ahead of the file. **Export JSON** downloads it, and **Reset to bookmarks.json** goes back to the file.
+You can also edit the list in **Settings → Repositories → Edit repositories**: the GitHub repo, a name, the local clone, the approvals and any extra links, one per line as `Label https://…` (a line without a link starts a group). That saves your list in the browser, ahead of the file. **Export JSON** downloads it, and **Reset to bookmarks.json** goes back to the file. Lists in the older format are converted when loaded or imported.
 
 ## Notifications
 
@@ -110,7 +110,7 @@ bookmarks.json    the repos and their links
 src/              shared by the worker and the page
   core.js         helpers, storage, settings, per-day to-dos and snoozes
   repos.js        the repo list
-  github.js       GitHub API: the dashboard (four queries side by side), the inbox, and the row fixes
+  github.js       GitHub API: the dashboard (five queries side by side), the notifications inbox, and the row fixes
   insights.js     PR states, priorities, review size, the week in numbers, the header summary, the plain standup
   sync.js         fetch, compare with the last sync, record activity, notify; meeting reminders
   bob.js          talking to Bob Shell, prompts, saved answers
@@ -120,7 +120,7 @@ src/page/         the new tab page only
   ui.js           page state and shared view helpers (rows, lists, switches)
   lit.js          the lit-html pieces the views use
   header.js       greeting, tool buttons, repo bar, Activity drawer
-  work.js         the work tabs, row fixes (ready to merge, re-run, remove me, close), snoozing, unfollowing
+  work.js         the work tabs, row fixes (ready to merge, re-run, remove me, close), snoozing
   today.js        meetings, bug of the day (and its verdicts), to-dos
   bob.js          the Bob sheet and every Bob button
   review.js       the review brief's PR facts, links into the diff, and submitting a review

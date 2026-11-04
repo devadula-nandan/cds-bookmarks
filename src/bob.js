@@ -245,8 +245,9 @@ export function catchUpPrompt(entries) {
   return `Catch me up on this GitHub activity (newest first), in under 10 lines: **Needs me** — what I should act on, most urgent first, with links; then **FYI** — the rest, grouped.\n\n${lines.join("\n")}\n\n${HOW}`;
 }
 
-export function triagePrompt(settings, repos) {
-  return `${me(settings)}. Help me triage the open issues labelled "status: needs triage 🕵️‍♀️" in ${repoList(repos)}.
+export function triagePrompt(settings, issues) {
+  return `${me(settings)}. Help me triage these open issues, waiting for triage (labelled for it, or in Triage on the repo's board):
+${issues.map((i) => i.url).join("\n")}
 Use gh to read each issue and its comments, look for duplicates and linked PRs, check whether it's already fixed, and read the code to confirm bugs.
 For each issue, one bullet: the link, a one-line summary, then **type** (bug, feature, docs, question), **package**, **severity** (sev 1–4 for bugs), and "ready" or what to ask the reporter. Flag duplicates. End with **Pick up** — the one or two I could fix quickly.
 ${HOW}`;

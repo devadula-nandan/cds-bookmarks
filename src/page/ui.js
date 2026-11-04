@@ -3,7 +3,7 @@
 import { MODES, answerKey, modeFor } from "../bob.js";
 import { defaultSettings, timeAgo, todayKey } from "../core.js";
 import { focusQueue, isSnoozed } from "../insights.js";
-import { enabledRepos, repoLabel, repos } from "../repos.js";
+import { repoLabel, repos } from "../repos.js";
 import DOMPurify from "../vendor/purify.es.js";
 import { icon } from "./icons.js";
 import { html, live, nothing, repeat, unsafeHTML } from "./lit.js";
@@ -12,7 +12,7 @@ export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 export const PRIVACY_URL = "https://github.com/devadula-nandan/cds-bookmarks/blob/main/PRIVACY.md";
-export const CLASSIC_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo,notifications,read:org&description=Dev%20Dashboard";
+export const CLASSIC_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo,notifications,read:org,read:project&description=Dev%20Dashboard";
 
 /** Everything the page shows. main.js loads it from storage and keeps it current as storage changes. */
 export const state = {
@@ -25,7 +25,6 @@ export const state = {
   clearedAt: null,
   huntState: {},
   bugHunts: [],
-  followHidden: {}, // followed threads hidden until their next reply
   untilChange: {}, // snoozed until the item has new activity
   answered: new Set(), // keys of Bob's saved answers
   bobStatus: null,
@@ -46,21 +45,7 @@ export const visibleTasks = () => allTasks().filter((t) => !isSnoozed(t, state.d
 export const activityList = () => state.activity.filter((a) => !state.clearedAt || a.createdAt > state.clearedAt);
 export const unread = () => activityList().filter((a) => !state.seenAt || a.createdAt > state.seenAt).length;
 export const shownRepos = () => repos.filter((r) => !state.settings.disabledRepos.includes(r.id));
-export const repoScope = () => enabledRepos(state.settings).map((r) => `repo:${r.slug}`).join(" ");
 export const searchUrl = (q) => `https://github.com/search?type=issues&q=${encodeURIComponent(q)}`;
-
-/** Assigned issues and mentions that aren't already under Pull requests. */
-export function issueItems(d) {
-  const taken = new Set([...d.reviews.items, ...d.mine.items].map((i) => i.id));
-  const out = [];
-  for (const [list, why] of [[d.assigned.items, "assigned"], [d.mentions.items, "mention"]])
-    for (const item of list)
-      if (!taken.has(item.id)) {
-        taken.add(item.id);
-        out.push({ item, why });
-      }
-  return out;
-}
 
 /** "error", "warning" or "success" for a repo's main branch. */
 export function mainTone(main) {
@@ -108,11 +93,11 @@ export const fact = (iconName, content, { tone = "", tooltip = "" } = {}) =>
 export const bobTargets = new Map();
 
 /**
- * One row of a list. `bob` ({ item, kind, task }) adds Bob's button; `snooze` and `unfollow` add theirs.
+ * One row of a list. `bob` ({ item, kind, task }) adds Bob's button; `snooze` adds the snooze menu's.
  * `cta` ({ label, action, id, tooltip, iconName, primary }) is the row's one-click fix, always in view;
  * while it runs, `state.fixing` holds its progress label.
  */
-export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, unfollow, cta }) {
+export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, cta }) {
   const buttons = [];
   if (bob && aiOn()) {
     bobTargets.set(key, bob);
@@ -122,7 +107,6 @@ export function row({ key, url, title, iconName, tone, meta, at, bob, snooze, un
     buttons.push(html`<button class="icon-btn icon-btn--sm bob-btn ${ready ? "bob-made" : ""}" data-action="bob-item" data-key=${key} data-tooltip=${ready ? `${label} · answer ready` : verb} aria-label=${verb}>${icon("sparkle", 16)}</button>`);
   }
   if (snooze) buttons.push(html`<button class="icon-btn icon-btn--sm" data-action="snooze-menu" data-key=${snooze} popovertarget="snooze-menu" data-tooltip="Snooze" aria-label="Snooze ${title}">${icon("snooze", 16)}</button>`);
-  if (unfollow) buttons.push(html`<button class="icon-btn icon-btn--sm" data-action="unfollow" data-id=${unfollow} data-tooltip="Hide until there's a new reply" aria-label="Hide ${title}">${icon("x", 16)}</button>`);
   const busy = cta && state.fixing.get(`${cta.action}:${cta.id}`);
   return html`
     <li class="item">
@@ -202,7 +186,7 @@ export function confirmed(key, label, redraw) {
 export function findItem(id) {
   const d = data();
   if (!d) return null;
-  for (const key of ["reviews", "reviewedOpen", "mine", "assigned", "mentions", "triage", "merged"]) {
+  for (const key of ["reviews", "teamReviews", "reviewedOpen", "mine", "assigned", "mentions", "mentioning", "created", "triage", "merged"]) {
     const item = d[key]?.items.find((i) => i.id === id);
     if (item) return item;
   }

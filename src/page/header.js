@@ -61,7 +61,7 @@ export function syncNotice(failed = false) {
   const classic = html`<a href=${CLASSIC_TOKEN_URL}>classic token</a>`;
   const tips = [
     (sso || /SAML|SSO/i.test(text)) && html`The organization requires SSO. On <a href="https://github.com/settings/tokens">your tokens page</a>, choose <b>Configure SSO</b> next to this token and authorize <b>carbon-design-system</b>.`,
-    (/personal access token|fine-grained|not accessible/i.test(text) || state.settings.tokenScopes === null) && html`Fine-grained tokens can be blocked by org policy. A ${classic} with <code>repo</code>, <code>notifications</code> and <code>read:org</code> is most reliable.`,
+    (/personal access token|fine-grained|not accessible/i.test(text) || state.settings.tokenScopes === null) && html`Fine-grained tokens can be blocked by org policy. A ${classic} with <code>repo</code>, <code>notifications</code>, <code>read:org</code> and <code>read:project</code> is most reliable.`,
     /401|rejected/i.test(text) && html`Create a new ${classic} on github.com and paste it in Settings.`,
     /reach api\.github\.com/i.test(text) && "On a corporate network or VPN, a proxy may be blocking api.github.com.",
   ].filter(Boolean);
@@ -115,14 +115,7 @@ function repoMenu(repo) {
   const main = health?.main;
   const tone = mainTone(main);
   const code = vscodeUrl(repo.clone);
-  const link = (l) =>
-    l.versionedHref
-      ? html`<div class="menu__versioned" data-versioned=${l.versionedHref}>
-           <a class="menu__link" href=${l.href}>${prettyLabel(l.label)}</a>
-           <input class="menu__version" value=${l.version || ""} placeholder="version" aria-label="${l.label} version">
-           <button class="icon-btn icon-btn--sm" data-action="open-version" data-tooltip="Open this version" aria-label="Open this version">${icon("arrowRight", 14)}</button>
-         </div>`
-      : html`<a class="menu__link" href=${l.href}>${prettyLabel(l.label)}</a>`;
+  const link = (l) => html`<a class="menu__link" href=${l.href}>${prettyLabel(l.label)}</a>`;
   const failing = (c) => (c.url ? html`<a href=${c.url}>${c.name}</a>` : c.name);
   return html`
     <header class="menu__head">
@@ -164,12 +157,6 @@ export function renderRepos() {
   );
 }
 
-function openVersion(el) {
-  const group = el.closest("[data-versioned]");
-  const version = $("input", group).value.trim().replace(/^v/i, "");
-  go(version ? group.dataset.versioned.replace("<v>", encodeURIComponent(version)) : $("a", group).href);
-}
-
 // ---------- the Activity drawer ----------
 
 export function renderActivity() {
@@ -203,7 +190,7 @@ export function renderActivity() {
       ${list.length
         ? html`<ul class="items drawer__list">${rows}</ul>`
         : html`<div class="empty">${iconChip("bell")}<p class="empty__title">No activity yet</p><p class="empty__text">Approvals, CI results, merges and releases show up here as they happen.</p></div>`}
-      <footer class="drawer__foot">${state.settings.notifications ? "" : "Desktop notifications are off."} <button class="btn btn--ghost btn--sm" data-action="settings" data-section="notifications">Notification settings</button></footer>`,
+      <footer class="drawer__foot">${state.settings.notifications ? "" : "Desktop notifications are off."} <a class="link" href="https://github.com/notifications">Open on GitHub</a><button class="btn btn--ghost btn--sm" data-action="settings" data-section="notifications">Notification settings</button></footer>`,
     $("#activity")
   );
 }
@@ -239,7 +226,6 @@ export function maybeSync() {
 
 export const headerActions = {
   sync: () => requestSync(true),
-  "open-version": openVersion,
   "clear-activity": async () => {
     state.clearedAt = new Date().toISOString();
     renderActivity();

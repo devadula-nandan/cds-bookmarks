@@ -16,6 +16,13 @@ const HUNT_MAX_COST = 10;
 /** A hunt beats every 20 seconds; one marked running with no beat for 2 minutes was cut off (browser closed, worker stopped). */
 export const isHunting = (huntState) => !!huntState?.running && Date.now() - Date.parse(huntState.beat || huntState.startedAt || 0) < 120000;
 
+// How a report is written, for a hunt and for a revision of it after a follow-up.
+const FORMAT = `Report in GitHub Markdown: a "## title" line, then **Where** (the file path and line in backticks, not a link), **What's wrong** (quote the lines as they are in the file, in a code fence named for its language, with enough around them to be valid code on their own — such as the opening tag of a JSX attribute), **Why it's a bug** (what a user would see, and why it's wrong), **Steps to reproduce** (only the steps, as a short numbered list: open the story or page, set the controls, do this, see that; no explanation), **Suggested fix** (a minimal \`\`\`diff), and **Confidence** (high, medium or low, with one line of reasoning).
+Finish with this JSON block and nothing after it:
+\`\`\`json
+{"found": true, "title": "…", "file": "path/from/repo/root", "line": 123, "severity": "low|medium|high", "effort": "e.g. 15 min", "confidence": "high|medium|low", "related": [{"ref": "carbon#123", "title": "…", "url": "…", "state": "open|closed"}]}
+\`\`\``;
+
 function prompt(slug, branch, head, previous) {
   return `You're hunting for one real bug in ${slug}, checked out locally at ${branch} (${String(head).slice(0, 7)}). Read and search the code; don't change anything.
 
@@ -25,11 +32,58 @@ ${previous || "- none yet"}
 
 Read the surrounding code and its callers to make sure it's really a bug. If you find nothing you're confident about, say so. Then search GitHub with gh for an existing issue about it.
 
-Report in GitHub Markdown: a "## title" line, then **Where** (the file path and line in backticks, not a link), **What's wrong** (quote the lines as they are in the file, in a code fence named for its language, with enough around them to be valid code on their own — such as the opening tag of a JSX attribute), **Why it's a bug** (what a user would see, and why it's wrong), **Steps to reproduce** (only the steps, as a short numbered list: open the story or page, set the controls, do this, see that; no explanation), **Suggested fix** (a minimal \`\`\`diff), and **Confidence** (high, medium or low, with one line of reasoning).
-Finish with this JSON block and nothing after it:
-\`\`\`json
-{"found": true, "title": "…", "file": "path/from/repo/root", "line": 123, "severity": "low|medium|high", "effort": "e.g. 15 min", "confidence": "high|medium|low", "related": [{"ref": "carbon#123", "title": "…", "url": "…", "state": "open|closed"}]}
-\`\`\``;
+${FORMAT}`;
+}
+
+/** The report's fields from the JSON block that ends it, or from its absence. */
+function summary(meta) {
+  // No JSON summary at the end: Bob stopped early or answered in another shape. That's not "nothing found".
+  const incomplete = !meta;
+  const found = !!meta?.title && meta.found !== false;
+  return {
+    found,
+    incomplete,
+    title: found ? meta.title : incomplete ? "Bob's report has no summary — open it to read" : "No obvious bug found",
+    file: meta?.file || null,
+    line: meta?.line || null,
+    severity: meta?.severity || null,
+    effort: meta?.effort || null,
+    confidence: meta?.confidence || null,
+    related: Array.isArray(meta?.related) ? meta.related : [],
+  };
+}
+
+// The line in a follow-up's reply between Bob's answer and the revised report.
+const REVISED = "<!-- revised report -->";
+
+/**
+ * A follow-up on a report: the report as it stands now (with any earlier revisions), the conversation
+ * about it (`thread`, without the report itself), and the question. Bob answers, and rewrites the
+ * report when the answer changes what it says.
+ */
+export function followUpPrompt(report, thread, question) {
+  const history = thread.map((t) => `${t.role === "user" ? "Me" : "You"}: ${t.text}`).join("\n\n");
+  return `You found this bug earlier in a local clone of ${report.repo} at ${report.branch}. Your report as it stands now:
+
+${report.markdown}
+
+--- Our conversation about it so far ---
+${history || "None yet."}
+
+--- My follow-up ---
+${question}
+
+Answer my follow-up, checking the code again as you need to. If your answer changes anything the report says (whether it's a bug at all, where it is, why, the steps, the fix, the severity or your confidence), then after your answer put a line with only ${REVISED}, then the whole report again as it should now read, in the same format. Leave both out if the report still stands.
+${FORMAT}`;
+}
+
+/** A follow-up's reply: Bob's answer, and the revised report's fields when it rewrote the report (else null). */
+export function followUpReply(text) {
+  const at = text.indexOf(REVISED);
+  if (at < 0) return { answer: text.trim(), revision: null };
+  const { before: markdown, json: meta } = jsonBlock(text.slice(at + REVISED.length));
+  // A revision without its JSON block still has the new text; the facts stay as they were.
+  return { answer: text.slice(0, at).trim(), revision: { markdown, ...(meta && summary(meta)) } };
 }
 
 /** Whether a hunt can start now, and why not. Quick, so the page gets an answer right away. */
@@ -91,9 +145,6 @@ export async function hunt() {
     const { text, log } = await askBob(prompt(repo.slug, git.branch, git.head, previous), settings, { workspace: git.path, maxCost: HUNT_MAX_COST });
     // The report, then a ```json summary block at its end.
     const { before: markdown, json: meta } = jsonBlock(text);
-    // No JSON summary at the end: Bob stopped early or answered in another shape. That's not "nothing found".
-    const incomplete = !meta;
-    const found = !!meta?.title && meta.found !== false;
     const report = {
       id: uid(),
       at: new Date().toISOString(),
@@ -102,19 +153,14 @@ export async function hunt() {
       path: git.path,
       branch: git.branch,
       head: git.head,
-      found,
-      incomplete,
-      title: found ? meta.title : incomplete ? "Bob's report has no summary — open it to read" : "No obvious bug found",
-      file: meta?.file || null,
-      line: meta?.line || null,
-      severity: meta?.severity || null,
-      effort: meta?.effort || null,
-      confidence: meta?.confidence || null,
-      related: Array.isArray(meta?.related) ? meta.related : [],
+      ...summary(meta),
       markdown,
       log,
     };
-    await finish({ running: false, lastDay: day, at: report.at, repo: repo.slug }, { bugHunts: [report, ...bugHunts].slice(0, 30) });
+    const { found, incomplete } = report;
+    // Read again: follow-ups and verdicts may have been saved on earlier reports while Bob hunted.
+    const { bugHunts: latest = [] } = await storage.get("bugHunts");
+    await finish({ running: false, lastDay: day, at: report.at, repo: repo.slug }, { bugHunts: [report, ...latest].slice(0, 30) });
     await record(
       [
         {

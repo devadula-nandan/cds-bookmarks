@@ -1,219 +1,69 @@
 [
   {
-    "id": "cds",
-    "name": "Carbon Design System",
-    "short": "Carbon",
+    "repo": "carbon-design-system/carbon",
+    "name": "Carbon",
     "clone": "~/Source/carbon",
     "approvals": 2,
-    "readyLabel": "status: ready to merge 🎉",
     "icon": "<svg focusable=\"false\" preserveAspectRatio=\"xMidYMid meet\" fill=\"currentColor\" width=\"48\" height=\"48\" viewBox=\"0 0 32 32\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\">\n      <path d=\"M13.5,30.8149a1.0011,1.0011,0,0,1-.4927-.13l-8.5-4.815A1,1,0,0,1,4,25V15a1,1,0,0,1,.5073-.87l8.5-4.815a1.0013,1.0013,0,0,1,.9854,0l8.5,4.815A1,1,0,0,1,23,15V25a1,1,0,0,1-.5073.87l-8.5,4.815A1.0011,1.0011,0,0,1,13.5,30.8149ZM6,24.417l7.5,4.2485L21,24.417V15.583l-7.5-4.2485L6,15.583Z\"></path>\n      <path d=\"M28,17H26V7.583L18.5,3.3345,10.4927,7.87,9.5073,6.13l8.5-4.815a1.0013,1.0013,0,0,1,.9854,0l8.5,4.815A1,1,0,0,1,28,7Z\"></path>\n      <title>Carbon</title>\n    </svg>",
-    "github": {
-      "title": "GitHub",
-      "buttons": [
-        {
-          "label": "Board - current sprint",
-          "href": "https://github.com/orgs/carbon-design-system/projects/39/views/12"
-        },
-        {
-          "label": "Issues",
-          "href": "https://github.com/carbon-design-system/carbon/issues"
-        },
-        {
-          "label": "Issues - commented",
-          "href": "https://github.com/carbon-design-system/carbon/issues?q=is%3Aissue%20state%3Aopen%20commenter%3A%40me"
-        },
-        {
-          "label": "Pull Requests - assigned to me",
-          "href": "https://github.com/carbon-design-system/carbon/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me"
-        },
-        {
-          "label": "Pull Requests - opened by me",
-          "href": "https://github.com/carbon-design-system/carbon/pulls/@me"
-        }
-      ]
-    },
-    "website": {
-      "title": "Website",
-      "buttons": [
-        {
-          "label": "Tokens",
-          "href": "https://carbondesignsystem.com/elements/color/tokens/"
-        },
-        {
-          "label": "icons",
-          "href": "https://carbondesignsystem.com/elements/icons/library/"
-        },
-        {
-          "label": "v12 compare",
-          "href": "https://push.propel.wdc.app.cirrus.ibm.com/s/D1bdEX/carbon-v12-compare/#overview"
-        }
-      ]
-    },
-    "storybooks": {
-      "title": "Storybooks",
-      "buttons": [
-        {
-          "label": "React",
-          "href": "https://react.carbondesignsystem.com/"
-        },
-        {
-          "label": "Web-Components",
-          "href": "https://web-components.carbondesignsystem.com/"
-        }
-      ]
+    "links": {
+      "GitHub": {
+        "Board - current sprint": "https://github.com/orgs/carbon-design-system/projects/39/views/12"
+      },
+      "Website": {
+        "Tokens": "https://carbondesignsystem.com/elements/color/tokens/",
+        "icons": "https://carbondesignsystem.com/elements/icons/library/",
+        "v12 compare": "https://push.propel.wdc.app.cirrus.ibm.com/s/D1bdEX/carbon-v12-compare/#overview"
+      },
+      "Storybooks": {
+        "React": "https://react.carbondesignsystem.com/",
+        "Web-Components": "https://web-components.carbondesignsystem.com/"
+      }
     }
   },
   {
-    "id": "c4ai",
-    "name": "Carbon for AI",
-    "short": "AI Chat",
+    "repo": "carbon-design-system/carbon-ai-chat",
+    "name": "AI Chat",
     "clone": "~/Source/carbon-ai-chat",
     "icon": "<svg focusable=\"false\" preserveAspectRatio=\"xMidYMid meet\" fill=\"currentColor\" width=\"48\" height=\"48\" viewBox=\"0 0 32 32\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\">\n      <path d=\"M19 21v-2h1v-7h-1v-2h4v2h-1v7h1v2h-4zM15.5005 21h2l-3.5005-11h-3l-3.4966 11h1.9988l.6018-2h4.7781l.6184 2zM10.7058 17l1.6284-5.4111.2559-.0024 1.6736 5.4136h-3.5579z\"></path>\n      <path d=\"M32,32H0V0h32v32ZM2,30h28V2H2v28Z\"></path>\n    </svg>",
-    "github": {
-      "title": "GitHub",
-      "buttons": [
-        {
-          "label": "Board - current sprint",
-          "href": "https://github.com/orgs/carbon-design-system/projects/89/views/4"
-        },
-        {
-          "label": "Issues",
-          "href": "https://github.com/carbon-design-system/carbon-ai-chat/issues"
-        },
-        {
-          "label": "Issues - commented",
-          "href": "https://github.com/carbon-design-system/carbon-ai-chat/issues?q=is%3Aissue%20state%3Aopen%20commenter%3A%40me"
-        },
-        {
-          "label": "Pull Requests - assigned to me",
-          "href": "https://github.com/carbon-design-system/carbon-ai-chat/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me"
-        },
-        {
-          "label": "Pull Requests - opened by me",
-          "href": "https://github.com/carbon-design-system/carbon-ai-chat/pulls/devadula-nandan"
-        }
-      ]
-    },
-    "website": {
-      "title": "Website",
-      "buttons": [
-        {
-          "label": "Demo",
-          "href": "https://chat.carbondesignsystem.com/tag/next/demo/index.html",
-          "versionedHref": "https://chat.carbondesignsystem.com/version/v<v>/demo/index.html",
-          "version": "1.0.0-rc.3"
-        },
-        {
-          "label": "Demo main",
-          "href": "https://carbon-ai-chat-demo.netlify.app/"
-        },
-        {
-          "label": "Docs",
-          "href": "https://chat.carbondesignsystem.com/tag/next/docs/documents/Overview.html",
-          "versionedHref": "https://chat.carbondesignsystem.com/version/v<v>/docs/documents/Overview.html",
-          "version": "1.0.0-rc.3"
-        }
-      ]
-    },
-    "storybooks": {
-      "title": "Storybooks",
-      "buttons": [
-        {
-          "label": "React",
-          "href": "https://ai-chat-components-react.netlify.app/"
-        },
-        {
-          "label": "Web-Components",
-          "href": "https://carbon-ai-chat-components.netlify.app/"
-        }
-      ]
-    },
-    "others": {
-      "title": "Playgrounds",
-      "buttons": [
-        {
-          "label": "React Stackblitz",
-          "href": "https://stackblitz.com/github/carbon-design-system/carbon-ai-chat/tree/main/examples/react/basic"
-        },
-        {
-          "label": "Web-Components Stackblitz",
-          "href": "https://stackblitz.com/github/carbon-design-system/carbon-ai-chat/tree/main/examples/web-components/basic"
-        }
-      ]
+    "links": {
+      "GitHub": {
+        "Board - current sprint": "https://github.com/orgs/carbon-design-system/projects/89/views/4"
+      },
+      "Website": {
+        "Demo": "https://chat.carbondesignsystem.com/tag/next/demo/index.html",
+        "Demo main": "https://carbon-ai-chat-demo.netlify.app/",
+        "Docs": "https://chat.carbondesignsystem.com/tag/next/docs/documents/Overview.html"
+      },
+      "Storybooks": {
+        "React": "https://ai-chat-components-react.netlify.app/",
+        "Web-Components": "https://carbon-ai-chat-components.netlify.app/"
+      },
+      "Playgrounds": {
+        "React Stackblitz": "https://stackblitz.com/github/carbon-design-system/carbon-ai-chat/tree/main/examples/react/basic",
+        "Web-Components Stackblitz": "https://stackblitz.com/github/carbon-design-system/carbon-ai-chat/tree/main/examples/web-components/basic"
+      }
     }
   },
   {
-    "id": "labs",
-    "name": "Carbon Labs",
-    "short": "Labs",
+    "repo": "carbon-design-system/carbon-labs",
+    "name": "Labs",
     "clone": "~/Source/ibm-products/carbon-labs",
     "icon": "<svg focusable=\"false\" preserveAspectRatio=\"xMidYMid meet\" fill=\"currentColor\" width=\"48\" height=\"48\" viewBox=\"0 0 32 32\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\">\n      <path d=\"M11 2v2h1v7.43L4.62 24.7A3.5 3.5 0 0 0 7.68 30h16.64a3.5 3.5 0 0 0 3.06-5.3L20 11.43V4h1V2Zm3 2h4v8l3.33 6H10.67L14 12ZM9.56 20h12.88l3.2 5.76A1.5 1.5 0 0 1 24.32 28H7.68a1.5 1.5 0 0 1-1.32-2.24Z\"></path>\n      <title>Carbon Labs</title>\n    </svg>",
-    "github": {
-      "title": "GitHub",
-      "buttons": [
-        {
-          "label": "Issues",
-          "href": "https://github.com/carbon-design-system/carbon-labs/issues"
-        },
-        {
-          "label": "Issues - commented",
-          "href": "https://github.com/carbon-design-system/carbon-labs/issues?q=is%3Aissue%20state%3Aopen%20commenter%3A%40me"
-        },
-        {
-          "label": "Pull Requests - assigned to me",
-          "href": "https://github.com/carbon-design-system/carbon-labs/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me"
-        },
-        {
-          "label": "Pull Requests - opened by me",
-          "href": "https://github.com/carbon-design-system/carbon-labs/pulls/@me"
-        }
-      ]
-    },
-    "storybooks": {
-      "title": "Storybooks",
-      "buttons": [
-        {
-          "label": "Storybook",
-          "href": "https://labs.carbondesignsystem.com/"
-        }
-      ]
+    "links": {
+      "Storybooks": {
+        "Storybook": "https://labs.carbondesignsystem.com/"
+      }
     }
   },
   {
-    "id": "charts",
-    "name": "Carbon Charts",
-    "short": "Charts",
+    "repo": "carbon-design-system/carbon-charts",
+    "name": "Charts",
     "clone": "~/Source/carbon-charts",
     "icon": "<svg focusable=\"false\" preserveAspectRatio=\"xMidYMid meet\" fill=\"currentColor\" width=\"48\" height=\"48\" viewBox=\"0 0 32 32\" aria-hidden=\"true\" xmlns=\"http://www.w3.org/2000/svg\">\n      <path d=\"M4 2H2v26a2 2 0 0 0 2 2h26v-2H4Z\"></path>\n      <path d=\"M8 18h4v8H8zM15 12h4v14h-4zM22 6h4v20h-4z\"></path>\n      <title>Carbon Charts</title>\n    </svg>",
-    "github": {
-      "title": "GitHub",
-      "buttons": [
-        {
-          "label": "Issues",
-          "href": "https://github.com/carbon-design-system/carbon-charts/issues"
-        },
-        {
-          "label": "Issues - commented",
-          "href": "https://github.com/carbon-design-system/carbon-charts/issues?q=is%3Aissue%20state%3Aopen%20commenter%3A%40me"
-        },
-        {
-          "label": "Pull Requests - assigned to me",
-          "href": "https://github.com/carbon-design-system/carbon-charts/pulls?q=is%3Apr+is%3Aopen+user-review-requested%3A%40me"
-        },
-        {
-          "label": "Pull Requests - opened by me",
-          "href": "https://github.com/carbon-design-system/carbon-charts/pulls/@me"
-        }
-      ]
-    },
-    "website": {
-      "title": "Website",
-      "buttons": [
-        {
-          "label": "Docs",
-          "href": "https://charts.carbondesignsystem.com/"
-        }
-      ]
+    "links": {
+      "Website": {
+        "Docs": "https://charts.carbondesignsystem.com/"
+      }
     }
   }
 ]

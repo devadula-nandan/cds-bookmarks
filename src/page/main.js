@@ -75,8 +75,6 @@ function onKey(e) {
     e.preventDefault();
     return focusSearch();
   }
-  // Enter in a repo menu's version field opens that version.
-  if (e.key === "Enter" && e.target.matches(".menu__version")) return actions["open-version"](e.target);
   // Arrow keys move between work tabs, and between rows.
   if (e.target.matches("[role=tab]") && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
     const tabs = $$("[role=tab]");
@@ -101,7 +99,7 @@ function onKey(e) {
   else if (key === "e") document.activeElement.closest("#work .item")?.querySelector(".item__cta:not(:disabled)")?.click();
   else if (key === "r") requestSync(true);
   else if (key === "a") $("#activity").togglePopover();
-  else if (/^[1-4]$/.test(key) && connected()) selectTab(["focus", "issues", "prs", "following"][key - 1], true);
+  else if (/^[1-3]$/.test(key) && connected()) selectTab(["focus", "issues", "prs"][key - 1], true);
 }
 
 // ---------- state from storage ----------
@@ -123,7 +121,6 @@ function onStorage(changes) {
   if (changes.activitySeenAt) state.seenAt = value("activitySeenAt", null);
   if (changes.activityClearedAt) state.clearedAt = value("activityClearedAt", null);
   if (changes.bugHunts) state.bugHunts = value("bugHunts", []);
-  if (changes.followHidden) state.followHidden = value("followHidden", {});
   if (changes.snoozedUntilChange) state.untilChange = value("snoozedUntilChange", {});
   if (changes[ANSWERS]) state.answered = new Set(Object.keys(value(ANSWERS, {})));
   if (changes[dayKey()]) state.day = { todos: [], snoozed: {}, ...value(dayKey(), {}) };
@@ -147,7 +144,6 @@ async function load() {
     clearedAt: saved.activityClearedAt || null,
     huntState: saved.huntState || {},
     bugHunts: saved.bugHunts || [],
-    followHidden: saved.followHidden || {},
     untilChange: saved.snoozedUntilChange || {},
     answered: new Set(Object.keys(saved[ANSWERS] || {})),
     day: await loadDay(),

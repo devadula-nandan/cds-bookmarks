@@ -86,17 +86,23 @@ export function defaultSettings() {
     login: "",
     theme: "system",
     pollMinutes: 3,
-    includeTeamReviews: false,
+    includeTeamReviews: true,
     staleReviewDays: 2,
     notifications: true,
     notifyOn: Object.fromEntries(Object.keys(NOTIFY_LABELS).map((k) => [k, !OFF_BY_DEFAULT.includes(k)])),
-    disabledRepos: [],
+    // Only Carbon is on until you switch the others on in Settings → Repositories.
+    disabledRepos: ["carbon-design-system-carbon-ai-chat", "carbon-design-system-carbon-labs", "carbon-design-system-carbon-charts"],
     ai: false,
     bobKey: "",
     homeDir: "",
     bugHunt: false,
     bugHuntTime: "09:00",
-    meetings: [{ id: "standup", title: "Daily standup", time: "10:00", minutes: 15, days: [1, 2, 3, 4, 5] }],
+    meetings: [
+      { id: "login", title: "Log in", time: "09:00", minutes: 5, days: [1, 2, 3, 4, 5] },
+      { id: "lunch", title: "Lunch", time: "12:30", minutes: 30, days: [1, 2, 3, 4, 5] },
+      { id: "standup", title: "Daily standup", time: "15:30", minutes: 30, days: [1, 2, 3, 4, 5] },
+      { id: "logout", title: "Log out", time: "16:55", minutes: 5, days: [1, 2, 3, 4, 5] },
+    ],
   };
 }
 

@@ -1,25 +1,17 @@
-// The repository editor (Settings → Repositories → Edit repositories): a form over every option of an
-// entry in bookmarks.json. Saving keeps the list in this browser (`repoData`), ahead of the file; Export
-// JSON downloads it to replace bookmarks.json, and Reset loads the file back in.
+// The repository editor (Settings → Repositories → Edit repositories). It asks only for what can't be
+// inferred: the GitHub repo, and optionally a name, a local clone, the approvals a PR needs and extra
+// links (see repos.js for the rest). Saving keeps the list in this browser (`repoData`), ahead of the
+// file; Export JSON downloads it to replace bookmarks.json, and Reset loads the file back in.
 
 import { storage } from "../core.js";
-import { fileRepos, rawRepos } from "../repos.js";
+import { fileRepos, nameOf, rawRepos, slugOf, upgradeRepo } from "../repos.js";
 import { icon } from "./icons.js";
 import { html, live, nothing, render, repeat } from "./lit.js";
 import { $, logo, toast } from "./ui.js";
 
-const GROUPS = [
-  ["github", "GitHub"],
-  ["website", "Website"],
-  ["storybooks", "Storybooks"],
-  ["others", "Playgrounds"],
-];
-// Optional fields: left out of the JSON when blank.
-const OPTIONAL = new Set(["short", "clone", "approvals", "readyLabel", "versionedHref", "version"]);
-
 let draft = [];
-// Repos unfolded in the editor (by entry, so moving one keeps it open).
-const unfolded = new WeakSet();
+// The links box as typed, so re-rendering while someone types doesn't reformat it under them.
+const linksText = new WeakMap();
 
 async function openEditor() {
   draft = rawRepos();
@@ -28,64 +20,55 @@ async function openEditor() {
   if (!dialog.open) dialog.showModal();
 }
 
-function field(path, label, value, { mono = false, placeholder = "" } = {}) {
-  return html`<label class="field"><span>${label}</span><input class="input ${mono ? "mono" : ""}" data-path=${path} .value=${live(value ?? "")} placeholder=${placeholder} autocomplete="off" spellcheck="false"></label>`;
+/**
+ * Extra links as text: a line with a URL is a link (its label is the text before the URL), and a line
+ * without one starts a group. Links before any group go under GitHub or Links, by where they point.
+ */
+function parseLinks(text) {
+  const links = {};
+  let group = null;
+  for (const line of text.split("\n").map((l) => l.trim()).filter(Boolean)) {
+    const href = line.match(/https?:\/\/\S+$/)?.[0];
+    if (!href) {
+      group = line.replace(/:$/, "");
+      continue;
+    }
+    const github = /^https?:\/\/(www\.)?github\.com\//.test(href);
+    const label = line.slice(0, -href.length).trim().replace(/[:–-]$/, "").trim() || (/\/projects\/\d+/.test(href) ? "Board" : href.replace(/^https?:\/\/(www\.)?/, "").split(/[/?#]/)[0]);
+    (links[group || (github ? "GitHub" : "Links")] ||= {})[label] = href;
+  }
+  return links;
 }
 
-function linkRow(path, link, j) {
-  const p = `${path}.buttons.${j}`;
-  return html`
-    <div class="editor-link">
-      ${field(`${p}.label`, "Label", link.label)}
-      ${field(`${p}.href`, "URL", link.href, { mono: true, placeholder: "https://…" })}
-      ${field(`${p}.versionedHref`, "Versioned URL", link.versionedHref, { mono: true, placeholder: "Optional, uses <v>" })}
-      ${field(`${p}.version`, "Version", link.version, { placeholder: "Optional" })}
-      <button class="icon-btn icon-btn--sm editor-link__remove" data-action="editor-remove" data-path=${p} aria-label="Remove ${link.label || "link"}" data-tooltip="Remove link">${icon("trash", 14)}</button>
-    </div>`;
-}
+const linksToText = (links = {}) =>
+  Object.entries(links)
+    .map(([group, list]) => [group, ...Object.entries(list).map(([label, href]) => `${label} ${href}`)].join("\n"))
+    .join("\n\n");
 
-function groupBlock(entry, i, key, fallback) {
-  const group = entry[key];
-  if (!group) return nothing;
-  const path = `${i}.${key}`;
-  return html`
-    <fieldset class="editor-group">
-      <div class="editor-group__head">
-        ${field(`${path}.title`, `${fallback} group title`, group.title)}
-        <button class="btn btn--ghost btn--sm" data-action="editor-remove" data-path=${path}>Remove group</button>
-      </div>
-      ${(group.buttons || []).map((link, j) => linkRow(path, link, j))}
-      <button class="btn btn--ghost btn--sm" data-action="editor-add-link" data-path=${path}>${icon("plus", 14)}Add link</button>
-    </fieldset>`;
+function field(i, key, label, value, { mono = false, placeholder = "", type = "text" } = {}) {
+  return html`<label class="field"><span>${label}</span><input class="input ${mono ? "mono" : ""}" type=${type} min=${type === "number" ? "1" : nothing} data-index=${i} data-key=${key} .value=${live(String(value ?? ""))} placeholder=${placeholder} autocomplete="off" spellcheck="false"></label>`;
 }
 
 function repoBlock(entry, i) {
-  const missing = GROUPS.filter(([key]) => !entry[key]);
+  const slug = slugOf(entry.repo);
+  const name = entry.name || nameOf(slug);
   return html`
-    <details class="editor-repo" data-index=${i} ?open=${unfolded.has(entry)}>
-      <summary>
+    <section class="editor-repo">
+      <header class="editor-repo__head">
         <span class="editor-repo__logo" aria-hidden="true">${logo(entry.icon)}</span>
-        <span class="editor-repo__name">${entry.name || "Untitled repo"}<small class="mono">${entry.id || ""}</small></span>
+        <span class="editor-repo__name">${name || "New repository"}<small class="mono">${slug || ""}</small></span>
         <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index=${i} data-by="-1" aria-label="Move up" data-tooltip="Move up" ?disabled=${!i}>${icon("arrowUp", 14)}</button>
         <button class="icon-btn icon-btn--sm" data-action="editor-move" data-index=${i} data-by="1" aria-label="Move down" data-tooltip="Move down" ?disabled=${i >= draft.length - 1}>${icon("arrowDown", 14)}</button>
-        <button class="icon-btn icon-btn--sm" data-action="editor-remove" data-path=${i} aria-label="Remove ${entry.name || "repo"}" data-tooltip="Remove repo">${icon("trash", 14)}</button>
-      </summary>
-      <div class="editor-repo__body">
-        <div class="fields">
-          ${field(`${i}.id`, "ID", entry.id, { mono: true, placeholder: "cds" })}
-          ${field(`${i}.name`, "Name", entry.name, { placeholder: "Carbon Design System" })}
-          ${field(`${i}.short`, "Short name", entry.short, { placeholder: "Optional, for tight spots" })}
-          ${field(`${i}.clone`, "Local clone", entry.clone, { mono: true, placeholder: "Optional, like ~/Source/carbon" })}
-          ${field(`${i}.approvals`, "Approvals to merge", entry.approvals, { placeholder: "1" })}
-          ${field(`${i}.readyLabel`, "Ready-to-merge label", entry.readyLabel, { placeholder: "Optional, like status: ready to merge 🎉" })}
-        </div>
-        <p class="hint">A PR counts as ready once it has that many approvals (and no visual review label). <b>Ready to merge</b> then adds the label and turns on auto-merge.</p>
-        <label class="field"><span>Logo (SVG)</span><textarea class="input mono editor-svg" rows="3" data-path="${i}.icon" spellcheck="false" .value=${live(entry.icon || "")}></textarea></label>
-        <p class="hint">The GitHub repo comes from a GitHub link to its issues or pulls, and the sprint board from a link labelled “Board”.</p>
-        ${GROUPS.map(([key, title]) => groupBlock(entry, i, key, title))}
-        ${missing.length ? html`<p class="editor-add">${missing.map(([key, title]) => html`<button class="btn btn--ghost btn--sm" data-action="editor-add-group" data-index=${i} data-key=${key}>${icon("plus", 14)}${title} group</button>`)}</p>` : nothing}
+        <button class="icon-btn icon-btn--sm" data-action="editor-remove" data-index=${i} aria-label="Remove ${name || "repo"}" data-tooltip="Remove repo">${icon("trash", 14)}</button>
+      </header>
+      <div class="fields">
+        ${field(i, "repo", "GitHub repo", entry.repo, { mono: true, placeholder: "owner/repo, or paste its link" })}
+        ${field(i, "name", "Name", entry.name, { placeholder: nameOf(slug) || "Carbon" })}
+        ${field(i, "clone", "Local clone", entry.clone, { mono: true, placeholder: "Optional, like ~/Source/carbon" })}
+        ${field(i, "approvals", "Approvals to merge", entry.approvals, { type: "number", placeholder: "1" })}
       </div>
-    </details>`;
+      <label class="field"><span>Extra links</span><textarea class="input mono editor-links" rows="3" data-index=${i} data-key="links" spellcheck="false" placeholder=${"Board https://github.com/orgs/…/projects/39\n\nStorybooks\nReact https://react.carbondesignsystem.com/"} .value=${live(linksText.get(entry) ?? linksToText(entry.links))}></textarea></label>
+    </section>`;
 }
 
 function renderEditor() {
@@ -96,7 +79,9 @@ function renderEditor() {
         <button class="icon-btn" data-action="editor-close" aria-label="Close">${icon("x", 18)}</button>
       </header>
       <div class="sheet__body">
-        <p class="hint">Everything in the repo bar, search and work list. Saving keeps this list in this browser, ahead of <code>bookmarks.json</code>; use <b>Export JSON</b> to update the file.</p>
+        <p class="hint">
+          Each repo gets its Issues and Pull Requests links, and <b>Ready to merge</b> uses the repo's own “ready to merge” label if it has one. Under <b>Extra links</b>, put one link per line (<code>Label https://…</code>); a line with no link starts a group, and a link to a GitHub project is the sprint board.
+        </p>
         ${repeat(draft, (entry) => entry, repoBlock)}
         <button class="btn btn--sm" data-action="editor-add-repo">${icon("plus", 14)}Add repository</button>
       </div>
@@ -111,32 +96,21 @@ function renderEditor() {
   );
 }
 
-/** Walks "2.github.buttons.0" to [parent, key]. */
-function locate(path) {
-  const keys = path.split(".").map((k) => (/^\d+$/.test(k) ? Number(k) : k));
-  const last = keys.pop();
-  return [keys.reduce((o, k) => o[k], draft), last];
-}
-
 export function bindEditor() {
   const el = $("#repo-editor");
   el.addEventListener("input", (e) => {
-    const path = e.target.dataset.path;
-    if (!path) return;
-    const [parent, key] = locate(path);
+    const { index, key } = e.target.dataset;
+    const entry = draft[index];
+    if (!entry || !key) return;
     const value = e.target.value;
-    if (OPTIONAL.has(key) && !value.trim()) delete parent[key];
-    else parent[key] = value;
+    if (key === "links") {
+      linksText.set(entry, value);
+      entry.links = parseLinks(value);
+    } else entry[key] = value;
+    // Blank optional fields are left out of the JSON.
+    if (!value.trim() || (key === "links" && !Object.keys(entry.links).length)) delete entry[key];
+    renderEditor();
   });
-  el.addEventListener(
-    "toggle",
-    (e) => {
-      if (!e.target.matches(".editor-repo")) return;
-      const entry = draft[e.target.dataset.index];
-      if (entry) e.target.open ? unfolded.add(entry) : unfolded.delete(entry);
-    },
-    true
-  );
   el.addEventListener("change", async (e) => {
     if (!e.target.matches("[data-editor-import]")) return;
     const file = e.target.files?.[0];
@@ -144,7 +118,7 @@ export function bindEditor() {
     try {
       const parsed = JSON.parse(await file.text());
       if (!Array.isArray(parsed)) throw new Error("expected a list of repos");
-      draft = parsed;
+      draft = parsed.map(upgradeRepo);
       renderEditor();
       toast(`Imported ${file.name}. Save to use it.`, "success");
     } catch (err) {
@@ -161,30 +135,39 @@ function exportJson(list = rawRepos()) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function problems() {
-  const ids = draft.map((e) => String(e.id || "").trim());
+/** The draft as it's saved: the repo as "owner/repo", approvals as a number. */
+const cleaned = () =>
+  draft.map((entry) => {
+    const out = { ...entry, repo: slugOf(entry.repo) || entry.repo };
+    if (out.approvals) out.approvals = Number(out.approvals) || 1;
+    if (out.approvals === 1) delete out.approvals;
+    return out;
+  });
+
+function problems(list) {
+  const slugs = list.map((e) => slugOf(e.repo)?.toLowerCase());
   const out = [];
-  draft.forEach((e, i) => {
-    if (!ids[i]) out.push(`repo ${i + 1} needs an ID`);
-    else if (ids.indexOf(ids[i]) !== i) out.push(`ID “${ids[i]}” is used twice`);
-    if (!String(e.name || "").trim()) out.push(`${ids[i] || `repo ${i + 1}`} needs a name`);
+  list.forEach((e, i) => {
+    if (!slugs[i]) out.push(`repo ${i + 1} needs a GitHub repo, like owner/repo`);
+    else if (slugs.indexOf(slugs[i]) !== i) out.push(`${e.repo} is listed twice`);
   });
   return out;
 }
 
 async function save() {
-  const issues = problems();
+  const list = cleaned();
+  const issues = problems(list);
   if (issues.length) return toast(`Can't save: ${issues.slice(0, 2).join("; ")}`, "error");
   // Matching the file again means there's nothing to keep: drop the saved copy so file updates come through.
-  const same = JSON.stringify(draft) === JSON.stringify(await fileRepos());
+  const same = JSON.stringify(list) === JSON.stringify(await fileRepos());
   if (same) await storage.remove("repoData");
-  else await storage.set({ repoData: draft });
+  else await storage.set({ repoData: list });
   // The page reloads on the change (see onStorage), so everything picks up the new list.
 }
 
 export const editorActions = {
   "repo-editor": openEditor,
-  "repo-export": () => ($("#repo-editor").open ? exportJson(draft) : exportJson()),
+  "repo-export": () => ($("#repo-editor").open ? exportJson(cleaned()) : exportJson()),
   "editor-close": () => $("#repo-editor").close(),
   "editor-save": save,
   "editor-reset": async () => {
@@ -193,25 +176,12 @@ export const editorActions = {
     toast("Loaded bookmarks.json. Save to use it.");
   },
   "editor-add-repo": () => {
-    const entry = { id: "", name: "", github: { title: "GitHub", buttons: [{ label: "Issues", href: "https://github.com/OWNER/REPO/issues" }] } };
-    draft.push(entry);
-    unfolded.add(entry);
+    draft.push({ repo: "" });
     renderEditor();
-  },
-  "editor-add-group": (el) => {
-    const entry = draft[el.dataset.index];
-    entry[el.dataset.key] = { title: GROUPS.find(([k]) => k === el.dataset.key)[1], buttons: [] };
-    renderEditor();
-  },
-  "editor-add-link": (el) => {
-    const [parent, key] = locate(el.dataset.path);
-    (parent[key].buttons ||= []).push({ label: "", href: "" });
-    renderEditor();
+    $("#repo-editor .editor-repo:last-of-type input")?.focus();
   },
   "editor-remove": (el) => {
-    const [parent, key] = locate(el.dataset.path);
-    if (Array.isArray(parent)) parent.splice(key, 1);
-    else delete parent[key];
+    draft.splice(Number(el.dataset.index), 1);
     renderEditor();
   },
   "editor-move": (el) => {

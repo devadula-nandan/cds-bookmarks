@@ -31,7 +31,7 @@ function githubSection(s) {
       ? "Fine-grained token — the GitHub inbox won't work and org policy may block it. A classic token is recommended."
       : s.tokenScopes !== undefined && s.token
         ? html`Classic token · scopes: <code>${s.tokenScopes || "none"}</code>`
-        : html`Use a ${classicToken} with <code>repo</code>, <code>notifications</code> and <code>read:org</code>.`;
+        : html`Use a ${classicToken} with <code>repo</code>, <code>notifications</code>, <code>read:org</code> and <code>read:project</code>. Without <code>read:project</code>, Needs triage only goes by the label.`;
   return section(
     "github",
     "GitHub",
@@ -46,7 +46,7 @@ function githubSection(s) {
         <label class="field"><span>Check GitHub every</span>${select("pollMinutes", s.pollMinutes, [1, 2, 3, 5, 10, 15].map((m) => [m, `${m} min`]))}</label>
         <label class="field"><span>Reviews are overdue after</span>${select("staleReviewDays", s.staleReviewDays, [1, 2, 3, 5].map((d) => [d, plural(d, "day")]))}</label>
       </div>
-      ${toggle({ data: ["setting", "includeTeamReviews"], checked: s.includeTeamReviews, label: "Include team review requests", hint: "Otherwise only reviews requested from you directly" })}`
+      ${toggle({ data: ["setting", "includeTeamReviews"], checked: s.includeTeamReviews, label: "Include team review requests", hint: "Shows “Needs your teams' review” under Pull requests. Otherwise only reviews requested from you directly" })}`
   );
 }
 
@@ -132,7 +132,7 @@ function meetingsSection(s) {
 const kbd = (...keys) => keys.map((k) => html`<kbd>${k}</kbd>`);
 const KEYS = [
   [html`${kbd("/")} or ${kbd("⌘", "K")}`, "Search"],
-  [html`${kbd("1")}–${kbd("4")}`, "Switch work tabs"],
+  [html`${kbd("1")}–${kbd("3")}`, "Switch work tabs"],
   [html`${kbd("J", "K")} or ${kbd("↓", "↑")}`, "Move through your work"],
   [kbd("S"), "Snooze the selected item"],
   [kbd("B"), "Ask Bob about the selected item"],
